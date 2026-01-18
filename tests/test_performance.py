@@ -284,7 +284,7 @@ class FairSemaphore:
             else:
                 await self._semaphore.acquire()
 
-            acquired_at = datetime.now()
+            acquired_at = datetime.now(timezone.utc)
 
             async with self._lock:
                 self._active_holders[holder_id] = acquired_at
@@ -301,7 +301,7 @@ class FairSemaphore:
             raise
         finally:
             if acquired_at:
-                hold_time = (datetime.now() - acquired_at).total_seconds()
+                hold_time = (datetime.now(timezone.utc) - acquired_at).total_seconds()
 
                 async with self._lock:
                     self._active_holders.pop(holder_id, None)
@@ -329,11 +329,11 @@ class FairSemaphore:
 class PriorityLock:
     """Priority lock - simplified for benchmarking."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self._lock = asyncio.Lock()
-        self._queue: List[Any] = []
-        self._current_holder = None
+        self._queue: list[str] = []  # Stores request IDs
+        self._current_holder: Optional[str] = None
 
     @asynccontextmanager
     async def acquire(
@@ -351,7 +351,7 @@ class PriorityLock:
             else:
                 await self._lock.acquire()
 
-            acquired_at = datetime.now()
+            acquired_at = datetime.now(timezone.utc)
             yield
 
         except asyncio.TimeoutError:

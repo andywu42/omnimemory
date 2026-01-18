@@ -54,12 +54,15 @@ class OnexError(Exception):
         # Support both 'code' and 'error_code' parameters
         self.code = error_code or code or "ONEX_ERROR"
         self.error_code = self.code  # Alias for compatibility
-        # Merge context and details
-        self.context = context or {}
+        # Merge context and details (copy to prevent caller mutation)
+        self.context = dict(context) if context else {}
         if details:
             self.context.update(details)
         self.cause = cause
         self.correlation_id = correlation_id
+        # Set __cause__ for proper exception chaining
+        if cause is not None:
+            self.__cause__ = cause
 
     def __str__(self) -> str:
         """Return string representation."""

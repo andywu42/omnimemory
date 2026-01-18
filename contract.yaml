@@ -11,6 +11,9 @@ contract_version: "1.0.0"
 contract:
   name: omnimemory
   version: 1.0.0
+  # Node version tracks the implementation version of this node
+  # Follows semantic versioning independent of contract_version
+  node_version: "1.0.0"
   description: Advanced memory management system following ONEX 4-node architecture
   architecture:
     pattern: onex_4_node
@@ -71,27 +74,72 @@ schemas:
   memory_record:
     description: Core memory record schema
     fields:
-      - memory_id
-      - content
-      - content_type
-      - tags
-      - priority
-      - created_at
-      - updated_at
+      - name: memory_id
+        type: string
+        description: Unique identifier for the memory record
+        required: true
+      - name: content
+        type: string
+        description: The actual memory content
+        required: true
+      - name: content_type
+        type: string
+        description: MIME type or content classification
+        required: true
+      - name: tags
+        type: list[string]
+        description: Tags for categorization and search
+        required: false
+      - name: priority
+        type: integer
+        description: Priority level (1-10, higher is more important)
+        required: false
+      - name: created_at
+        type: datetime
+        description: Timestamp when memory was created
+        required: true
+      - name: updated_at
+        type: datetime
+        description: Timestamp when memory was last updated
+        required: false
   memory_request:
     description: Memory operation request schema
     fields:
-      - request_id
-      - operation_type
-      - memory_data
-      - options
+      - name: request_id
+        type: string
+        description: Unique identifier for the request
+        required: true
+      - name: operation_type
+        type: string
+        description: Type of operation (store, retrieve, delete, update)
+        required: true
+      - name: memory_data
+        type: object
+        description: Memory data payload
+        required: false
+      - name: options
+        type: object
+        description: Optional configuration for the operation
+        required: false
   memory_response:
     description: Memory operation response schema
     fields:
-      - response_id
-      - status
-      - result
-      - metadata
+      - name: response_id
+        type: string
+        description: Unique identifier for the response
+        required: true
+      - name: status
+        type: string
+        description: Operation status (success, error, pending)
+        required: true
+      - name: result
+        type: object
+        description: Operation result data
+        required: false
+      - name: metadata
+        type: object
+        description: Additional response metadata
+        required: false
 
 error_handling:
   strategy: monadic_result

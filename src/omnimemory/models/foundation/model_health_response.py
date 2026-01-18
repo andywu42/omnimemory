@@ -135,9 +135,11 @@ class ModelRateLimitedHealthCheckResponse(BaseModel):
     """Rate-limited health check response."""
 
     status: str = Field(
+        default="rate_limited",
         description="Status of the rate-limited response"
     )
     message: str = Field(
+        default="Rate limit status",
         description="Human-readable message about the rate limit status"
     )
     details: dict[str, str | int | float] = Field(

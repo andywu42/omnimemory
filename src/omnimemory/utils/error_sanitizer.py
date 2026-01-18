@@ -7,11 +7,13 @@ disclosure while maintaining useful debugging information for developers.
 
 __all__ = [
     "SanitizationLevel",
-    "ErrorSanitizer"
+    "ErrorSanitizer",
+    "sanitize_error",
+    "sanitize_dict",
 ]
 
 import re
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Pattern, Set
 from enum import Enum
 
 
@@ -23,12 +25,68 @@ class SanitizationLevel(Enum):
     AUDIT = "audit"         # For audit logs, remove all sensitive data
 
 
+# === PRE-COMPILED REGEX PATTERNS ===
+# These patterns are compiled once at module load time for optimal performance.
+# This avoids repeated regex compilation on each sanitization call.
+
+# Credential patterns - detect passwords, API keys, tokens, etc.
+_CREDENTIAL_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'\bpassword\s*[=:]\s*[\'"]?([^\s\'"]+)', re.IGNORECASE),
+    re.compile(r'\bapi[_-]?key\s*[=:]\s*[\'"]?([^\s\'"]+)', re.IGNORECASE),
+    re.compile(r'\bsecret\s*[=:]\s*[\'"]?([^\s\'"]+)', re.IGNORECASE),
+    re.compile(r'\btoken\s*[=:]\s*[\'"]?([^\s\'"]+)', re.IGNORECASE),
+    re.compile(r'\bauth\s*[=:]\s*[\'"]?([^\s\'"]+)', re.IGNORECASE),
+    re.compile(r'\bbearer\s+([^\s]+)', re.IGNORECASE),
+    re.compile(r'\basic\s+([^\s]+)', re.IGNORECASE),
+]
+
+# Connection string patterns - detect database/service URLs
+_CONNECTION_STRING_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'postgresql://[^@]+@[^/]+/[^\s]+', re.IGNORECASE),
+    re.compile(r'mysql://[^@]+@[^/]+/[^\s]+', re.IGNORECASE),
+    re.compile(r'mongodb://[^@]+@[^/]+/[^\s]+', re.IGNORECASE),
+    re.compile(r'redis://[^@]+@[^/]+/[^\s]*', re.IGNORECASE),
+]
+
+# IP address patterns - detect IPv4 and IPv6 addresses
+_IP_ADDRESS_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?\b'),
+    re.compile(r'\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b'),
+]
+
+# File path patterns - detect system paths
+_FILE_PATH_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'/[a-zA-Z0-9/_-]+(?:\.[a-zA-Z0-9]+)?'),
+    re.compile(r'[A-Za-z]:\\\\[a-zA-Z0-9\\\\._-]+'),
+]
+
+# Personal information patterns - detect PII
+_PERSONAL_INFO_PATTERNS: List[Pattern[str]] = [
+    re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'),  # email
+    re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),  # SSN
+    re.compile(r'\b\d{16}\b'),  # Credit card
+]
+
+# Strict mode patterns - additional sanitization for numbers and identifiers
+_STRICT_NUMBER_PATTERN: Pattern[str] = re.compile(r'\d+')
+_STRICT_IDENTIFIER_PATTERN: Pattern[str] = re.compile(r'\b[a-zA-Z0-9]{8,}\b')
+
+# Pattern category mapping for easy iteration (uses pre-compiled patterns)
+_SENSITIVE_PATTERNS: Dict[str, List[Pattern[str]]] = {
+    'credentials': _CREDENTIAL_PATTERNS,
+    'connection_strings': _CONNECTION_STRING_PATTERNS,
+    'ip_addresses': _IP_ADDRESS_PATTERNS,
+    'file_paths': _FILE_PATH_PATTERNS,
+    'personal_info': _PERSONAL_INFO_PATTERNS,
+}
+
+
 class ErrorSanitizer:
     """
     Enhanced error sanitizer with configurable security levels.
 
     Features:
-    - Pattern-based sensitive data detection
+    - Pattern-based sensitive data detection (pre-compiled for performance)
     - Configurable sanitization levels
     - Structured error categorization
     - Context-aware sanitization rules
@@ -37,45 +95,11 @@ class ErrorSanitizer:
     def __init__(self, level: SanitizationLevel = SanitizationLevel.STANDARD):
         """Initialize sanitizer with specified security level."""
         self.level = level
-        self._sensitive_patterns = self._initialize_patterns()
         self._safe_error_types = {
             'ValueError', 'TypeError', 'AttributeError', 'KeyError',
             'IndexError', 'ImportError', 'ModuleNotFoundError',
             'FileNotFoundError', 'PermissionError', 'TimeoutError',
             'ConnectionError', 'HTTPError', 'ValidationError'
-        }
-
-    def _initialize_patterns(self) -> Dict[str, List[str]]:
-        """Initialize regex patterns for sensitive data detection."""
-        return {
-            'credentials': [
-                r'\bpassword\s*[=:]\s*[\'"]?([^\s\'"]+)',
-                r'\bapi[_-]?key\s*[=:]\s*[\'"]?([^\s\'"]+)',
-                r'\bsecret\s*[=:]\s*[\'"]?([^\s\'"]+)',
-                r'\btoken\s*[=:]\s*[\'"]?([^\s\'"]+)',
-                r'\bauth\s*[=:]\s*[\'"]?([^\s\'"]+)',
-                r'\bbearer\s+([^\s]+)',
-                r'\basic\s+([^\s]+)',
-            ],
-            'connection_strings': [
-                r'postgresql://[^@]+@[^/]+/[^\s]+',
-                r'mysql://[^@]+@[^/]+/[^\s]+',
-                r'mongodb://[^@]+@[^/]+/[^\s]+',
-                r'redis://[^@]+@[^/]+/[^\s]*',
-            ],
-            'ip_addresses': [
-                r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?\b',
-                r'\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b',
-            ],
-            'file_paths': [
-                r'/[a-zA-Z0-9/_-]+(?:\.[a-zA-Z0-9]+)?',
-                r'[A-Za-z]:\\\\[a-zA-Z0-9\\\\._-]+',
-            ],
-            'personal_info': [
-                r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # email
-                r'\b\d{3}-\d{2}-\d{4}\b',  # SSN
-                r'\b\d{16}\b',  # Credit card
-            ]
         }
 
     def sanitize_error(self,
@@ -108,9 +132,9 @@ class ErrorSanitizer:
         """Minimal sanitization - only remove obvious secrets."""
         sanitized = message
 
-        # Only sanitize credentials
-        for pattern in self._sensitive_patterns['credentials']:
-            sanitized = re.sub(pattern, r'[REDACTED]', sanitized, flags=re.IGNORECASE)
+        # Only sanitize credentials using pre-compiled patterns
+        for pattern in _CREDENTIAL_PATTERNS:
+            sanitized = pattern.sub('[REDACTED]', sanitized)
 
         return f"{error_type}: {sanitized}"
 
@@ -121,20 +145,21 @@ class ErrorSanitizer:
         """Standard sanitization - balance security and debugging."""
         sanitized = message
 
-        # Sanitize credentials and connection strings
-        for category in ['credentials', 'connection_strings']:
-            for pattern in self._sensitive_patterns[category]:
-                sanitized = re.sub(pattern, '[REDACTED]', sanitized, flags=re.IGNORECASE)
+        # Sanitize credentials and connection strings using pre-compiled patterns
+        for pattern in _CREDENTIAL_PATTERNS:
+            sanitized = pattern.sub('[REDACTED]', sanitized)
+        for pattern in _CONNECTION_STRING_PATTERNS:
+            sanitized = pattern.sub('[REDACTED]', sanitized)
 
         # Context-aware sanitization
         if context in ['health_check', 'connection_pool']:
             # Keep connection info but sanitize auth
-            for pattern in self._sensitive_patterns['ip_addresses']:
-                sanitized = re.sub(pattern, '[IP:REDACTED]', sanitized)
+            for pattern in _IP_ADDRESS_PATTERNS:
+                sanitized = pattern.sub('[IP:REDACTED]', sanitized)
         elif context in ['audit', 'security']:
             # More aggressive sanitization for security contexts
-            for pattern in self._sensitive_patterns['personal_info']:
-                sanitized = re.sub(pattern, '[PII:REDACTED]', sanitized)
+            for pattern in _PERSONAL_INFO_PATTERNS:
+                sanitized = pattern.sub('[PII:REDACTED]', sanitized)
 
         # Keep error type for debugging
         return f"{error_type}: {sanitized}"
@@ -143,14 +168,14 @@ class ErrorSanitizer:
         """Strict sanitization - remove most identifiable information."""
         sanitized = message
 
-        # Sanitize all sensitive patterns
-        for category, patterns in self._sensitive_patterns.items():
+        # Sanitize all sensitive patterns using pre-compiled patterns
+        for patterns in _SENSITIVE_PATTERNS.values():
             for pattern in patterns:
-                sanitized = re.sub(pattern, '[REDACTED]', sanitized, flags=re.IGNORECASE)
+                sanitized = pattern.sub('[REDACTED]', sanitized)
 
-        # Remove specific details but keep general structure
-        sanitized = re.sub(r'\d+', '[NUM]', sanitized)  # Replace numbers
-        sanitized = re.sub(r'\b[a-zA-Z0-9]{8,}\b', '[ID]', sanitized)  # Long identifiers
+        # Remove specific details using pre-compiled patterns
+        sanitized = _STRICT_NUMBER_PATTERN.sub('[NUM]', sanitized)
+        sanitized = _STRICT_IDENTIFIER_PATTERN.sub('[ID]', sanitized)
 
         return f"{error_type}: Connection/operation failed - [DETAILS_REDACTED]"
 
@@ -161,7 +186,9 @@ class ErrorSanitizer:
         else:
             return "Exception: Operation failed - details suppressed for audit"
 
-    def sanitize_dict(self, data: Dict, keys_to_sanitize: Optional[Set[str]] = None) -> Dict:
+    def sanitize_dict(
+        self, data: Dict, keys_to_sanitize: Optional[Set[str]] = None
+    ) -> Dict:
         """
         Sanitize sensitive keys in dictionary data.
 
@@ -192,11 +219,11 @@ class ErrorSanitizer:
         return sanitized
 
     def _apply_patterns(self, text: str) -> str:
-        """Apply sanitization patterns to text."""
+        """Apply sanitization patterns to text using pre-compiled patterns."""
         sanitized = text
-        for category, patterns in self._sensitive_patterns.items():
+        for patterns in _SENSITIVE_PATTERNS.values():
             for pattern in patterns:
-                sanitized = re.sub(pattern, '[REDACTED]', sanitized, flags=re.IGNORECASE)
+                sanitized = pattern.sub('[REDACTED]', sanitized)
         return sanitized
 
     def is_safe_error_type(self, error_type: str) -> bool:

@@ -406,7 +406,6 @@ class RetryManager:
             Operation result
         """
         retry_config = config or self.default_config
-        start_time = datetime.now(timezone.utc)
 
         try:
             result = await retry_with_backoff(

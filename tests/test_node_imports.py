@@ -72,8 +72,10 @@ class TestNodeStructure:
     required ONEX directory structure including:
     - Node directory exists
     - __init__.py exists in each node directory
-    - Effect and Orchestrator nodes have handlers subdirectory
-    - No node.py files (fully declarative pattern)
+    - No local handlers directories (handlers from omnibase_infra)
+
+    Note: node.py enforcement tests are in test_node_enforcement.py
+    to consolidate all declarative pattern validation in one place.
     """
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
@@ -100,18 +102,8 @@ class TestNodeStructure:
         init_path: Path = node_dir / "__init__.py"
         assert init_path.exists(), f"Missing __init__.py: {init_path}"
 
-    @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_no_node_py_exists(self, node_name: str) -> None:
-        """Verify no node.py files exist (fully declarative pattern).
-
-        ONEX nodes are defined by contracts, not Python classes.
-        The presence of a node.py file indicates legacy architecture.
-        """
-        node_py_path: Path = NODES_DIR / node_name / "node.py"
-        assert not node_py_path.exists(), (
-            f"node.py should not exist for {node_name} - "
-            "use contract.yaml for declarative node definition"
-        )
+    # NOTE: test_no_node_py_exists moved to test_node_enforcement.py
+    # to keep all declarative pattern enforcement tests in one place.
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
     def test_no_local_handlers_dir(self, node_name: str) -> None:

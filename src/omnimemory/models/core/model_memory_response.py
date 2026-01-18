@@ -17,10 +17,17 @@ from .model_provenance import ModelProvenanceChain
 from ..foundation.model_memory_data import ModelMemoryResponseData
 from ..foundation.model_error_details import ModelErrorDetails
 from ..foundation.model_trust_score import ModelTrustScore
+from ..foundation.model_contract_version import DEFAULT_CONTRACT_VERSION
 
 
 class ModelMemoryResponse(BaseModel):
     """Base memory response model following ONEX standards."""
+
+    # Contract version for schema tracking
+    contract_version: str = Field(
+        default=DEFAULT_CONTRACT_VERSION,
+        description="Schema version for this response contract (semver format)",
+    )
 
     # Response identification
     request_id: UUID = Field(

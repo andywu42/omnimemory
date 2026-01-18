@@ -763,6 +763,16 @@ Contracts are validated against:
 
 ---
 
+---
+
+## Related Documentation
+
+- [PII Handling Guide](./pii_handling.md) - PII detection integration patterns
+- [Stub Protocols](./stub_protocols.md) - Compatibility layer and migration path
+- [Performance Testing](./PERFORMANCE_TESTING.md) - Performance benchmarks and targets
+
+---
+
 ## Version History
 
 | Version | Date | Changes |

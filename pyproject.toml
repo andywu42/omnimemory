@@ -62,8 +62,11 @@ psutil = "^7.0.0"
 aiohttp = "^3.12.15"
 
 [tool.poetry.group.dev.dependencies]
-# NOTE: omnibase-infra can be added once published to PyPI:
-#   poetry add --group dev omnibase-infra
+# Handler reuse infrastructure from omnibase_infra
+# Provides: HandlerDb, HandlerQdrant, HandlerFileSystem, HandlerGraph, HandlerHttp, etc.
+# See docs/handler_reuse_matrix.md for complete handler mapping
+# NOTE: Uncomment when omnibase-infra is published to PyPI:
+# omnibase-infra = "^0.1.0"
 # structlog version constraint (^23.3.0) is compatible with omnibase-infra (^23.2.0)
 
 # Testing framework

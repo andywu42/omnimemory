@@ -7,8 +7,12 @@ that integrate with NodeResult for consistent error handling across the system.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from uuid import UUID
+
+# Type alias for field values in validation errors
+# Supports common field types that can fail validation
+FieldValueType = Union[str, int, float, bool, bytes, list[object], dict[str, object], None]
 
 # Use local compatibility stub until omnibase_core provides OnexError
 try:
@@ -275,12 +279,12 @@ class OmniMemoryError(BaseOnexError):
 
 class ValidationError(OmniMemoryError):
     """Exception for input validation errors."""
-    
+
     def __init__(
         self,
         message: str,
         field_name: Optional[str] = None,
-        field_value: Optional[Any] = None,
+        field_value: Optional[FieldValueType] = None,
         validation_rule: Optional[str] = None,
         **kwargs,
     ):

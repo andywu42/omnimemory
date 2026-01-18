@@ -16,24 +16,42 @@ __all__ = [
 
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
 
 class PIIType(str, Enum):
-    """Types of PII that can be detected."""
+    """Types of PII that can be detected.
+
+    Note: Not all types have detection patterns implemented. See implementation
+    status below:
+
+    Implemented:
+    - EMAIL: Regex-based email detection
+    - PHONE: US/International phone number patterns
+    - SSN: Social Security Number patterns with validation
+    - CREDIT_CARD: Major card formats (Visa, MC, Amex, Discover)
+    - IP_ADDRESS: IPv4 and IPv6 patterns
+    - API_KEY: Common API key formats (OpenAI, GitHub, Google, AWS)
+    - PASSWORD_HASH: Password field detection
+
+    TODO - Needs Implementation:
+    - URL: Web URL pattern detection (requires URL validation patterns)
+    - PERSON_NAME: Dictionary-based + NLP detection (requires expanded name database)
+    - ADDRESS: Physical address detection (requires geocoding or NLP integration)
+    """
 
     EMAIL = "email"
     PHONE = "phone"
     SSN = "ssn"
     CREDIT_CARD = "credit_card"
     IP_ADDRESS = "ip_address"
-    URL = "url"
+    URL = "url"  # TODO: Implement URL detection patterns
     API_KEY = "api_key"
     PASSWORD_HASH = "password_hash"
-    PERSON_NAME = "person_name"
-    ADDRESS = "address"
+    PERSON_NAME = "person_name"  # TODO: Implement dictionary-based + NLP name detection
+    ADDRESS = "address"  # TODO: Implement address detection with geocoding/NLP
 
 
 class PIIMatch(BaseModel):
@@ -122,7 +140,16 @@ class PIIDetector:
         return rf'\b{invalid_areas}{area_code}{invalid_group}{group_code}{invalid_serial}{serial_code}\b'
 
     def _initialize_patterns(self) -> Dict[PIIType, List[PIIPatternConfig]]:
-        """Initialize regex patterns for different PII types using configuration."""
+        """Initialize regex patterns for different PII types using configuration.
+
+        Note: The following PIIType values do NOT have patterns implemented:
+        - PIIType.URL: TODO - Add URL validation patterns
+        - PIIType.PERSON_NAME: TODO - Add dictionary-based name matching
+        - PIIType.ADDRESS: TODO - Add address pattern detection
+
+        These types are defined in PIIType for future extensibility but will
+        not match any content until patterns are added.
+        """
         return {
             PIIType.EMAIL: [
                 PIIPatternConfig(
@@ -218,8 +245,17 @@ class PIIDetector:
         }
 
     def _load_common_names(self) -> Set[str]:
-        """Load common first and last names for person name detection."""
-        # In a production system, this would load from a more comprehensive database
+        """Load common first and last names for person name detection.
+
+        TODO: This name database is loaded but not actively used for detection.
+        To enable PERSON_NAME detection:
+        1. Add PIIType.PERSON_NAME patterns to _initialize_patterns()
+        2. Or implement context-aware NLP-based name detection
+        3. Consider loading from a comprehensive name database file
+
+        In a production system, this would load from a more comprehensive database
+        such as the US Census Bureau name frequency lists.
+        """
         return {
             "john", "jane", "michael", "sarah", "david", "jennifer", "robert", "lisa",
             "smith", "johnson", "williams", "brown", "jones", "garcia", "miller", "davis"

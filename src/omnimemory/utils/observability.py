@@ -20,10 +20,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar
+from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar, Union
 
 # Type variable for generic function types
 F = TypeVar('F', bound=Callable[..., object])
+
+# Type alias for metadata values - supports common serializable types
+# This replaces Any with explicit types for type safety
+MetadataValue = Union[str, int, float, bool, None]
 
 from pydantic import BaseModel, Field
 
@@ -54,21 +58,28 @@ def validate_correlation_id(correlation_id: str) -> bool:
     return re.match(pattern, correlation_id) is not None
 
 
-def sanitize_metadata_value(value: Any) -> Any:
+def sanitize_metadata_value(value: object) -> MetadataValue:
     """
     Sanitize metadata values to prevent injection attacks.
 
+    Converts arbitrary objects to safe serializable types (str, int, float, bool, None).
+
     Args:
-        value: Value to sanitize
+        value: Value to sanitize (accepts any object for flexibility)
 
     Returns:
-        Sanitized value
+        Sanitized value as one of the safe MetadataValue types
     """
     if isinstance(value, str):
         # Remove potential injection patterns and limit length
         sanitized = re.sub(r'[<>"\'\\\n\r\t]', '', value)
         return sanitized[:1000]  # Limit string length
-    elif isinstance(value, (int, float, bool)):
+    elif isinstance(value, bool):
+        # Check bool before int since bool is a subclass of int
+        return value
+    elif isinstance(value, int):
+        return value
+    elif isinstance(value, float):
         return value
     elif value is None:
         return None

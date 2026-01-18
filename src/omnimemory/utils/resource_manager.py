@@ -27,7 +27,7 @@ import time
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 import structlog
@@ -74,7 +74,7 @@ class CircuitBreakerStats:
     failure_count: int = 0
     success_count: int = 0
     last_failure_time: Optional[datetime] = None
-    state_changed_at: datetime = field(default_factory=datetime.now)
+    state_changed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     total_calls: int = 0
     total_timeouts: int = 0
 
@@ -149,13 +149,13 @@ class AsyncCircuitBreaker:
         jitter = random.uniform(-jitter_range, jitter_range)
         effective_timeout = base_timeout + jitter
 
-        time_since_failure = datetime.now() - self.stats.last_failure_time
+        time_since_failure = datetime.now(timezone.utc) - self.stats.last_failure_time
         return time_since_failure.total_seconds() >= effective_timeout
 
     async def _transition_to_half_open(self):
         """Transition circuit breaker to half-open state."""
         self.state = CircuitState.HALF_OPEN
-        self.stats.state_changed_at = datetime.now()
+        self.stats.state_changed_at = datetime.now(timezone.utc)
         self.stats.success_count = 0
 
         logger.info(
@@ -182,7 +182,7 @@ class AsyncCircuitBreaker:
         async with self._lock:
             self.stats.total_calls += 1
             self.stats.failure_count += 1
-            self.stats.last_failure_time = datetime.now()
+            self.stats.last_failure_time = datetime.now(timezone.utc)
 
             if (self.state == CircuitState.CLOSED and
                 self.stats.failure_count >= self.config.failure_threshold):
@@ -193,7 +193,7 @@ class AsyncCircuitBreaker:
     async def _transition_to_closed(self):
         """Transition circuit breaker to closed state."""
         self.state = CircuitState.CLOSED
-        self.stats.state_changed_at = datetime.now()
+        self.stats.state_changed_at = datetime.now(timezone.utc)
         self.stats.failure_count = 0
 
         logger.info(
@@ -206,7 +206,7 @@ class AsyncCircuitBreaker:
     async def _transition_to_open(self):
         """Transition circuit breaker to open state."""
         self.state = CircuitState.OPEN
-        self.stats.state_changed_at = datetime.now()
+        self.stats.state_changed_at = datetime.now(timezone.utc)
 
         logger.warning(
             "circuit_breaker_state_change",
@@ -415,7 +415,7 @@ class ResourceHandle:
     resource: Any
     resource_type: ResourceType
     status: ResourceStatus = ResourceStatus.ACTIVE
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     ttl: Optional[float] = None
     _context: Dict[str, Any] = field(default_factory=dict)
 
@@ -444,7 +444,7 @@ class ResourceHandle:
         if self.ttl is None:
             return False
 
-        elapsed = (datetime.now() - self.created_at).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self.created_at).total_seconds()
         return elapsed >= self.ttl
 
     def set_context(self, key: str, value: Any) -> None:
@@ -585,15 +585,17 @@ class ResourcePool:
                             f"Failed to create {self.resource_type.value} resource"
                         )
 
+                # Clear event inside lock to prevent missed wakeups
+                # This must happen before releasing the lock so we don't miss
+                # a signal from release() that happens between lock release and wait
+                self._available_event.clear()
+
             # Check timeout
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 raise ResourceTimeoutError(
                     f"Timeout acquiring {self.resource_type.value} resource"
                 )
-
-            # Wait for a resource to become available
-            self._available_event.clear()
             try:
                 await asyncio.wait_for(
                     self._available_event.wait(),

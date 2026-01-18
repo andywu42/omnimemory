@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Callable, Awaitable, Union
 import psutil
@@ -173,7 +173,7 @@ class HealthCheckResult(BaseModel):
     config: HealthCheckConfig = Field(description="Health check configuration")
     status: HealthStatus = Field(description="Health status")
     latency_ms: float = Field(description="Check latency in milliseconds")
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     error_message: Optional[str] = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
@@ -506,7 +506,7 @@ class HealthCheckManager:
             response = ModelHealthResponse(
                 status=overall_status.value,
                 latency_ms=total_latency_ms,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 resource_usage=resource_metrics,
                 dependencies=dependencies,
                 uptime_seconds=uptime_seconds,
@@ -663,7 +663,7 @@ async def create_pinecone_health_check(api_key: str, environment: str) -> Callab
 
 # Type alias for health check result values - replaces Dict[str, Any]
 HealthCheckResultValue = Union[str, int, float, bool, None]
-HealthCheckResult = Dict[str, HealthCheckResultValue]
+HealthCheckResultDict = Dict[str, HealthCheckResultValue]
 
 
 # === TEST-COMPATIBLE INTERFACES ===
@@ -671,13 +671,23 @@ HealthCheckResult = Dict[str, HealthCheckResultValue]
 
 
 class HealthCheckDetails(BaseModel):
-    """Strongly typed health check details."""
+    """Strongly typed health check details with rate-limit and circuit state tracking."""
     message: Optional[str] = Field(default=None, description="Human-readable status message")
     error: Optional[str] = Field(default=None, description="Error message if unhealthy")
     version: Optional[str] = Field(default=None, description="Service version")
     connection_url: Optional[str] = Field(default=None, description="Connection URL")
     last_check: Optional[str] = Field(default=None, description="Last check timestamp")
     latency_ms: Optional[float] = Field(default=None, description="Latency in milliseconds")
+    # Rate limiting state
+    rate_limit_active: bool = Field(default=False, description="Whether rate limiting is currently active")
+    rate_limit_remaining: Optional[int] = Field(default=None, description="Remaining requests in current window")
+    rate_limit_reset_time: Optional[float] = Field(default=None, description="Time when rate limit resets (epoch)")
+    # Circuit breaker state
+    circuit_open: bool = Field(default=False, description="Whether circuit breaker is open")
+    circuit_state: Optional[str] = Field(default=None, description="Current circuit breaker state")
+    circuit_failure_count: Optional[int] = Field(default=None, description="Number of failures recorded")
+    # Result details
+    result_type: Optional[str] = Field(default=None, description="Type of result (success/error/timeout)")
     extra: Dict[str, str] = Field(default_factory=dict, description="Additional string details")
 
 
@@ -700,7 +710,7 @@ class SystemHealth(BaseModel):
         default_factory=dict,
         description="Health status of individual resources"
     )
-    timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of health check")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of health check")
 
     class Config:
         """Pydantic config."""
@@ -784,10 +794,18 @@ class HealthManager:
                 t for t in self._check_counts[name] if t > cutoff
             ]
             if len(self._check_counts[name]) >= self.max_checks_per_window:
+                remaining = 0
+                reset_time = cutoff + self.rate_limit_window
                 return ResourceHealthCheck(
                     status=HealthStatus.RATE_LIMITED,
                     response_time=0.0,
-                    details={"reason": "Rate limit exceeded"},
+                    details=HealthCheckDetails(
+                        message="Rate limit exceeded",
+                        rate_limit_active=True,
+                        rate_limit_remaining=remaining,
+                        rate_limit_reset_time=reset_time,
+                        result_type="rate_limited"
+                    ),
                     correlation_id=correlation_id
                 )
             self._check_counts[name].append(current_time)
@@ -798,10 +816,17 @@ class HealthManager:
             # Import here to avoid circular dependency
             from .concurrency import CircuitBreakerState
             if hasattr(cb, 'state') and cb.state == CircuitBreakerState.OPEN:
+                failure_count = getattr(cb, 'failure_count', None)
                 return ResourceHealthCheck(
                     status=HealthStatus.CIRCUIT_OPEN,
                     response_time=0.0,
-                    details={"reason": "Circuit breaker is open"},
+                    details=HealthCheckDetails(
+                        message="Circuit breaker is open",
+                        circuit_open=True,
+                        circuit_state=cb.state.value if hasattr(cb.state, 'value') else str(cb.state),
+                        circuit_failure_count=failure_count,
+                        result_type="circuit_open"
+                    ),
                     correlation_id=correlation_id
                 )
 
@@ -809,7 +834,10 @@ class HealthManager:
             return ResourceHealthCheck(
                 status=HealthStatus.UNKNOWN,
                 response_time=0.0,
-                details={"error": f"Health check not registered: {name}"},
+                details=HealthCheckDetails(
+                    error=f"Health check not registered: {name}",
+                    result_type="unknown"
+                ),
                 correlation_id=correlation_id
             )
 
@@ -829,10 +857,31 @@ class HealthManager:
                 if hasattr(cb, 'record_success'):
                     cb.record_success()
 
+            # Convert result to HealthCheckDetails
+            if isinstance(result, HealthCheckDetails):
+                details = result
+            elif isinstance(result, dict):
+                # Extract known fields from dict, put rest in extra
+                known_fields = {'message', 'error', 'version', 'connection_url', 'last_check', 'latency_ms'}
+                extra = {k: str(v) for k, v in result.items() if k not in known_fields}
+                details = HealthCheckDetails(
+                    message=result.get('message') or result.get('status'),
+                    version=result.get('version'),
+                    latency_ms=response_time * 1000,
+                    result_type="success",
+                    extra=extra
+                )
+            else:
+                details = HealthCheckDetails(
+                    message=str(result),
+                    latency_ms=response_time * 1000,
+                    result_type="success"
+                )
+
             return ResourceHealthCheck(
                 status=HealthStatus.HEALTHY,
                 response_time=response_time,
-                details=result if isinstance(result, dict) else {"result": str(result)},
+                details=details,
                 correlation_id=correlation_id
             )
 
@@ -841,7 +890,11 @@ class HealthManager:
             return ResourceHealthCheck(
                 status=HealthStatus.TIMEOUT,
                 response_time=response_time,
-                details={"error": f"Health check timed out after {self.default_timeout}s"},
+                details=HealthCheckDetails(
+                    error=f"Health check timed out after {self.default_timeout}s",
+                    latency_ms=response_time * 1000,
+                    result_type="timeout"
+                ),
                 correlation_id=correlation_id
             )
 
@@ -857,7 +910,11 @@ class HealthManager:
             return ResourceHealthCheck(
                 status=HealthStatus.UNHEALTHY,
                 response_time=response_time,
-                details={"error": _sanitize_error(e)},
+                details=HealthCheckDetails(
+                    error=_sanitize_error(e),
+                    latency_ms=response_time * 1000,
+                    result_type="error"
+                ),
                 correlation_id=correlation_id
             )
 
@@ -882,7 +939,10 @@ class HealthManager:
                 result if isinstance(result, ResourceHealthCheck)
                 else ResourceHealthCheck(
                     status=HealthStatus.UNHEALTHY,
-                    details={"error": _sanitize_error(result) if isinstance(result, Exception) else "Unknown error"}
+                    details=HealthCheckDetails(
+                        error=_sanitize_error(result) if isinstance(result, Exception) else "Unknown error",
+                        result_type="error"
+                    )
                 )
             )
             for name, result in zip(names, results)
@@ -970,28 +1030,17 @@ class HealthManager:
         """
         Sanitize error message to remove sensitive information.
 
+        Uses the shared centralized error sanitizer for consistent security handling
+        across all modules.
+
         Args:
             error: Exception to sanitize
 
         Returns:
             Sanitized error message
         """
-        import re
-
-        error_str = str(error)
-        # Patterns to redact
-        patterns = [
-            (r'password=[^\s,]+', 'password=[REDACTED]'),
-            (r'token=[^\s,]+', 'token=[REDACTED]'),
-            (r'api_key=[^\s,]+', 'api_key=[REDACTED]'),
-            (r'secret=[^\s,]+', 'secret=[REDACTED]'),
-        ]
-
-        sanitized = error_str
-        for pattern, replacement in patterns:
-            sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
-
-        return sanitized
+        # Delegate to the module-level function which uses the shared error_sanitizer
+        return _sanitize_error(error)
 
     async def cleanup(self) -> None:
         """Clean up all health manager resources."""

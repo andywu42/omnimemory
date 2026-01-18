@@ -8,9 +8,9 @@ This module provides models for tracking migration progress across the system:
 - Batch processing support
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import cached_property
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, PrivateAttr, computed_field
@@ -80,8 +80,8 @@ class MigrationProgressMetrics(BaseModel):
     total_size_bytes: Optional[int] = Field(default=None, description="Total size of all files")
     processed_size_bytes: int = Field(default=0, description="Size of processed files")
 
-    start_time: datetime = Field(default_factory=datetime.now, description="Migration start time")
-    last_update_time: datetime = Field(default_factory=datetime.now, description="Last update time")
+    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Migration start time")
+    last_update_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update time")
     estimated_completion: Optional[datetime] = Field(default=None, description="Estimated completion time")
 
     files_per_second: float = Field(default=0.0, description="Processing rate in files per second")
@@ -165,14 +165,14 @@ class MigrationProgressMetrics(BaseModel):
         if self._cache_invalidated_at is None:
             return False
 
-        cache_age = (datetime.now() - self._cache_invalidated_at).total_seconds()
+        cache_age = (datetime.now(timezone.utc) - self._cache_invalidated_at).total_seconds()
         return cache_age < self._cache_ttl_seconds
 
     def invalidate_cache(self) -> None:
         """Manually invalidate the metrics cache."""
         self._cached_completion_percentage = None
         self._cached_success_rate = None
-        self._cache_invalidated_at = datetime.now()
+        self._cache_invalidated_at = datetime.now(timezone.utc)
 
 class MigrationProgressTracker(BaseModel):
     """
@@ -196,8 +196,8 @@ class MigrationProgressTracker(BaseModel):
     error_summary: Dict[str, int] = Field(default_factory=dict, description="Error count by type")
     recovery_attempts: int = Field(default=0, description="Number of recovery attempts")
 
-    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last update timestamp")
 
     configuration: ModelConfiguration = Field(default_factory=ModelConfiguration, description="Migration configuration")
     metadata: ModelMetadata = Field(default_factory=ModelMetadata, description="Additional metadata")
@@ -235,7 +235,7 @@ class MigrationProgressTracker(BaseModel):
         file_info = self._find_file(file_path)
         if file_info:
             file_info.status = FileProcessingStatus.PROCESSING
-            file_info.start_time = datetime.now()
+            file_info.start_time = datetime.now(timezone.utc)
             file_info.batch_id = batch_id
             self._update_timestamp()
             return True
@@ -245,7 +245,7 @@ class MigrationProgressTracker(BaseModel):
         """Mark a file as completed processing."""
         file_info = self._find_file(file_path)
         if file_info:
-            file_info.end_time = datetime.now()
+            file_info.end_time = datetime.now(timezone.utc)
 
             if success:
                 file_info.status = FileProcessingStatus.COMPLETED
@@ -279,7 +279,7 @@ class MigrationProgressTracker(BaseModel):
         batch_metrics = BatchProcessingMetrics(
             batch_id=batch_id,
             batch_size=batch_size,
-            start_time=datetime.now()
+            start_time=datetime.now(timezone.utc)
         )
         self.metrics.batch_metrics.append(batch_metrics)
         self.metrics.current_batch = batch_id
@@ -290,7 +290,7 @@ class MigrationProgressTracker(BaseModel):
         """Complete batch processing."""
         batch_metrics = self._find_batch(batch_id)
         if batch_metrics:
-            batch_metrics.end_time = datetime.now()
+            batch_metrics.end_time = datetime.now(timezone.utc)
             if self.metrics.current_batch == batch_id:
                 self.metrics.current_batch = None
             self._update_timestamp()
@@ -336,13 +336,13 @@ class MigrationProgressTracker(BaseModel):
         # Invalidate cache since metrics are changing
         self.metrics.invalidate_cache()
 
-        self.metrics.last_update_time = datetime.now()
+        self.metrics.last_update_time = datetime.now(timezone.utc)
         self.metrics.update_processing_rates()
         self.metrics.estimate_completion_time()
 
     def _update_timestamp(self):
         """Update the last modified timestamp."""
-        self.updated_at = datetime.now()
+        self.updated_at = datetime.now(timezone.utc)
 
     def retry_failed_files(self, max_retries: int = 3) -> List[FileProcessingInfo]:
         """Get list of failed files that can be retried."""

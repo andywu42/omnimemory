@@ -35,12 +35,8 @@ what implementations are pending.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
-
-if TYPE_CHECKING:
-    from typing import Generator
 
 # Core 8 node names - shared across node-related test modules
 CORE_8_NODES: list[str] = [
@@ -86,19 +82,7 @@ def implemented_nodes(nodes_dir: Path) -> list[str]:
     not Python classes. A node is considered "implemented" when it has
     a valid contract.yaml file.
 
-    Returns:
-        List of node names with existing contract.yaml files
-    """
-    return [
-        node_name
-        for node_name in CORE_8_NODES
-        if (nodes_dir / node_name / "contract.yaml").exists()
-    ]
-
-
-@pytest.fixture
-def nodes_with_contracts(nodes_dir: Path) -> list[str]:
-    """Provide list of nodes that have contract.yaml implemented.
+    Aliases: nodes_with_contracts (deprecated, use this fixture instead)
 
     Returns:
         List of node names with existing contract.yaml files
@@ -108,6 +92,10 @@ def nodes_with_contracts(nodes_dir: Path) -> list[str]:
         for node_name in CORE_8_NODES
         if (nodes_dir / node_name / "contract.yaml").exists()
     ]
+
+
+# Alias for backwards compatibility - prefer implemented_nodes
+nodes_with_contracts = implemented_nodes
 
 
 def pytest_configure(config: pytest.Config) -> None:

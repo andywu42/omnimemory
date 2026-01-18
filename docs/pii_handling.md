@@ -12,18 +12,23 @@ OmniMemory includes a comprehensive PII (Personally Identifiable Information) de
 
 The `PIIType` enum defines all detectable PII categories:
 
-| PII Type | Description | Pattern Examples | Confidence |
-|----------|-------------|------------------|------------|
-| `EMAIL` | Email addresses | `user@example.com` | 0.95 |
-| `PHONE` | Phone numbers (US/International) | `+1-555-123-4567`, `(555) 123-4567` | 0.75-0.90 |
-| `SSN` | Social Security Numbers | `123-45-6789`, `123456789` | 0.75-0.98 |
-| `CREDIT_CARD` | Credit card numbers (Visa, MC, Amex, Discover) | `4111111111111111` | 0.90 |
-| `IP_ADDRESS` | IPv4 and IPv6 addresses | `192.168.1.1`, `2001:0db8:...` | 0.90 |
-| `URL` | Web URLs | (Pattern-based detection) | - |
-| `API_KEY` | API keys and tokens | `sk-...`, `ghp_...`, `AIza...`, `AWS...` | 0.90-0.98 |
-| `PASSWORD_HASH` | Password fields and hashes | `password=...` | 0.90 |
-| `PERSON_NAME` | Common person names | (Dictionary-based detection) | - |
-| `ADDRESS` | Physical addresses | (Pattern-based detection) | - |
+| PII Type | Description | Pattern Examples | Confidence | Status |
+|----------|-------------|------------------|------------|--------|
+| `EMAIL` | Email addresses | `user@example.com` | 0.95 | Implemented |
+| `PHONE` | Phone numbers (US/International) | `+1-555-123-4567`, `(555) 123-4567` | 0.75-0.90 | Implemented |
+| `SSN` | Social Security Numbers | `123-45-6789`, `123456789` | 0.75-0.98 | Implemented |
+| `CREDIT_CARD` | Credit card numbers (Visa, MC, Amex, Discover) | `4111111111111111` | 0.90 | Implemented |
+| `IP_ADDRESS` | IPv4 and IPv6 addresses | `192.168.1.1`, `2001:0db8:...` | 0.90 | Implemented |
+| `URL` | Web URLs | `https://example.com` | - | **Not Implemented** |
+| `API_KEY` | API keys and tokens | `sk-...`, `ghp_...`, `AIza...`, `AWS...` | 0.90-0.98 | Implemented |
+| `PASSWORD_HASH` | Password fields and hashes | `password=...` | 0.90 | Implemented |
+| `PERSON_NAME` | Common person names | `John Smith` | - | **Not Implemented** |
+| `ADDRESS` | Physical addresses | `123 Main St` | - | **Not Implemented** |
+
+> **Note**: The following PII types are defined in the `PIIType` enum for future extensibility but do not yet have detection patterns implemented:
+> - `URL` - Requires URL validation patterns
+> - `PERSON_NAME` - Requires dictionary-based + NLP detection with expanded name database
+> - `ADDRESS` - Requires geocoding or NLP integration for accurate detection
 
 ### API Key Detection
 
@@ -66,13 +71,15 @@ detector = PIIDetector(config=config)
 The detection result provides comprehensive information:
 
 ```python
-@dataclass
-class PIIDetectionResult:
-    has_pii: bool                    # Whether any PII was detected
-    matches: List[PIIMatch]          # List of all PII matches found
-    sanitized_content: str           # Content with PII masked/removed
-    pii_types_detected: Set[PIIType] # Types of PII found
-    scan_duration_ms: float          # Scan performance metric
+from pydantic import BaseModel, Field
+
+class PIIDetectionResult(BaseModel):
+    """Result of PII detection scan."""
+    has_pii: bool = Field(description="Whether any PII was detected")
+    matches: List[PIIMatch] = Field(default_factory=list, description="List of all PII matches found")
+    sanitized_content: str = Field(description="Content with PII masked/removed")
+    pii_types_detected: Set[PIIType] = Field(default_factory=set, description="Types of PII found")
+    scan_duration_ms: float = Field(description="Scan performance metric")
 ```
 
 ### PIIMatch
@@ -80,14 +87,16 @@ class PIIDetectionResult:
 Each detected PII item includes:
 
 ```python
-@dataclass
-class PIIMatch:
-    pii_type: PIIType      # Type of PII (EMAIL, SSN, etc.)
-    value: str             # The detected PII value
-    start_index: int       # Start position in content
-    end_index: int         # End position in content
-    confidence: float      # Confidence score (0.0-1.0)
-    masked_value: str      # Masked version for sanitization
+from pydantic import BaseModel, Field
+
+class PIIMatch(BaseModel):
+    """A detected PII match in content."""
+    pii_type: PIIType = Field(description="Type of PII (EMAIL, SSN, etc.)")
+    value: str = Field(description="The detected PII value (may be masked)")
+    start_index: int = Field(description="Start position in content")
+    end_index: int = Field(description="End position in content")
+    confidence: float = Field(description="Confidence score (0.0-1.0)")
+    masked_value: str = Field(description="Masked version for sanitization")
 ```
 
 ---
@@ -771,6 +780,7 @@ class PerformanceTrackedDetector:
 ## Related Documentation
 
 - [Handler Reuse Matrix](./handler_reuse_matrix.md) - Handler integration patterns
+- [Stub Protocols](./stub_protocols.md) - Compatibility layer and incomplete feature tracking
 - [Memory Storage Node](../src/omnimemory/nodes/) - Node implementations
 
 ---
