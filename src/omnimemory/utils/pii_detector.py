@@ -10,12 +10,13 @@ __all__ = [
     "PIIMatch",
     "PIIDetectionResult",
     "PIIDetectorConfig",
+    "PIIPatternConfig",
     "PIIDetector"
 ]
 
 import re
 from enum import Enum
-from typing import Any, Dict, List, Set, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -75,6 +76,14 @@ class PIIDetectorConfig(BaseModel):
     context_window_size: int = Field(default=50, ge=10, le=200, description="Context analysis window size")
 
 
+class PIIPatternConfig(BaseModel):
+    """Strongly typed PII pattern configuration replacing Dict[str, Any]."""
+
+    pattern: str = Field(description="Regex pattern for PII detection")
+    confidence: float = Field(ge=0.0, le=1.0, description="Base confidence score for matches")
+    mask_template: str = Field(description="Template for masking detected values")
+
+
 class PIIDetector:
     """Advanced PII detection with configurable patterns and sensitivity levels."""
 
@@ -112,99 +121,99 @@ class PIIDetector:
         # Combine with word boundaries
         return rf'\b{invalid_areas}{area_code}{invalid_group}{group_code}{invalid_serial}{serial_code}\b'
 
-    def _initialize_patterns(self) -> Dict[PIIType, List[Dict[str, Any]]]:
+    def _initialize_patterns(self) -> Dict[PIIType, List[PIIPatternConfig]]:
         """Initialize regex patterns for different PII types using configuration."""
         return {
             PIIType.EMAIL: [
-                {
-                    "pattern": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                    "confidence": self.config.medium_high_confidence,
-                    "mask_template": "***@***.***"
-                }
+                PIIPatternConfig(
+                    pattern=r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+                    confidence=self.config.medium_high_confidence,
+                    mask_template="***@***.***"
+                )
             ],
             PIIType.PHONE: [
-                {
-                    "pattern": r'(\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "***-***-****"
-                },
-                {
-                    "pattern": r'\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}',
-                    "confidence": self.config.reduced_confidence,
-                    "mask_template": "+***-***-***"
-                }
+                PIIPatternConfig(
+                    pattern=r'(\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
+                    confidence=self.config.medium_confidence,
+                    mask_template="***-***-****"
+                ),
+                PIIPatternConfig(
+                    pattern=r'\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}',
+                    confidence=self.config.reduced_confidence,
+                    mask_template="+***-***-***"
+                )
             ],
             PIIType.SSN: [
-                {
-                    "pattern": r'\b\d{3}-\d{2}-\d{4}\b',
-                    "confidence": self.config.high_confidence,
-                    "mask_template": "***-**-****"
-                },
-                {
+                PIIPatternConfig(
+                    pattern=r'\b\d{3}-\d{2}-\d{4}\b',
+                    confidence=self.config.high_confidence,
+                    mask_template="***-**-****"
+                ),
+                PIIPatternConfig(
                     # Improved SSN validation: excludes invalid area codes and sequences
                     # Broken down for readability: (?!invalid_areas)AAA(?!00)GG(?!0000)SSSS
-                    "pattern": self._build_ssn_validation_pattern(),
-                    "confidence": self.config.reduced_confidence,
-                    "mask_template": "*********"
-                }
+                    pattern=self._build_ssn_validation_pattern(),
+                    confidence=self.config.reduced_confidence,
+                    mask_template="*********"
+                )
             ],
             PIIType.CREDIT_CARD: [
-                {
-                    "pattern": r'\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b|\b6011\d{12}\b',
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "****-****-****-****"
-                }
+                PIIPatternConfig(
+                    pattern=r'\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b|\b6011\d{12}\b',
+                    confidence=self.config.medium_confidence,
+                    mask_template="****-****-****-****"
+                )
             ],
             PIIType.IP_ADDRESS: [
-                {
-                    "pattern": r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "***.***.***.***"
-                },
-                {
-                    "pattern": r'\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){7}\b',  # IPv6
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "****:****:****:****"
-                }
+                PIIPatternConfig(
+                    pattern=r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
+                    confidence=self.config.medium_confidence,
+                    mask_template="***.***.***.***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){7}\b',  # IPv6
+                    confidence=self.config.medium_confidence,
+                    mask_template="****:****:****:****"
+                )
             ],
             PIIType.API_KEY: [
-                {
-                    "pattern": r'[Aa]pi[_-]?[Kk]ey["\s]*[:=]["\s]*([A-Za-z0-9\-_]{16,})',
-                    "confidence": self.config.medium_high_confidence,
-                    "mask_template": "api_key=***REDACTED***"
-                },
-                {
-                    "pattern": r'[Tt]oken["\s]*[:=]["\s]*([A-Za-z0-9\-_]{20,})',
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "token=***REDACTED***"
-                },
-                {
-                    "pattern": r'sk-[A-Za-z0-9]{32,}',  # OpenAI API keys
-                    "confidence": self.config.high_confidence,
-                    "mask_template": "sk-***REDACTED***"
-                },
-                {
-                    "pattern": r'ghp_[A-Za-z0-9]{36}',  # GitHub personal access tokens
-                    "confidence": self.config.high_confidence,
-                    "mask_template": "ghp_***REDACTED***"
-                },
-                {
-                    "pattern": r'AIza[A-Za-z0-9\-_]{35}',  # Google API keys
-                    "confidence": self.config.high_confidence,
-                    "mask_template": "AIza***REDACTED***"
-                },
-                {
-                    "pattern": r'AWS[A-Z0-9]{16,}',  # AWS access keys
-                    "confidence": self.config.medium_high_confidence,
-                    "mask_template": "AWS***REDACTED***"
-                }
+                PIIPatternConfig(
+                    pattern=r'[Aa]pi[_-]?[Kk]ey["\s]*[:=]["\s]*([A-Za-z0-9\-_]{16,})',
+                    confidence=self.config.medium_high_confidence,
+                    mask_template="api_key=***REDACTED***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'[Tt]oken["\s]*[:=]["\s]*([A-Za-z0-9\-_]{20,})',
+                    confidence=self.config.medium_confidence,
+                    mask_template="token=***REDACTED***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'sk-[A-Za-z0-9]{32,}',  # OpenAI API keys
+                    confidence=self.config.high_confidence,
+                    mask_template="sk-***REDACTED***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'ghp_[A-Za-z0-9]{36}',  # GitHub personal access tokens
+                    confidence=self.config.high_confidence,
+                    mask_template="ghp_***REDACTED***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'AIza[A-Za-z0-9\-_]{35}',  # Google API keys
+                    confidence=self.config.high_confidence,
+                    mask_template="AIza***REDACTED***"
+                ),
+                PIIPatternConfig(
+                    pattern=r'AWS[A-Z0-9]{16,}',  # AWS access keys
+                    confidence=self.config.medium_high_confidence,
+                    mask_template="AWS***REDACTED***"
+                )
             ],
             PIIType.PASSWORD_HASH: [
-                {
-                    "pattern": r'[Pp]assword["\s]*[:=]["\s]*([A-Za-z0-9\-_\$\.\/]{20,})',
-                    "confidence": self.config.medium_confidence,
-                    "mask_template": "password=***REDACTED***"
-                }
+                PIIPatternConfig(
+                    pattern=r'[Pp]assword["\s]*[:=]["\s]*([A-Za-z0-9\-_\$\.\/]{20,})',
+                    confidence=self.config.medium_confidence,
+                    mask_template="password=***REDACTED***"
+                )
             ]
         }
 
@@ -249,9 +258,9 @@ class PIIDetector:
         for pii_type, patterns in self._patterns.items():
             matches_for_type = 0
             for pattern_config in patterns:
-                pattern = pattern_config["pattern"]
-                base_confidence = pattern_config["confidence"]
-                mask_template = pattern_config["mask_template"]
+                pattern = pattern_config.pattern
+                base_confidence = pattern_config.confidence
+                mask_template = pattern_config.mask_template
 
                 # Skip if confidence is below threshold
                 if base_confidence < confidence_threshold:
@@ -301,7 +310,7 @@ class PIIDetector:
         # Sort by start position and confidence
         matches.sort(key=lambda x: (x.start_index, -x.confidence))
 
-        deduplicated = []
+        deduplicated: List[PIIMatch] = []
         for match in matches:
             # Check if this match overlaps with any existing match
             overlap = False

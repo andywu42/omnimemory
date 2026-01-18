@@ -6,6 +6,16 @@ Ensures all node.py files follow the FULLY DECLARATIVE pattern:
 - Exactly one class
 - Only __init__ method
 - Only super().__init__(container) in body
+
+This module uses AST parsing to validate the declarative pattern statically,
+catching violations at test time rather than runtime.
+
+Skip Behavior:
+    Tests skip gracefully when node.py files don't exist during scaffold phase,
+    using pytest.skip() with clear messages about what's missing.
+
+Path Resolution:
+    Uses Path(__file__) for CWD-independent path resolution via conftest.py.
 """
 from __future__ import annotations
 
@@ -16,18 +26,7 @@ from typing import NamedTuple
 import pytest
 from pathlib import Path
 
-CORE_8_NODES = [
-    "memory_storage_effect",
-    "memory_retrieval_effect",
-    "semantic_analyzer_compute",
-    "similarity_compute",
-    "memory_consolidator_reducer",
-    "statistics_reducer",
-    "memory_lifecycle_orchestrator",
-    "agent_coordinator_orchestrator",
-]
-
-NODES_DIR = Path(__file__).parent.parent / "src" / "omnimemory" / "nodes"
+from tests.conftest import CORE_8_NODES, NODES_DIR
 
 
 class NodeValidationResult(NamedTuple):
@@ -115,7 +114,7 @@ def _validate_node_py_cached(filepath_str: str) -> NodeValidationResult:
     if len(non_docstring_stmts) > 1:
         return NodeValidationResult(
             False,
-            f"__init__ should only call super().__init__(), found {len(non_docstring_stmts)} statements"
+            f"__init__ should only call super().__init__(container), found {len(non_docstring_stmts)} statements"
         )
 
     if len(non_docstring_stmts) == 0:

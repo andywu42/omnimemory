@@ -11,14 +11,23 @@ Node Types:
 - COMPUTE: Pure transformations and algorithms
 - REDUCER: Aggregation and state management
 - ORCHESTRATOR: Workflow coordination and routing
+
+Container Support:
+- Uses local ModelOnexContainer from compat layer
+- Will seamlessly support omnibase_core containers when available
+- Auto-injection supported via container.resolve()
 """
 from __future__ import annotations
 
 from abc import ABC
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from omnibase_core.nodes.base import NodeContainer
+# Import local compat container first (always available)
+from ..compat import ModelOnexContainer
+
+# Type alias for container - supports both local and omnibase_core containers
+# At runtime, we use ModelOnexContainer from the compat layer
+# When omnibase_core is available, this can be updated to support both
+ContainerType = ModelOnexContainer
 
 
 class BaseNode(ABC):
@@ -32,24 +41,35 @@ class BaseNode(ABC):
 
     Attributes:
         _container: The ONEX node container for dependency injection
-                   and handler registration.
+                   and handler registration. Supports both local
+                   ModelOnexContainer and future omnibase_core containers.
 
     Example:
         ```python
         class NodeMyEffect(BaseNode):
-            def __init__(self, container: "NodeContainer") -> None:
+            def __init__(self, container: ContainerType) -> None:
                 super().__init__(container)
         ```
     """
 
-    def __init__(self, container: "NodeContainer") -> None:
+    def __init__(self, container: ContainerType) -> None:
         """Initialize the base node with container injection.
 
         Args:
             container: ONEX node container providing dependency injection
-                      and handler registration capabilities.
+                      and handler registration capabilities. Can be either
+                      ModelOnexContainer (local) or NodeContainer (omnibase_core).
         """
         self._container = container
+
+    @property
+    def container(self) -> ContainerType:
+        """Access the container for dependency resolution.
+
+        Returns:
+            The ONEX container for this node.
+        """
+        return self._container
 
 
 class BaseEffectNode(BaseNode):
@@ -110,4 +130,5 @@ __all__ = [
     "BaseComputeNode",
     "BaseReducerNode",
     "BaseOrchestratorNode",
+    "ContainerType",
 ]

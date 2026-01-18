@@ -4,66 +4,73 @@
 
 This document maps existing handlers from `omnibase_infra` to the Core 8 memory nodes in OmniMemory. The goal is to maximize reuse and minimize new code by leveraging proven infrastructure patterns.
 
+## Contract Version
+
+**Document Version**: 1.0.0
+**Last Updated**: 2025-01-18
+**ONEX Compliance**: 4.0
+
 ## Existing Handlers in omnibase_infra
 
-> **Note**: All paths below (e.g., `handlers/`, `runtime/`) are Python module paths within the
-> `omnibase_infra` package. Install via PyPI: `pip install omnibase-infra`.
+> **Note**: All paths below are Python module paths within the `omnibase_infra` package.
+> Install via PyPI: `pip install omnibase-infra`. Handler classes follow the naming
+> convention `Handler<Name>` (e.g., `HandlerDb`, `HandlerQdrant`).
 
 ### Core Infrastructure Handlers (`omnibase_infra.handlers`)
 
-| Handler | Purpose | Key Operations | Reuse Potential |
-|---------|---------|----------------|-----------------|
-| `handler_db.py` | PostgreSQL database | query, execute | HIGH - storage/retrieval |
-| `handler_qdrant.py` | Vector store | store_embedding, query_similar, batch operations | HIGH - semantic search |
-| `handler_filesystem.py` | Secure file I/O | read_file, write_file, list_directory | MEDIUM - persistent storage |
-| `handler_graph.py` | Graph database (Neo4j/Memgraph) | execute_query, create_node, traverse | HIGH - relationship memory |
-| `handler_http.py` | HTTP REST client | GET, POST | MEDIUM - external LLM calls |
-| `handler_consul.py` | Service discovery | register, deregister, health | LOW - infrastructure only |
-| `handler_vault.py` | Secrets management | read, write secrets | LOW - security only |
-| `handler_mcp.py` | MCP protocol | MCP operations | LOW - agent communication |
-| `handler_manifest_persistence.py` | Manifest storage | persist manifests | LOW - specialized |
+| Handler Class | Module | Purpose | Key Operations | Reuse Potential |
+|---------------|--------|---------|----------------|-----------------|
+| `HandlerDb` | `handler_db` | PostgreSQL database | query, execute | HIGH - storage/retrieval |
+| `HandlerQdrant` | `handler_qdrant` | Vector store | store_embedding, query_similar, batch operations | HIGH - semantic search |
+| `HandlerFileSystem` | `handler_filesystem` | Secure file I/O | read_file, write_file, list_directory | MEDIUM - persistent storage |
+| `HandlerGraph` | `handler_graph` | Graph database (Neo4j/Memgraph) | execute_query, create_node, traverse | HIGH - relationship memory |
+| `HandlerHttp` | `handler_http` | HTTP REST client | GET, POST | MEDIUM - external LLM calls |
+| `HandlerConsul` | `handler_consul` | Service discovery | register, deregister, health | LOW - infrastructure only |
+| `HandlerVault` | `handler_vault` | Secrets management | read, write secrets | LOW - security only |
+| `HandlerMcp` | `handler_mcp` | MCP protocol | MCP operations | LOW - agent communication |
+| `HandlerManifestPersistence` | `handler_manifest_persistence` | Manifest storage | persist manifests | LOW - specialized |
 
 ### Registration Storage Handlers (`omnibase_infra.handlers.registration_storage`)
 
-| Handler | Purpose | Reuse Potential |
-|---------|---------|-----------------|
-| `handler_registration_storage_postgres.py` | PostgreSQL registration | MEDIUM - storage patterns |
-| `handler_registration_storage_mock.py` | Mock for testing | HIGH - testing patterns |
+| Handler Class | Module | Purpose | Reuse Potential |
+|---------------|--------|---------|-----------------|
+| `HandlerRegistrationStoragePostgres` | `handler_registration_storage_postgres` | PostgreSQL registration | MEDIUM - storage patterns |
+| `HandlerRegistrationStorageMock` | `handler_registration_storage_mock` | Mock for testing | HIGH - testing patterns |
 
 ### Service Discovery Handlers (`omnibase_infra.handlers.service_discovery`)
 
-| Handler | Purpose | Reuse Potential |
-|---------|---------|-----------------|
-| `handler_service_discovery_consul.py` | Consul discovery | LOW - infrastructure |
-| `handler_service_discovery_mock.py` | Mock discovery | HIGH - testing patterns |
+| Handler Class | Module | Purpose | Reuse Potential |
+|---------------|--------|---------|-----------------|
+| `HandlerServiceDiscoveryConsul` | `handler_service_discovery_consul` | Consul discovery | LOW - infrastructure |
+| `HandlerServiceDiscoveryMock` | `handler_service_discovery_mock` | Mock discovery | HIGH - testing patterns |
 
 ### Node-Specific Handlers (`omnibase_infra.nodes.node_registration_orchestrator.handlers`)
 
-| Handler | Purpose | Reuse Potential |
-|---------|---------|-----------------|
-| `handler_runtime_tick.py` | Timeout detection, lifecycle ticks | HIGH - lifecycle patterns |
-| `handler_node_heartbeat.py` | Heartbeat processing | MEDIUM - health patterns |
-| `handler_node_introspected.py` | Node introspection | LOW - specialized |
-| `handler_node_registration_acked.py` | Registration acknowledgment | LOW - specialized |
+| Handler Class | Module | Purpose | Reuse Potential |
+|---------------|--------|---------|-----------------|
+| `HandlerRuntimeTick` | `handler_runtime_tick` | Timeout detection, lifecycle ticks | HIGH - lifecycle patterns |
+| `HandlerNodeHeartbeat` | `handler_node_heartbeat` | Heartbeat processing | MEDIUM - health patterns |
+| `HandlerNodeIntrospected` | `handler_node_introspected` | Node introspection | LOW - specialized |
+| `HandlerNodeRegistrationAcked` | `handler_node_registration_acked` | Registration acknowledgment | LOW - specialized |
 
 ### Registry Effect Handlers (`omnibase_infra.nodes.node_registry_effect.handlers`)
 
-| Handler | Purpose | Reuse Potential |
-|---------|---------|-----------------|
-| `handler_postgres_upsert.py` | PostgreSQL upsert | HIGH - storage patterns |
-| `handler_postgres_deactivate.py` | PostgreSQL deactivation | MEDIUM - lifecycle |
-| `handler_consul_register.py` | Consul registration | LOW - infrastructure |
-| `handler_consul_deregister.py` | Consul deregistration | LOW - infrastructure |
-| `handler_partial_retry.py` | Retry logic | HIGH - resilience patterns |
+| Handler Class | Module | Purpose | Reuse Potential |
+|---------------|--------|---------|-----------------|
+| `HandlerPostgresUpsert` | `handler_postgres_upsert` | PostgreSQL upsert | HIGH - storage patterns |
+| `HandlerPostgresDeactivate` | `handler_postgres_deactivate` | PostgreSQL deactivation | MEDIUM - lifecycle |
+| `HandlerConsulRegister` | `handler_consul_register` | Consul registration | LOW - infrastructure |
+| `HandlerConsulDeregister` | `handler_consul_deregister` | Consul deregistration | LOW - infrastructure |
+| `HandlerPartialRetry` | `handler_partial_retry` | Retry logic | HIGH - resilience patterns |
 
 ### Runtime Handlers (`omnibase_infra.runtime`)
 
-| Handler | Purpose | Reuse Potential |
-|---------|---------|-----------------|
-| `handler_registry.py` | Handler registry | HIGH - registry patterns |
-| `handler_routing_loader.py` | Route loading | MEDIUM - routing |
-| `handler_contract_source.py` | Contract loading | MEDIUM - contracts |
-| `handler_plugin_loader.py` | Plugin loading | LOW - specialized |
+| Handler Class | Module | Purpose | Reuse Potential |
+|---------------|--------|---------|-----------------|
+| `HandlerRegistry` | `handler_registry` | Handler registry | HIGH - registry patterns |
+| `HandlerRoutingLoader` | `handler_routing_loader` | Route loading | MEDIUM - routing |
+| `HandlerContractSource` | `handler_contract_source` | Contract loading | MEDIUM - contracts |
+| `HandlerPluginLoader` | `handler_plugin_loader` | Plugin loading | LOW - specialized |
 
 ---
 
@@ -71,50 +78,50 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 
 ### EFFECT Nodes
 
-| Memory Node | Operation | Reuse Strategy | Source Handler | Notes |
-|-------------|-----------|----------------|----------------|-------|
-| **memory_storage_effect** | store | DIRECT | `handler_db.py` | PostgreSQL for persistent storage |
-| memory_storage_effect | store_vector | DIRECT | `handler_qdrant.py` | Vector embeddings storage |
-| memory_storage_effect | store_file | DIRECT | `handler_filesystem.py` | File-based persistence |
-| memory_storage_effect | retrieve | DIRECT | `handler_db.py` | SQL queries for retrieval |
-| memory_storage_effect | retrieve_vector | DIRECT | `handler_qdrant.py` | Vector retrieval by ID |
-| **memory_retrieval_effect** | search | DIRECT | `handler_qdrant.py` | `query_similar()` for semantic search |
-| memory_retrieval_effect | search_graph | ADAPTER | `handler_graph.py` | `traverse()` for relationship search |
-| memory_retrieval_effect | search_text | ADAPTER | `handler_db.py` | Full-text SQL search |
+| Memory Node | Operation | Reuse Strategy | Source Handler Class | Notes |
+|-------------|-----------|----------------|---------------------|-------|
+| **memory_storage_effect** | store | DIRECT | `HandlerDb` | PostgreSQL for persistent storage |
+| memory_storage_effect | store_vector | DIRECT | `HandlerQdrant` | Vector embeddings storage |
+| memory_storage_effect | store_file | DIRECT | `HandlerFileSystem` | File-based persistence |
+| memory_storage_effect | retrieve | DIRECT | `HandlerDb` | SQL queries for retrieval |
+| memory_storage_effect | retrieve_vector | DIRECT | `HandlerQdrant` | Vector retrieval by ID |
+| **memory_retrieval_effect** | search | DIRECT | `HandlerQdrant` | `query_similar()` for semantic search |
+| memory_retrieval_effect | search_graph | ADAPTER | `HandlerGraph` | `traverse()` for relationship search |
+| memory_retrieval_effect | search_text | ADAPTER | `HandlerDb` | Full-text SQL search |
 
 ### COMPUTE Nodes
 
-| Memory Node | Operation | Reuse Strategy | Source Handler | Notes |
-|-------------|-----------|----------------|----------------|-------|
+| Memory Node | Operation | Reuse Strategy | Source Handler Class | Notes |
+|-------------|-----------|----------------|---------------------|-------|
 | **semantic_analyzer_compute** | analyze | NEW | - | New handler for semantic analysis |
-| semantic_analyzer_compute | embed | ADAPTER | `handler_http.py` | Call external embedding service |
+| semantic_analyzer_compute | embed | ADAPTER | `HandlerHttp` | Call external embedding service |
 | semantic_analyzer_compute | extract_entities | NEW | - | NLP entity extraction |
-| **similarity_compute** | compare | ADAPTER | `handler_qdrant.py` | Leverage `query_similar()` logic |
+| **similarity_compute** | compare | ADAPTER | `HandlerQdrant` | Leverage `query_similar()` logic |
 | similarity_compute | cosine_distance | NEW | - | Pure compute - no I/O |
 | similarity_compute | euclidean_distance | NEW | - | Pure compute - no I/O |
 
 ### REDUCER Nodes
 
-| Memory Node | Operation | Reuse Strategy | Source Handler | Notes |
-|-------------|-----------|----------------|----------------|-------|
-| **memory_consolidator_reducer** | consolidate | ADAPTER | `handler_db.py` | SQL aggregations + custom logic |
-| memory_consolidator_reducer | deduplicate | ADAPTER | `handler_qdrant.py` | Vector similarity for dedup |
+| Memory Node | Operation | Reuse Strategy | Source Handler Class | Notes |
+|-------------|-----------|----------------|---------------------|-------|
+| **memory_consolidator_reducer** | consolidate | ADAPTER | `HandlerDb` | SQL aggregations + custom logic |
+| memory_consolidator_reducer | deduplicate | ADAPTER | `HandlerQdrant` | Vector similarity for dedup |
 | memory_consolidator_reducer | merge | NEW | - | Memory merging logic |
-| **statistics_reducer** | aggregate | ADAPTER | `handler_db.py` | SQL aggregations (COUNT, SUM, AVG) |
+| **statistics_reducer** | aggregate | ADAPTER | `HandlerDb` | SQL aggregations (COUNT, SUM, AVG) |
 | statistics_reducer | compute_metrics | NEW | - | Memory usage metrics |
 | statistics_reducer | summarize | NEW | - | Statistical summaries |
 
 ### ORCHESTRATOR Nodes
 
-| Memory Node | Operation | Reuse Strategy | Source Handler | Notes |
-|-------------|-----------|----------------|----------------|-------|
-| **memory_lifecycle_orchestrator** | coordinate | ADAPTER | `handler_runtime_tick.py` | Tick-based lifecycle events |
-| memory_lifecycle_orchestrator | expire | ADAPTER | `handler_postgres_deactivate.py` | Deactivation patterns |
+| Memory Node | Operation | Reuse Strategy | Source Handler Class | Notes |
+|-------------|-----------|----------------|---------------------|-------|
+| **memory_lifecycle_orchestrator** | coordinate | ADAPTER | `HandlerRuntimeTick` | Tick-based lifecycle events |
+| memory_lifecycle_orchestrator | expire | ADAPTER | `HandlerPostgresDeactivate` | Deactivation patterns |
 | memory_lifecycle_orchestrator | promote | NEW | - | Memory tier promotion |
-| memory_lifecycle_orchestrator | archive | ADAPTER | `handler_filesystem.py` | Archive to cold storage |
-| **agent_coordinator_orchestrator** | broadcast | ADAPTER | `handler_http.py` | HTTP broadcast to agents |
+| memory_lifecycle_orchestrator | archive | ADAPTER | `HandlerFileSystem` | Archive to cold storage |
+| **agent_coordinator_orchestrator** | broadcast | ADAPTER | `HandlerHttp` | HTTP broadcast to agents |
 | agent_coordinator_orchestrator | subscribe | NEW | - | Subscription management |
-| agent_coordinator_orchestrator | notify | ADAPTER | `handler_http.py` | Webhook notifications |
+| agent_coordinator_orchestrator | notify | ADAPTER | `HandlerHttp` | Webhook notifications |
 
 ---
 
@@ -378,51 +385,51 @@ Before integrating any handler from `omnibase_infra`, verify:
 
 ### High-Priority Reuse (DIRECT)
 
-1. **handler_db.py** - Core storage operations
+1. **`HandlerDb`** (`omnibase_infra.handlers.handler_db`) - Core storage operations
    - Proven asyncpg implementation with connection pooling
    - Circuit breaker pattern already implemented
    - Supports parameterized queries for security
 
-2. **handler_qdrant.py** - Vector operations
+2. **`HandlerQdrant`** (`omnibase_infra.handlers.handler_qdrant`) - Vector operations
    - Full ProtocolVectorStoreHandler implementation
    - Batch operations, metadata filtering, similarity search
    - Health check caching
 
-3. **handler_filesystem.py** - File persistence
+3. **`HandlerFileSystem`** (`omnibase_infra.handlers.handler_filesystem`) - File persistence
    - Path whitelisting for security
    - Size limits to prevent DoS
    - Symlink protection
 
 ### Medium-Priority Adapters (ADAPTER)
 
-1. **handler_graph.py** - Relationship memory
+1. **`HandlerGraph`** (`omnibase_infra.handlers.handler_graph`) - Relationship memory
    - Create memory-specific adapter for graph traversal
    - Useful for "memories related to X" queries
 
-2. **handler_http.py** - External services
+2. **`HandlerHttp`** (`omnibase_infra.handlers.handler_http`) - External services
    - Wrap for LLM embedding calls
    - Wrap for agent broadcast
 
-3. **handler_runtime_tick.py** - Lifecycle patterns
+3. **`HandlerRuntimeTick`** (`omnibase_infra.nodes.node_registration_orchestrator.handlers.handler_runtime_tick`) - Lifecycle patterns
    - Adapt tick detection for memory expiration
    - Reuse projection query patterns
 
 ### New Handlers Required (NEW)
 
-1. **handler_semantic_compute.py** - Pure semantic analysis
+1. **`HandlerSemanticCompute`** (new: `omnimemory.handlers.handler_semantic_compute`) - Pure semantic analysis
    - Entity extraction
    - Topic modeling
    - Sentiment analysis
 
-2. **handler_similarity_compute.py** - Pure vector math
+2. **`HandlerSimilarityCompute`** (new: `omnimemory.handlers.handler_similarity_compute`) - Pure vector math
    - Distance calculations
    - Threshold comparisons
 
-3. **handler_memory_merge.py** - Memory consolidation
+3. **`HandlerMemoryMerge`** (new: `omnimemory.handlers.handler_memory_merge`) - Memory consolidation
    - Deduplication logic
    - Merge strategies
 
-4. **handler_subscription.py** - Agent subscriptions
+4. **`HandlerSubscription`** (new: `omnimemory.handlers.handler_subscription`) - Agent subscriptions
    - Topic-based subscriptions
    - Memory change notifications
 
@@ -431,23 +438,23 @@ Before integrating any handler from `omnibase_infra`, verify:
 ## Implementation Priority
 
 ### Phase 1: Foundation (Week 1-2)
-1. Import `handler_db.py` for storage
-2. Import `handler_qdrant.py` for vectors
-3. Import `handler_filesystem.py` for persistence
+1. Import `HandlerDb` for storage
+2. Import `HandlerQdrant` for vectors
+3. Import `HandlerFileSystem` for persistence
 4. Create `memory_storage_effect` node using these handlers
 
 ### Phase 2: Search & Retrieval (Week 3-4)
-1. Import `handler_graph.py` for relationships
+1. Import `HandlerGraph` for relationships
 2. Create `memory_retrieval_effect` with adapters
 3. Implement basic similarity compute
 
 ### Phase 3: Intelligence (Week 5-6)
-1. Create semantic analyzer compute
-2. Adapt HTTP handler for LLM calls
-3. Implement similarity compute handlers
+1. Create `HandlerSemanticCompute`
+2. Adapt `HandlerHttp` for LLM calls
+3. Implement `HandlerSimilarityCompute`
 
 ### Phase 4: Lifecycle & Coordination (Week 7-8)
-1. Adapt runtime tick for lifecycle
+1. Adapt `HandlerRuntimeTick` for lifecycle
 2. Create memory consolidator reducer
 3. Implement agent coordinator orchestrator
 
@@ -505,3 +512,260 @@ class MemoryStorageAdapter:
         self._db = db_handler
         self._vector = vector_handler
 ```
+
+---
+
+## Health Status Aggregation
+
+### Import Path
+
+Health status enumeration is provided by `omnibase_core`:
+
+```python
+from omnibase_core.enums import EnumHealthStatus
+```
+
+### Enum Values
+
+| Value | Description | Aggregation Priority |
+|-------|-------------|---------------------|
+| `HEALTHY` | Service/node is fully operational | 4 (lowest concern) |
+| `DEGRADED` | Service/node is operational but with reduced capacity | 3 |
+| `UNHEALTHY` | Service/node is not operational | 2 |
+| `UNKNOWN` | Service/node status cannot be determined | 1 (highest concern) |
+
+### Aggregation Rules
+
+When aggregating health status across multiple services or nodes:
+
+1. **Worst-case aggregation**: Overall status equals the worst individual status
+2. **Priority order**: `UNKNOWN` > `UNHEALTHY` > `DEGRADED` > `HEALTHY`
+3. **Scoring**: Health scores (0.0-1.0) can be averaged for composite health metrics
+
+```python
+from omnibase_core.enums import EnumHealthStatus
+
+def aggregate_health_status(statuses: list[EnumHealthStatus]) -> EnumHealthStatus:
+    """Aggregate multiple health statuses using worst-case rule."""
+    priority = {
+        EnumHealthStatus.UNKNOWN: 1,
+        EnumHealthStatus.UNHEALTHY: 2,
+        EnumHealthStatus.DEGRADED: 3,
+        EnumHealthStatus.HEALTHY: 4,
+    }
+    if not statuses:
+        return EnumHealthStatus.UNKNOWN
+    return min(statuses, key=lambda s: priority.get(s, 0))
+```
+
+### Usage in Models
+
+Health status is used in:
+
+| Model | Field | Purpose |
+|-------|-------|---------|
+| `ModelServiceHealth` | `status` | Individual service health |
+| `ModelServiceRegistry` | `status` | Registered service status |
+| `ModelSystemHealth` | `overall_status` | Aggregated system health |
+
+### Health Monitoring Integration
+
+Handlers should report health status via standardized patterns:
+
+```python
+from omnibase_core.enums import EnumHealthStatus
+from omnimemory.models.service import ModelServiceHealth
+
+class HandlerHealthReport:
+    """Standard health reporting for handlers."""
+
+    async def get_health(self) -> ModelServiceHealth:
+        """Return handler health status."""
+        try:
+            # Perform health check logic
+            is_healthy = await self._check_dependencies()
+            return ModelServiceHealth(
+                service_id=self.service_id,
+                service_name=self.service_name,
+                status=EnumHealthStatus.HEALTHY if is_healthy else EnumHealthStatus.DEGRADED,
+                is_healthy=is_healthy,
+                # ... other fields
+            )
+        except Exception:
+            return ModelServiceHealth(
+                service_id=self.service_id,
+                service_name=self.service_name,
+                status=EnumHealthStatus.UNHEALTHY,
+                is_healthy=False,
+                # ... other fields
+            )
+```
+
+---
+
+## Contract Layout (ONEX Canonical Structure)
+
+### Contract Schema Version
+
+All ONEX contracts include a `contract_version` field at the root level:
+
+```yaml
+# Contract schema version - tracks the contract format itself
+contract_version: "1.0.0"
+```
+
+**Versioning Scheme**:
+- **MAJOR**: Breaking changes to contract schema structure
+- **MINOR**: Backwards-compatible additions to schema
+- **PATCH**: Documentation or cosmetic changes only
+
+### Node Contract Structure (EFFECT/COMPUTE/REDUCER/ORCHESTRATOR)
+
+Node contracts follow this canonical structure:
+
+```yaml
+# === CONTRACT METADATA ===
+contract_version: "1.0.0"
+
+# === REQUIRED ROOT FIELDS ===
+name: "node_name_type"           # Format: <name>_<type> (e.g., memory_storage_effect)
+version: {major: 0, minor: 1, patch: 0}
+description: "Node description"
+node_type: "EFFECT"              # One of: EFFECT, COMPUTE, REDUCER, ORCHESTRATOR
+input_model: "InputModelName"    # Pydantic model class name
+output_model: "OutputModelName"  # Pydantic model class name
+
+# === IO OPERATIONS (Required for EFFECT nodes) ===
+io_operations:
+  - operation_type: "database_write"
+    atomic: true
+    timeout_seconds: 30
+    validation_enabled: true
+
+# === NODE CONFIGURATION ===
+tool_specification:
+  tool_name: "node_tool_name"
+  version: {major: 0, minor: 1, patch: 0}
+  description: "Tool description"
+  main_tool_class: "NodeClassName"
+  container_injection: "ONEXContainer"
+  business_logic_pattern: "effect"  # Matches node_type
+
+# === SERVICE CONFIGURATION ===
+service_configuration:
+  is_persistent_service: false
+  requires_external_dependencies: true
+
+# === INPUT/OUTPUT STATE ===
+input_state:
+  object_type: "object"
+  required: ["field1", "field2"]
+  optional: ["field3"]
+
+output_state:
+  object_type: "object"
+  required: ["success", "result"]
+  optional: ["error_message"]
+
+# === ACTIONS ===
+actions:
+  - name: "action_name"
+    description: "Action description"
+    inputs: ["input1", "input2"]
+    outputs: ["output1"]
+
+# === DEPENDENCIES ===
+dependencies:
+  - name: dependency_name
+    dependency_type: service     # service, protocol, or library
+    description: "Dependency description"
+
+# === PERFORMANCE ===
+performance:
+  max_response_time_ms: 100
+
+# === EVENT TYPE CONFIGURATION ===
+event_type:
+  version: {major: 1, minor: 0, patch: 0}
+  primary_events: ["event1", "event2"]
+  event_categories: ["category1"]
+  publish_events: true
+  subscribe_events: false
+  event_routing: "routing_key"
+
+# === VALIDATION RULES ===
+validation_rules:
+  strict_typing_enabled: true
+  input_validation_enabled: true
+  output_validation_enabled: true
+  performance_validation_enabled: true
+
+# === TAGS ===
+tags:
+  - tag1
+  - tag2
+```
+
+### Project Contract Structure
+
+Project-level contracts define the overall architecture:
+
+```yaml
+# Contract schema version
+contract_version: "1.0.0"
+
+contract:
+  name: project_name
+  version: 1.0.0
+  description: "Project description"
+  architecture:
+    pattern: onex_4_node
+    nodes:
+      effect:
+        description: "Effect nodes description"
+        responsibilities: [...]
+      compute:
+        description: "Compute nodes description"
+        responsibilities: [...]
+      reducer:
+        description: "Reducer nodes description"
+        responsibilities: [...]
+      orchestrator:
+        description: "Orchestrator nodes description"
+        responsibilities: [...]
+
+protocols:
+  protocol_name:
+    description: "Protocol description"
+    methods: [...]
+
+schemas:
+  schema_name:
+    description: "Schema description"
+    fields: [...]
+
+error_handling:
+  strategy: monadic_result
+  error_codes: [...]
+  recovery:
+    retry_policy: {...}
+    circuit_breaker: {...}
+```
+
+### Contract Validation
+
+Contracts are validated against:
+
+1. **Schema compliance**: Required fields present and correctly typed
+2. **Version consistency**: Contract version matches schema expectations
+3. **Dependency resolution**: All declared dependencies are available
+4. **ONEX compliance**: Node type matches business logic pattern
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2025-01-18 | Added contract layout documentation, HealthStatus aggregation, consistent handler naming |
+| 0.1.0 | 2025-01-17 | Initial handler reuse matrix |

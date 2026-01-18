@@ -78,7 +78,7 @@ class ProgressSummaryResponse(BaseModel):
         description="Recent error messages"
     )
 
-    performance_metrics: dict = Field(
+    performance_metrics: dict[str, float] = Field(
         default_factory=dict,
-        description="Performance metrics for the migration"
+        description="Performance metrics for the migration (e.g., latency_ms, throughput)"
     )

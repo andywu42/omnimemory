@@ -92,6 +92,8 @@ from .pii_detector import (
 from .error_sanitizer import (
     SanitizationLevel,
     ErrorSanitizer,
+    sanitize_error,
+    sanitize_dict,
 )
 
 __all__ = [
@@ -170,4 +172,6 @@ __all__ = [
     # Error Sanitization
     "SanitizationLevel",
     "ErrorSanitizer",
+    "sanitize_error",
+    "sanitize_dict",
 ]

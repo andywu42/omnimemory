@@ -3,6 +3,13 @@ NodeResult monadic pattern - compatibility stub.
 
 This is a local implementation of NodeResult until
 omnibase_core.core.monadic.model_node_result is available.
+
+NOTE ON Any TYPES:
+This module intentionally uses 'Any' types for:
+- metadata: dict[str, Any] - Result metadata can contain arbitrary serializable data
+- **extra_metadata: Any - Allows flexible metadata addition from kwargs
+
+These are documented exceptions to the zero-Any policy for compat modules.
 """
 
 from __future__ import annotations
@@ -113,6 +120,8 @@ class NodeResult(Generic[T]):
         """
         Transform the success value.
 
+        Preserves provenance, trust_score, and metadata through the transformation.
+
         Args:
             func: Function to apply to success value
 
@@ -123,36 +132,81 @@ class NodeResult(Generic[T]):
             return NodeResult[U].failure(
                 error=self.error,
                 error_message=self.error_message,
-                **self.metadata
+                provenance=self.provenance,
+                trust_score=self.trust_score,
+                metadata=self.metadata,
             )
 
         try:
             new_value = func(self.value)
-            return NodeResult[U].success(new_value, **self.metadata)
+            return NodeResult[U].success(
+                new_value,
+                provenance=self.provenance,
+                trust_score=self.trust_score,
+                metadata=self.metadata,
+            )
         except Exception as e:
-            return NodeResult[U].failure(error=e, **self.metadata)
+            return NodeResult[U].failure(
+                error=e,
+                provenance=self.provenance,
+                trust_score=self.trust_score,
+                metadata=self.metadata,
+            )
 
     def flat_map(self, func: Callable[[T], NodeResult[U]]) -> NodeResult[U]:
         """
         Chain operations that return NodeResult.
 
+        Combines provenance chains and propagates trust scores through the chain.
+        The inner result's trust_score is multiplied with the outer's to reflect
+        cumulative trust degradation through the operation chain.
+
         Args:
             func: Function that returns a NodeResult
 
         Returns:
-            The NodeResult from the chained operation
+            The NodeResult from the chained operation with combined metadata
         """
         if not self.is_success:
             return NodeResult[U].failure(
                 error=self.error,
                 error_message=self.error_message,
-                **self.metadata
+                provenance=self.provenance,
+                trust_score=self.trust_score,
+                metadata=self.metadata,
             )
 
         try:
-            return func(self.value)
+            inner_result = func(self.value)
+            # Combine provenance chains (outer first, then inner)
+            combined_provenance = self.provenance + inner_result.provenance
+            # Multiply trust scores for cumulative trust degradation
+            combined_trust = self.trust_score * inner_result.trust_score
+            # Merge metadata (inner takes precedence)
+            combined_metadata = {**self.metadata, **inner_result.metadata}
+
+            if inner_result.is_success:
+                return NodeResult[U].success(
+                    inner_result.value,
+                    provenance=combined_provenance,
+                    trust_score=combined_trust,
+                    metadata=combined_metadata,
+                )
+            else:
+                return NodeResult[U].failure(
+                    error=inner_result.error,
+                    error_message=inner_result.error_message,
+                    provenance=combined_provenance,
+                    trust_score=combined_trust,
+                    metadata=combined_metadata,
+                )
         except Exception as e:
-            return NodeResult[U].failure(error=e, **self.metadata)
+            return NodeResult[U].failure(
+                error=e,
+                provenance=self.provenance,
+                trust_score=self.trust_score,
+                metadata=self.metadata,
+            )
 
     def unwrap(self) -> T:
         """

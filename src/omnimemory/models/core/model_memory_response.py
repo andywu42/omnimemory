@@ -4,7 +4,7 @@ Memory response model following ONEX standards.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -68,7 +68,7 @@ class ModelMemoryResponse(BaseModel):
 
     # Timing information
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the response was created",
     )
     processed_at: datetime | None = Field(

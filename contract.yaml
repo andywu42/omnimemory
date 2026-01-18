@@ -1,6 +1,13 @@
 # OmniMemory Contract Definition
 # ONEX 4.0 Compliant Architecture Contract
 
+# Contract schema version - tracks the contract format itself
+# Follows semantic versioning: MAJOR.MINOR.PATCH
+# - MAJOR: Breaking changes to contract schema
+# - MINOR: Backwards-compatible additions to schema
+# - PATCH: Documentation or cosmetic changes
+contract_version: "1.0.0"
+
 contract:
   name: omnimemory
   version: 1.0.0

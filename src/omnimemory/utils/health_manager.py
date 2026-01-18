@@ -15,7 +15,7 @@ import os
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any, Callable, Awaitable
+from typing import Dict, List, Optional, Callable, Awaitable, Union
 import psutil
 
 from pydantic import BaseModel, Field
@@ -661,15 +661,31 @@ async def create_pinecone_health_check(api_key: str, environment: str) -> Callab
     return check_pinecone
 
 
+# Type alias for health check result values - replaces Dict[str, Any]
+HealthCheckResultValue = Union[str, int, float, bool, None]
+HealthCheckResult = Dict[str, HealthCheckResultValue]
+
+
 # === TEST-COMPATIBLE INTERFACES ===
 # These classes provide the interface expected by test_health_manager.py
+
+
+class HealthCheckDetails(BaseModel):
+    """Strongly typed health check details."""
+    message: Optional[str] = Field(default=None, description="Human-readable status message")
+    error: Optional[str] = Field(default=None, description="Error message if unhealthy")
+    version: Optional[str] = Field(default=None, description="Service version")
+    connection_url: Optional[str] = Field(default=None, description="Connection URL")
+    last_check: Optional[str] = Field(default=None, description="Last check timestamp")
+    latency_ms: Optional[float] = Field(default=None, description="Latency in milliseconds")
+    extra: Dict[str, str] = Field(default_factory=dict, description="Additional string details")
 
 
 class ResourceHealthCheck(BaseModel):
     """Result of a resource health check."""
     status: HealthStatus = Field(description="Health status of the resource")
     response_time: float = Field(default=0.0, description="Response time in seconds")
-    details: Dict[str, Any] = Field(default_factory=dict, description="Additional details")
+    details: HealthCheckDetails = Field(default_factory=HealthCheckDetails, description="Additional details")
     correlation_id: Optional[str] = Field(default=None, description="Correlation ID for tracking")
 
     class Config:
@@ -720,8 +736,8 @@ class HealthManager:
         self.rate_limit_window = rate_limit_window
         self.max_checks_per_window = max_checks_per_window
 
-        self.health_checks: Dict[str, Callable[[], Awaitable[Dict[str, Any]]]] = {}
-        self.circuit_breakers: Dict[str, Any] = {}
+        self.health_checks: Dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self._check_counts: Dict[str, List[float]] = {}
         self._rate_limiter = RateLimiter(
             max_requests=max_checks_per_window,
@@ -731,7 +747,7 @@ class HealthManager:
     def register_health_check(
         self,
         name: str,
-        check_func: Callable[[], Awaitable[Dict[str, Any]]]
+        check_func: Callable[[], Awaitable[HealthCheckResult]]
     ) -> None:
         """
         Register a health check function.
@@ -841,7 +857,7 @@ class HealthManager:
             return ResourceHealthCheck(
                 status=HealthStatus.UNHEALTHY,
                 response_time=response_time,
-                details={"error": str(e)},
+                details={"error": _sanitize_error(e)},
                 correlation_id=correlation_id
             )
 
@@ -866,7 +882,7 @@ class HealthManager:
                 result if isinstance(result, ResourceHealthCheck)
                 else ResourceHealthCheck(
                     status=HealthStatus.UNHEALTHY,
-                    details={"error": str(result)}
+                    details={"error": _sanitize_error(result) if isinstance(result, Exception) else "Unknown error"}
                 )
             )
             for name, result in zip(names, results)

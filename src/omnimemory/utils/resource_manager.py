@@ -6,6 +6,16 @@ This module provides:
 - Circuit breaker patterns for external service resilience
 - Connection pool management and exhaustion handling
 - Timeout configurations for all async operations
+
+NOTE ON Any TYPES:
+This module intentionally uses 'Any' types for generic resource management:
+- ResourcePool manages arbitrary resource types (connections, handles, etc.)
+- resource_id/resource fields use Any for generic resource references
+- config: Dict[str, Any] - Resource pool configs contain various value types
+- Pool health/stats methods return Dict[str, Any] for flexible monitoring data
+
+This design enables a single resource pool implementation to work with any
+resource type without complex generic type hierarchies.
 """
 
 from __future__ import annotations
@@ -22,6 +32,8 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 import structlog
 
+from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
+
 logger = structlog.get_logger(__name__)
 
 
@@ -29,24 +41,15 @@ def _sanitize_error(error: Exception) -> str:
     """
     Sanitize error messages to prevent information disclosure in logs.
 
+    Uses the centralized error sanitizer for consistent security handling.
+
     Args:
         error: Exception to sanitize
 
     Returns:
         Safe error message without sensitive information
     """
-    error_type = type(error).__name__
-    # Only include safe, generic error information
-    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
-        return f"{error_type}: Connection or timeout issue"
-    elif isinstance(error, ValueError):
-        return f"{error_type}: Invalid value"
-    elif isinstance(error, KeyError):
-        return f"{error_type}: Missing key"
-    elif isinstance(error, AttributeError):
-        return f"{error_type}: Missing attribute"
-    else:
-        return f"{error_type}: Operation failed"
+    return _base_sanitize_error(error, context="resource_manager", level=SanitizationLevel.STANDARD)
 
 
 T = TypeVar('T')
@@ -596,10 +599,10 @@ class ResourcePool:
                     self._available_event.wait(),
                     timeout=timeout - elapsed
                 )
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as e:
                 raise ResourceTimeoutError(
                     f"Timeout acquiring {self.resource_type.value} resource"
-                )
+                ) from e
 
     async def release(self, handle: ResourceHandle) -> None:
         """

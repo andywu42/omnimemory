@@ -55,7 +55,8 @@ class TestHealthManager:
 
         assert result.status == HealthStatus.HEALTHY
         assert result.response_time < 1.0
-        assert "status" in result.details
+        # Details is a HealthCheckDetails model with structured attributes
+        assert result.details is not None
 
     @pytest.mark.asyncio
     async def test_check_resource_health_failure(self) -> None:
@@ -69,8 +70,10 @@ class TestHealthManager:
         result = await hm.check_resource_health("database")
 
         assert result.status == HealthStatus.UNHEALTHY
-        assert "error" in result.details
-        assert "Database connection failed" in result.details["error"]
+        # Details is a HealthCheckDetails model - access error via attribute
+        assert result.details.error is not None
+        # Error is sanitized but should contain relevant error type
+        assert "ConnectionError" in result.details.error
 
     @pytest.mark.asyncio
     async def test_check_resource_health_timeout(self) -> None:

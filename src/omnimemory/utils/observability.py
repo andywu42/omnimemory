@@ -11,6 +11,7 @@ This module provides:
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 import re
 import uuid
@@ -19,12 +20,17 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar
+
+# Type variable for generic function types
+F = TypeVar('F', bound=Callable[..., object])
 
 from pydantic import BaseModel, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
 import structlog
+
+from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
 
 
 # === SECURITY VALIDATION FUNCTIONS ===
@@ -75,24 +81,15 @@ def _sanitize_error(error: Exception) -> str:
     """
     Sanitize error messages to prevent information disclosure in logs.
 
+    Uses the centralized error sanitizer for consistent security handling.
+
     Args:
         error: Exception to sanitize
 
     Returns:
         Safe error message without sensitive information
     """
-    error_type = type(error).__name__
-    # Only include safe, generic error information
-    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
-        return f"{error_type}: Connection or timeout issue"
-    elif isinstance(error, ValueError):
-        return f"{error_type}: Invalid value"
-    elif isinstance(error, KeyError):
-        return f"{error_type}: Missing key"
-    elif isinstance(error, AttributeError):
-        return f"{error_type}: Missing attribute"
-    else:
-        return f"{error_type}: Operation failed"
+    return _base_sanitize_error(error, context="observability", level=SanitizationLevel.STANDARD)
 
 
 # Context variables for correlation tracking
@@ -422,9 +419,10 @@ def log_with_correlation(level: str, message: str, **fields):
     """Log a message with correlation context."""
     observability_manager.log_with_context(level, message, **fields)
 
-def inject_correlation_context(func):
+def inject_correlation_context(func: F) -> F:
     """Decorator to inject correlation context into function logs."""
-    def wrapper(*args, **kwargs):
+    @functools.wraps(func)
+    def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
         logger.info(
             f"function_called_{func.__name__}",
@@ -448,11 +446,13 @@ def inject_correlation_context(func):
                 error_type=type(e).__name__
             )
             raise
-    return wrapper
+    return wrapper  # type: ignore[return-value]
 
-async def inject_correlation_context_async(func):
+
+def inject_correlation_context_async(func: F) -> F:
     """Async decorator to inject correlation context into function logs."""
-    async def wrapper(*args, **kwargs):
+    @functools.wraps(func)
+    async def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
         logger.info(
             f"async_function_called_{func.__name__}",
@@ -476,4 +476,4 @@ async def inject_correlation_context_async(func):
                 error_type=type(e).__name__
             )
             raise
-    return wrapper
+    return wrapper  # type: ignore[return-value]

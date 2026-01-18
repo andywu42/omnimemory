@@ -3,29 +3,29 @@
 """Node import tests - verify all Core 8 nodes import cleanly.
 
 These tests ensure the node package structure is correct and all
-nodes can be imported without errors.
+nodes can be imported without errors. Tests verify:
+- The nodes package can be imported
+- Each node subpackage can be imported
+- Node classes can be imported and have correct names
+- Package __all__ exports list all Core 8 nodes
+- Directory structure follows ONEX patterns
+
+Skip Behavior:
+    Tests skip gracefully when node.py files don't exist during scaffold phase,
+    using pytest.skip() with clear messages about what's missing.
+
+Path Resolution:
+    Uses Path(__file__) for CWD-independent path resolution via conftest.py.
 """
 from __future__ import annotations
 
 import importlib
 import types
-from typing import Any
 
 import pytest
 from pathlib import Path
 
-CORE_8_NODES = [
-    "memory_storage_effect",
-    "memory_retrieval_effect",
-    "semantic_analyzer_compute",
-    "similarity_compute",
-    "memory_consolidator_reducer",
-    "statistics_reducer",
-    "memory_lifecycle_orchestrator",
-    "agent_coordinator_orchestrator",
-]
-
-NODES_DIR = Path(__file__).parent.parent / "src" / "omnimemory" / "nodes"
+from tests.conftest import CORE_8_NODES, NODES_DIR
 
 
 class TestNodeImports:
@@ -64,7 +64,7 @@ class TestNodeImports:
         module_name: str = f"omnimemory.nodes.{node_name}.node"
         try:
             module: types.ModuleType = importlib.import_module(module_name)
-            node_class: type[Any] | None = getattr(module, class_name, None)
+            node_class: type | None = getattr(module, class_name, None)
             if node_class is None:
                 pytest.skip(f"Node class {class_name} not found in {module_name}")
             assert node_class is not None

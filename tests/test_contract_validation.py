@@ -3,30 +3,33 @@
 """Contract validation tests for Core 8 ONEX nodes.
 
 Tests both schema validation (Pydantic) and runtime load tests.
+This module verifies that:
+- contract.yaml files exist for each Core 8 node
+- Contracts are valid YAML with required ONEX fields
+- Contracts validate against appropriate Pydantic models
+- Node classes can be imported and instantiated
+
+Skip Behavior:
+    Tests skip gracefully when files don't exist during scaffold phase,
+    using pytest.skip() with clear messages about what's missing.
+
+Path Resolution:
+    Uses Path(__file__) for CWD-independent path resolution.
 """
 from __future__ import annotations
 
 import importlib
 import types
-from typing import Any
 
 import pytest
 import yaml
 from pathlib import Path
 
-# Core 8 node names
-CORE_8_NODES = [
-    "memory_storage_effect",
-    "memory_retrieval_effect",
-    "semantic_analyzer_compute",
-    "similarity_compute",
-    "memory_consolidator_reducer",
-    "statistics_reducer",
-    "memory_lifecycle_orchestrator",
-    "agent_coordinator_orchestrator",
-]
+from tests.conftest import CORE_8_NODES, NODES_DIR
 
-NODES_DIR = Path(__file__).parent.parent / "src" / "omnimemory" / "nodes"
+# Type alias for YAML data - using object instead of Any since YAML values
+# can be arbitrary types but we only read/check them
+YamlData = dict[str, object]
 
 
 class TestContractValidation:
@@ -53,7 +56,7 @@ class TestContractValidation:
             pytest.skip(f"File not yet implemented: {contract_path}")
 
         with open(contract_path) as f:
-            data: dict[str, Any] = yaml.safe_load(f)
+            data: YamlData = yaml.safe_load(f)
 
         assert isinstance(data, dict), f"Contract must be a dict: {node_name}"
 
@@ -69,10 +72,11 @@ class TestContractValidation:
             pytest.skip(f"File not yet implemented: {contract_path}")
 
         with open(contract_path) as f:
-            data: dict[str, Any] = yaml.safe_load(f)
+            data: YamlData = yaml.safe_load(f)
 
         # ONEX contracts must have node_type at root level (no legacy nested format)
-        node_type: str = data.get("node_type", "")
+        raw_node_type = data.get("node_type", "")
+        node_type: str = str(raw_node_type) if raw_node_type else ""
         assert node_type, f"Contract must have 'node_type' field at root level: {node_name}"
         node_type = node_type.upper()
 
@@ -159,7 +163,7 @@ class TestContractRuntimeLoad:
             from unittest.mock import Mock
 
             mock_container: Mock = Mock()
-            instance: Any = node_class(container=mock_container)
+            instance: object = node_class(container=mock_container)
             assert instance is not None
         except ModuleNotFoundError as e:
             pytest.skip(f"Package not installed in editable mode: {e}")

@@ -3,6 +3,14 @@ OnexError compatibility stub.
 
 This is a local implementation of OnexError until
 omnibase_core.core.errors.core_errors is available.
+
+NOTE ON Any TYPES:
+This module intentionally uses 'Any' types for:
+- correlation_id: Can be str, UUID, int, or any hashable identifier
+- context/details: Error context can contain arbitrary serializable data
+- **kwargs: Required for extensibility in compatibility stubs
+
+These are documented exceptions to the zero-Any policy for compat modules.
 """
 
 from __future__ import annotations

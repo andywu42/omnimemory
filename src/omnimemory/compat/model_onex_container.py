@@ -3,10 +3,16 @@ ModelOnexContainer - compatibility stub.
 
 This is a local implementation of ModelOnexContainer until
 omnibase_core.core.model_onex_container is available.
+
+Technical Debt Notes:
+- This stub exists because omnibase_core.core.model_onex_container is not yet available
+- Once omnibase_core provides this component, this stub should be removed
+- The auto-injection of container parameter follows ONEX DI patterns
 """
 
 from __future__ import annotations
 
+import inspect
 from typing import Type, TypeVar, Dict, Any, Callable, Optional
 
 T = TypeVar('T')
@@ -17,19 +23,22 @@ class ModelOnexContainer:
     Simple dependency injection container for ONEX nodes.
 
     Provides singleton and transient registration patterns
-    for service resolution.
+    for service resolution with automatic container injection.
+
+    The container automatically detects when a class constructor
+    requires a 'container' parameter and injects itself.
     """
 
     def __init__(self) -> None:
         """Initialize the container with empty registries."""
         self._singletons: Dict[Type[Any], Any] = {}
-        self._singleton_factories: Dict[Type[Any], Callable[[], Any]] = {}
-        self._transient_factories: Dict[Type[Any], Callable[[], Any]] = {}
+        self._singleton_factories: Dict[Type[Any], Callable[..., Any]] = {}
+        self._transient_factories: Dict[Type[Any], Callable[..., Any]] = {}
 
     def register_singleton(
         self,
         interface: Type[T],
-        implementation: Type[T] | Callable[[], T],
+        implementation: Type[T] | Callable[..., T],
     ) -> None:
         """
         Register a singleton service.
@@ -50,7 +59,7 @@ class ModelOnexContainer:
     def register_transient(
         self,
         interface: Type[T],
-        implementation: Type[T] | Callable[[], T],
+        implementation: Type[T] | Callable[..., T],
     ) -> None:
         """
         Register a transient service.
@@ -66,9 +75,46 @@ class ModelOnexContainer:
         else:
             self._transient_factories[interface] = implementation
 
+    def _create_instance(self, factory: Callable[..., T]) -> T:
+        """
+        Create an instance from a factory, auto-injecting container if needed.
+
+        This method inspects the factory's signature and automatically
+        injects the container if the factory accepts a 'container' parameter.
+
+        Args:
+            factory: The factory function or class to instantiate
+
+        Returns:
+            The created instance
+        """
+        # Check if factory accepts a 'container' parameter
+        try:
+            sig = inspect.signature(factory)
+            params = sig.parameters
+
+            # Check for 'container' parameter
+            if 'container' in params:
+                param = params['container']
+                # Only inject if it's a positional/keyword parameter (not *args/**kwargs)
+                if param.kind in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                ):
+                    return factory(container=self)
+        except (ValueError, TypeError):
+            # inspect.signature can fail for some built-in types
+            pass
+
+        # Default: call without arguments
+        return factory()
+
     def resolve(self, interface: Type[T]) -> T:
         """
         Resolve a registered service.
+
+        Automatically injects the container if the service's constructor
+        accepts a 'container' parameter.
 
         Args:
             interface: The interface/protocol type to resolve
@@ -86,14 +132,14 @@ class ModelOnexContainer:
         # Check if we have a singleton factory
         if interface in self._singleton_factories:
             factory = self._singleton_factories[interface]
-            instance = factory()
+            instance = self._create_instance(factory)
             self._singletons[interface] = instance
             return instance
 
         # Check if we have a transient factory
         if interface in self._transient_factories:
             factory = self._transient_factories[interface]
-            return factory()
+            return self._create_instance(factory)
 
         raise KeyError(f"No registration found for {interface}")
 
@@ -118,3 +164,8 @@ class ModelOnexContainer:
         self._singletons.clear()
         self._singleton_factories.clear()
         self._transient_factories.clear()
+
+
+# Alias for upstream compatibility with omnibase_core
+# omnibase_core uses ModelONEXContainer (uppercase ONEX)
+ModelONEXContainer = ModelOnexContainer

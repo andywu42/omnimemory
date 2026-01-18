@@ -21,7 +21,7 @@ import asyncio
 import functools
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from uuid import UUID
 
@@ -93,7 +93,7 @@ class RetryAttemptInfo(BaseModel):
         description="Exception that triggered the retry"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the attempt was made"
     )
     correlation_id: Optional[UUID] = Field(
@@ -406,7 +406,7 @@ class RetryManager:
             Operation result
         """
         retry_config = config or self.default_config
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             result = await retry_with_backoff(

@@ -13,7 +13,7 @@ All models follow ONEX standards with:
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Union
+from typing import Iterator, List, Optional, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,15 +38,15 @@ class ModelStringList(BaseModel):
 
     @field_validator('values')
     @classmethod
-    def validate_strings(cls, v):
+    def validate_strings(cls, v: List[str]) -> List[str]:
         """Validate and deduplicate string values."""
         if not isinstance(v, list):
             raise ValueError("values must be a list")
 
         # Remove empty strings and duplicates while preserving order
         # Use O(1) set operations for efficient deduplication
-        seen = set()
-        result = []
+        seen: set[str] = set()
+        result: List[str] = []
         for item in v:
             if item:
                 stripped_item = item.strip()
@@ -60,7 +60,7 @@ class ModelStringList(BaseModel):
         """Support 'in' operator for checking membership."""
         return item in self.values
 
-    def __iter__(self):
+    def __iter__(self) -> "Iterator[str]":
         """Support iteration over values."""
         return iter(self.values)
 
@@ -70,7 +70,11 @@ class ModelStringList(BaseModel):
 
 
 class ModelOptionalStringList(BaseModel):
-    """Optional strongly typed list of strings."""
+    """Optional strongly typed list of strings.
+
+    Provides container protocol methods for consistency with ModelStringList.
+    When values is None, container operations return appropriate defaults.
+    """
 
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -85,7 +89,7 @@ class ModelOptionalStringList(BaseModel):
 
     @field_validator('values')
     @classmethod
-    def validate_optional_strings(cls, v):
+    def validate_optional_strings(cls, v: Optional[List[str]]) -> Optional[List[str]]:
         """Validate optional string values."""
         if v is None:
             return None
@@ -95,8 +99,8 @@ class ModelOptionalStringList(BaseModel):
 
         # Remove empty strings and duplicates while preserving order
         # Use O(1) set operations for efficient deduplication
-        seen = set()
-        result = []
+        seen: set[str] = set()
+        result: List[str] = []
         for item in v:
             if item:
                 stripped_item = item.strip()
@@ -105,6 +109,57 @@ class ModelOptionalStringList(BaseModel):
                     result.append(stripped_item)
 
         return result if result else None
+
+    def __contains__(self, item: str) -> bool:
+        """Support 'in' operator for checking membership.
+
+        Returns False if values is None.
+        """
+        if self.values is None:
+            return False
+        return item in self.values
+
+    def __iter__(self) -> Iterator[str]:
+        """Support iteration over values.
+
+        Returns empty iterator if values is None.
+        """
+        if self.values is None:
+            return iter([])
+        return iter(self.values)
+
+    def __len__(self) -> int:
+        """Support len() function.
+
+        Returns 0 if values is None.
+        """
+        if self.values is None:
+            return 0
+        return len(self.values)
+
+    def __bool__(self) -> bool:
+        """Support bool() function.
+
+        Returns False if values is None or empty.
+        """
+        return self.values is not None and len(self.values) > 0
+
+    def is_empty(self) -> bool:
+        """Check if the list is empty or None."""
+        return self.values is None or len(self.values) == 0
+
+    def or_default(self, default: List[str]) -> List[str]:
+        """Return values or a default if None.
+
+        Args:
+            default: Default list to return if values is None
+
+        Returns:
+            The values list or the provided default
+        """
+        if self.values is None:
+            return default
+        return self.values
 
 
 # === METADATA COLLECTIONS ===
@@ -124,7 +179,7 @@ class ModelKeyValuePair(BaseModel):
 
     @field_validator('key')
     @classmethod
-    def validate_key(cls, v):
+    def validate_key(cls, v: str) -> str:
         """Validate metadata key format."""
         if not v or not v.strip():
             raise ValueError("key cannot be empty")
@@ -166,7 +221,7 @@ class ModelMetadata(BaseModel):
         return {pair.key: pair.value for pair in self.pairs}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ModelMetadata:
+    def from_dict(cls, data: dict[str, object]) -> ModelMetadata:
         """Create from dictionary, converting values to strings."""
         pairs = [
             ModelKeyValuePair(key=str(k), value=str(v))
@@ -197,7 +252,7 @@ class ModelStructuredField(BaseModel):
 
     @field_validator('name')
     @classmethod
-    def validate_name(cls, v):
+    def validate_name(cls, v: str) -> str:
         """Validate field name format."""
         if not v or not v.strip():
             raise ValueError("name cannot be empty")
@@ -269,7 +324,7 @@ class ModelConfigurationOption(BaseModel):
 
     @field_validator('key')
     @classmethod
-    def validate_key(cls, v):
+    def validate_key(cls, v: str) -> str:
         """Validate configuration key format."""
         if not v or not v.strip():
             raise ValueError("key cannot be empty")
@@ -348,7 +403,7 @@ class ModelEventData(BaseModel):
 
     @field_validator('event_type')
     @classmethod
-    def validate_event_type(cls, v):
+    def validate_event_type(cls, v: str) -> str:
         """Validate event type format."""
         if not v or not v.strip():
             raise ValueError("event_type cannot be empty")
@@ -356,7 +411,7 @@ class ModelEventData(BaseModel):
 
     @field_validator('severity')
     @classmethod
-    def validate_severity(cls, v):
+    def validate_severity(cls, v: str) -> str:
         """Validate severity level."""
         valid_levels = {"debug", "info", "warning", "error", "critical"}
         if v.lower() not in valid_levels:
@@ -428,7 +483,7 @@ class ModelResultItem(BaseModel):
 
     @field_validator('status')
     @classmethod
-    def validate_status(cls, v):
+    def validate_status(cls, v: str) -> str:
         """Validate status values."""
         valid_statuses = {"success", "failure", "pending", "partial", "cancelled"}
         if v.lower() not in valid_statuses:
@@ -477,7 +532,7 @@ class ModelResultCollection(BaseModel):
 # === UTILITY FUNCTIONS ===
 
 
-def convert_dict_to_metadata(data: dict[str, Any]) -> ModelMetadata:
+def convert_dict_to_metadata(data: dict[str, object]) -> ModelMetadata:
     """Convert a dictionary to ModelMetadata."""
     return ModelMetadata.from_dict(data)
 
@@ -487,7 +542,7 @@ def convert_list_to_string_list(data: List[str]) -> ModelStringList:
     return ModelStringList(values=data)
 
 
-def convert_list_of_dicts_to_structured_data(data: List[dict[str, Any]]) -> ModelResultCollection:
+def convert_list_of_dicts_to_structured_data(data: List[dict[str, object]]) -> ModelResultCollection:
     """Convert a list of dictionaries to structured result collection."""
     collection = ModelResultCollection()
 

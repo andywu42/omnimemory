@@ -2,7 +2,7 @@
 Metrics response model following ONEX standards.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict
 
 from pydantic import BaseModel, Field
@@ -89,7 +89,7 @@ class ModelMetricsResponse(BaseModel):
     """Comprehensive metrics response following ONEX standards."""
 
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When metrics were collected"
     )
     collection_duration_ms: float = Field(

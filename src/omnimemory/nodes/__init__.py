@@ -27,6 +27,7 @@ from omnimemory.nodes.base import (
     BaseNode,
     BaseOrchestratorNode,
     BaseReducerNode,
+    ContainerType,
 )
 
 __all__: list[str] = [
@@ -36,6 +37,7 @@ __all__: list[str] = [
     "BaseComputeNode",
     "BaseReducerNode",
     "BaseOrchestratorNode",
+    "ContainerType",
     # Effect nodes
     "memory_storage_effect",
     "memory_retrieval_effect",

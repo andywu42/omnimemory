@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict
 from uuid import UUID, uuid4
 
 from omnimemory import (
@@ -57,11 +57,11 @@ class MockMemoryStorageNode:
         """Mock storage utilization."""
         return {"disk": 0.60, "memory": 0.45}
 
-    async def _validate_configuration(self, config: Dict[str, Any]) -> bool:
+    async def _validate_configuration(self, config: Dict[str, str]) -> bool:
         """Mock configuration validation."""
         return "invalid_key" not in config
 
-    async def _apply_configuration(self, config: Dict[str, Any]) -> None:
+    async def _apply_configuration(self, config: Dict[str, str]) -> None:
         """Mock configuration application."""
         pass
     

@@ -6,11 +6,23 @@ This module provides:
 - Proper locking mechanisms for shared resources
 - Connection pool management and exhaustion handling
 - Fair scheduling and priority-based access control
+
+NOTE ON Any TYPES:
+This module intentionally uses 'Any' types in the connection pool implementation:
+- validate_connection: Callable[[Any], bool] - Validates connections of arbitrary types
+- close_connection: Callable[[Any], None] - Closes connections of arbitrary types
+- Connection pool methods returning Any - Pools manage generic connection objects
+
+This design allows the same pool implementation to work with any connection type
+(database connections, HTTP sessions, etc.) without requiring generic type parameters
+throughout the codebase.
 """
 
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -30,6 +42,7 @@ from pydantic import BaseModel, Field
 import structlog
 
 from .observability import correlation_context, trace_operation, OperationType
+from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
 
 logger = structlog.get_logger(__name__)
 
@@ -38,24 +51,15 @@ def _sanitize_error(error: Exception) -> str:
     """
     Sanitize error messages to prevent information disclosure in logs.
 
+    Uses the centralized error sanitizer for consistent security handling.
+
     Args:
         error: Exception to sanitize
 
     Returns:
         Safe error message without sensitive information
     """
-    error_type = type(error).__name__
-    # Only include safe, generic error information
-    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
-        return f"{error_type}: Connection or timeout issue"
-    elif isinstance(error, ValueError):
-        return f"{error_type}: Invalid value"
-    elif isinstance(error, KeyError):
-        return f"{error_type}: Missing key"
-    elif isinstance(error, AttributeError):
-        return f"{error_type}: Missing attribute"
-    else:
-        return f"{error_type}: Operation failed"
+    return _base_sanitize_error(error, context="connection_pool", level=SanitizationLevel.STANDARD)
 
 
 class LockPriority(Enum):
@@ -815,6 +819,9 @@ class CircuitBreaker:
 
     Implements the circuit breaker pattern to prevent cascading failures
     when external services are unavailable.
+
+    Thread-safe: All state modifications are protected by a threading.Lock
+    to ensure safe concurrent access from multiple threads/coroutines.
     """
 
     def __init__(
@@ -843,35 +850,64 @@ class CircuitBreaker:
         self.last_failure_time: Optional[datetime] = None
         self.state_changed_at: datetime = datetime.now()
         self._lock = asyncio.Lock()
+        # Thread-safe lock for synchronous record methods
+        self._sync_lock = threading.Lock()
 
     def record_success(self) -> None:
-        """Record a successful call."""
-        self.total_calls += 1
-        self.success_count += 1
+        """
+        Record a successful call.
 
-        if self.state == CircuitBreakerState.HALF_OPEN:
-            if self.success_count >= self.success_threshold:
-                self._transition_to_closed()
-        elif self.state == CircuitBreakerState.CLOSED:
-            # Reset failure count on success
-            self.failure_count = 0
+        Thread-safe: Uses threading.Lock to ensure atomic updates to
+        counters and state transitions.
+        """
+        with self._sync_lock:
+            self.total_calls += 1
+            self.success_count += 1
+
+            if self.state == CircuitBreakerState.HALF_OPEN:
+                if self.success_count >= self.success_threshold:
+                    self._transition_to_closed()
+            elif self.state == CircuitBreakerState.CLOSED:
+                # Reset failure count on success
+                self.failure_count = 0
 
     def record_failure(self) -> None:
-        """Record a failed call."""
-        self.total_calls += 1
-        self.failure_count += 1
-        self.last_failure_time = datetime.now()
+        """
+        Record a failed call.
 
-        if self.state == CircuitBreakerState.CLOSED:
-            if self.failure_count >= self.failure_threshold:
+        Thread-safe: Uses threading.Lock to ensure atomic updates to
+        counters and state transitions.
+        """
+        with self._sync_lock:
+            self.total_calls += 1
+            self.failure_count += 1
+            self.last_failure_time = datetime.now()
+
+            if self.state == CircuitBreakerState.CLOSED:
+                if self.failure_count >= self.failure_threshold:
+                    self._transition_to_open()
+            elif self.state == CircuitBreakerState.HALF_OPEN:
                 self._transition_to_open()
-        elif self.state == CircuitBreakerState.HALF_OPEN:
-            self._transition_to_open()
 
     def record_timeout(self) -> None:
-        """Record a timeout failure."""
-        self.total_timeouts += 1
-        self.record_failure()
+        """
+        Record a timeout failure.
+
+        Thread-safe: Uses threading.Lock to ensure atomic updates.
+        Note: We use a separate lock acquisition here rather than calling
+        record_failure() to avoid nested lock acquisition.
+        """
+        with self._sync_lock:
+            self.total_timeouts += 1
+            self.total_calls += 1
+            self.failure_count += 1
+            self.last_failure_time = datetime.now()
+
+            if self.state == CircuitBreakerState.CLOSED:
+                if self.failure_count >= self.failure_threshold:
+                    self._transition_to_open()
+            elif self.state == CircuitBreakerState.HALF_OPEN:
+                self._transition_to_open()
 
     def _transition_to_open(self) -> None:
         """Transition to open state."""
@@ -902,22 +938,26 @@ class CircuitBreaker:
         """
         Check if a request should be allowed through.
 
+        Thread-safe: Uses threading.Lock to ensure atomic state checks
+        and transitions.
+
         Returns:
             bool: True if request is allowed, False if blocked
         """
-        if self.state == CircuitBreakerState.CLOSED:
-            return True
-        elif self.state == CircuitBreakerState.OPEN:
-            # Check if recovery timeout has passed
-            if self.last_failure_time:
-                elapsed = (datetime.now() - self.last_failure_time).total_seconds()
-                if elapsed >= self.recovery_timeout:
-                    self._transition_to_half_open()
-                    return True
+        with self._sync_lock:
+            if self.state == CircuitBreakerState.CLOSED:
+                return True
+            elif self.state == CircuitBreakerState.OPEN:
+                # Check if recovery timeout has passed
+                if self.last_failure_time:
+                    elapsed = (datetime.now() - self.last_failure_time).total_seconds()
+                    if elapsed >= self.recovery_timeout:
+                        self._transition_to_half_open()
+                        return True
+                return False
+            elif self.state == CircuitBreakerState.HALF_OPEN:
+                return True
             return False
-        elif self.state == CircuitBreakerState.HALF_OPEN:
-            return True
-        return False
 
     async def call(
         self,
@@ -948,19 +988,35 @@ class CircuitBreaker:
             )
 
         try:
-            if timeout:
-                if asyncio.iscoroutinefunction(func):
+            if asyncio.iscoroutinefunction(func):
+                # Async function - use asyncio.wait_for for timeout
+                if timeout:
                     result = await asyncio.wait_for(
                         func(*args, **kwargs),
                         timeout=timeout
                     )
                 else:
-                    result = func(*args, **kwargs)
-            else:
-                if asyncio.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
+            else:
+                # Synchronous function - use ThreadPoolExecutor for timeout enforcement
+                if timeout:
+                    loop = asyncio.get_event_loop()
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        try:
+                            result = await asyncio.wait_for(
+                                loop.run_in_executor(executor, lambda: func(*args, **kwargs)),
+                                timeout=timeout
+                            )
+                        except asyncio.TimeoutError:
+                            # Re-raise as TimeoutError for consistent handling
+                            raise
                 else:
-                    result = func(*args, **kwargs)
+                    # No timeout - run sync function in executor to avoid blocking event loop
+                    loop = asyncio.get_event_loop()
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        result = await loop.run_in_executor(
+                            executor, lambda: func(*args, **kwargs)
+                        )
 
             self.record_success()
             return result

@@ -10,7 +10,7 @@ comprehensive validation, serialization, and observability features.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
@@ -229,7 +229,7 @@ class BaseMemoryRequest(BaseMemoryModel):
         description="Correlation ID for request tracking"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Request timestamp"
     )
     user_context: Optional[UserContext] = Field(
@@ -253,7 +253,7 @@ class BaseMemoryResponse(BaseMemoryModel):
     correlation_id: UUID = Field(description="Correlation ID matching request")
     status: OperationStatus = Field(description="Operation execution status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Response timestamp"
     )
     execution_time_ms: int = Field(
@@ -326,11 +326,11 @@ class MemoryRecord(BaseMemoryModel):
         description="Memory priority level"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Last update timestamp"
     )
     expires_at: Optional[datetime] = Field(
