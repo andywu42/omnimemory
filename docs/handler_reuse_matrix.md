@@ -231,13 +231,26 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 
 ## File Locations
 
-**Source Handlers**: `omnibase_infra` package (`src/omnibase_infra/handlers/` in sibling repository)
+**Source Handlers**: `omnibase-infra` package (PyPI) - handlers module
 
 **Target Nodes**: `src/omnimemory/nodes/` (this repository)
 
+### Installation
+
+The `omnibase-infra` package provides the infrastructure handlers. Due to dependency version
+constraints (structlog ^23.2.0 vs ^24.4.0), it is installed separately:
+
+```bash
+# For local development (editable install):
+pip install -e ../omnibase_infra3
+
+# When published to PyPI:
+poetry add --group dev omnibase-infra
+```
+
 **Recommended Import Strategy**:
 ```python
-# Direct import from omnibase_infra (dependency)
+# Direct import from omnibase_infra module (installed from omnibase-infra package)
 from omnibase_infra.handlers.handler_db import HandlerDb
 from omnibase_infra.handlers.handler_qdrant import HandlerQdrant
 from omnibase_infra.handlers.handler_filesystem import HandlerFileSystem
@@ -248,3 +261,6 @@ class MemoryStorageAdapter:
         self._db = db_handler
         self._vector = vector_handler
 ```
+
+> **Note**: The PyPI package name uses hyphens (`omnibase-infra`) while Python imports
+> use underscores (`omnibase_infra`). This is standard Python packaging convention.

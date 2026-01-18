@@ -87,11 +87,17 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
     # Check __init__ body - should only have super().__init__(container)
     init_body = methods[0].body
 
-    # Allow docstrings + super().__init__()
-    non_docstring_stmts = [
-        stmt for stmt in init_body
-        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant))
-    ]
+    # Allow docstring (ONLY first statement, ONLY if it's a string constant)
+    # Docstrings in Python are ALWAYS:
+    # 1. The first statement in the function body
+    # 2. A string literal (not other constants like int/float)
+    first_stmt_is_docstring = (
+        init_body
+        and isinstance(init_body[0], ast.Expr)
+        and isinstance(init_body[0].value, ast.Constant)
+        and isinstance(init_body[0].value.value, str)
+    )
+    non_docstring_stmts = init_body[1:] if first_stmt_is_docstring else init_body
 
     if len(non_docstring_stmts) > 1:
         return NodeValidationResult(
@@ -300,3 +306,118 @@ class GoodNode:
 ''')
         result = validate_node_py(good_node)
         assert result.valid, f"Should be valid with docstring: {result.error}"
+
+    def test_validate_node_py_rejects_non_string_constant(self, tmp_path: Path) -> None:
+        """Test that non-string constants are NOT treated as docstrings.
+
+        Only string literals in first position are valid docstrings.
+        Integer, float, and other constants must be rejected.
+        """
+        # Test case 1: Integer constant before super().__init__
+        bad_node_int = tmp_path / "bad_node_int.py"
+        bad_node_int.write_text('''
+class BadNode:
+    def __init__(self, container):
+        42
+        super().__init__(container)
+''')
+        result = validate_node_py(bad_node_int)
+        assert not result.valid, "Integer constant should not be treated as docstring"
+        assert "super().__init__" in result.error or "2 statements" in result.error
+
+        # Test case 2: Float constant before super().__init__
+        bad_node_float = tmp_path / "bad_node_float.py"
+        bad_node_float.write_text('''
+class BadNode:
+    def __init__(self, container):
+        3.14
+        super().__init__(container)
+''')
+        result = validate_node_py(bad_node_float)
+        assert not result.valid, "Float constant should not be treated as docstring"
+
+        # Test case 3: None constant before super().__init__
+        bad_node_none = tmp_path / "bad_node_none.py"
+        bad_node_none.write_text('''
+class BadNode:
+    def __init__(self, container):
+        None
+        super().__init__(container)
+''')
+        result = validate_node_py(bad_node_none)
+        assert not result.valid, "None constant should not be treated as docstring"
+
+        # Test case 4: Boolean constant before super().__init__
+        bad_node_bool = tmp_path / "bad_node_bool.py"
+        bad_node_bool.write_text('''
+class BadNode:
+    def __init__(self, container):
+        True
+        super().__init__(container)
+''')
+        result = validate_node_py(bad_node_bool)
+        assert not result.valid, "Boolean constant should not be treated as docstring"
+
+    def test_validate_node_py_rejects_string_after_super_init(self, tmp_path: Path) -> None:
+        """Test that string constants after super().__init__ are rejected.
+
+        Only the FIRST statement can be a docstring. String literals
+        appearing after super().__init__() are invalid extra statements.
+        """
+        bad_node = tmp_path / "bad_node_string_after.py"
+        bad_node.write_text('''
+class BadNode:
+    def __init__(self, container):
+        super().__init__(container)
+        """This is NOT a docstring - it comes after super().__init__"""
+''')
+        result = validate_node_py(bad_node)
+        assert not result.valid, "String after super().__init__ should be rejected"
+        assert "2 statements" in result.error or "super().__init__" in result.error
+
+    def test_validate_node_py_rejects_docstring_only(self, tmp_path: Path) -> None:
+        """Test that docstring without super().__init__() is rejected.
+
+        Even a valid docstring requires super().__init__(container) call.
+        """
+        bad_node = tmp_path / "bad_node_docstring_only.py"
+        bad_node.write_text('''
+class BadNode:
+    def __init__(self, container):
+        """This is a docstring but no super().__init__() call."""
+''')
+        result = validate_node_py(bad_node)
+        assert not result.valid, "Docstring-only init should be rejected"
+        assert "must call super().__init__(container)" in result.error
+
+    def test_validate_node_py_rejects_extra_statements_with_super(self, tmp_path: Path) -> None:
+        """Test that extra statements are rejected even with valid super().__init__().
+
+        The __init__ body must contain ONLY:
+        - Optionally a docstring (first statement)
+        - super().__init__(container)
+        """
+        # Test case 1: Docstring + super + extra print
+        bad_node_extra = tmp_path / "bad_node_extra.py"
+        bad_node_extra.write_text('''
+class BadNode:
+    def __init__(self, container):
+        """Valid docstring."""
+        super().__init__(container)
+        print("extra statement")
+''')
+        result = validate_node_py(bad_node_extra)
+        assert not result.valid, "Extra statements after super().__init__ should be rejected"
+        assert "2 statements" in result.error
+
+        # Test case 2: Docstring + assignment + super
+        bad_node_assign = tmp_path / "bad_node_assign_before.py"
+        bad_node_assign.write_text('''
+class BadNode:
+    def __init__(self, container):
+        """Valid docstring."""
+        self.x = 1
+        super().__init__(container)
+''')
+        result = validate_node_py(bad_node_assign)
+        assert not result.valid, "Assignment before super().__init__ should be rejected"
