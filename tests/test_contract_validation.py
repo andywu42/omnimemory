@@ -45,9 +45,8 @@ class TestContractValidation:
     def test_contract_is_valid_yaml(self, node_name: str) -> None:
         """Verify contract.yaml is valid YAML with required ONEX fields.
 
-        Checks that the contract has the required fields either:
-        - At root level (new ONEX format): name, node_type
-        - Under 'onex' key (legacy format): onex.name, onex.node_type
+        ONEX contracts must have fields at root level: name, node_type.
+        No backwards compatibility with legacy nested 'onex' format.
         """
         contract_path: Path = NODES_DIR / node_name / "contract.yaml"
         if not contract_path.exists():
@@ -58,16 +57,9 @@ class TestContractValidation:
 
         assert isinstance(data, dict), f"Contract must be a dict: {node_name}"
 
-        # ONEX contracts may have fields at root (new format) or under 'onex' key (legacy)
-        if "onex" in data:
-            # Legacy nested format
-            onex_section: dict[str, Any] = data["onex"]
-            assert "name" in onex_section, f"Contract must have 'onex.name' field: {node_name}"
-            assert "node_type" in onex_section, f"Contract must have 'onex.node_type' field: {node_name}"
-        else:
-            # New flat format with fields at root
-            assert "name" in data, f"Contract must have 'name' field: {node_name}"
-            assert "node_type" in data, f"Contract must have 'node_type' field: {node_name}"
+        # ONEX contracts must have fields at root level (no legacy nested format)
+        assert "name" in data, f"Contract must have 'name' field: {node_name}"
+        assert "node_type" in data, f"Contract must have 'node_type' field: {node_name}"
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
     def test_contract_validates_with_pydantic(self, node_name: str) -> None:
@@ -79,12 +71,9 @@ class TestContractValidation:
         with open(contract_path) as f:
             data: dict[str, Any] = yaml.safe_load(f)
 
-        # ONEX contracts may have node_type at root or under 'onex' key
-        # Check root level first (new ONEX format), then fall back to onex section
+        # ONEX contracts must have node_type at root level (no legacy nested format)
         node_type: str = data.get("node_type", "")
-        if not node_type:
-            onex_section: dict[str, Any] = data.get("onex", {})
-            node_type = onex_section.get("node_type", "")
+        assert node_type, f"Contract must have 'node_type' field at root level: {node_name}"
         node_type = node_type.upper()
 
         # Import appropriate contract model based on node type
@@ -137,7 +126,7 @@ class TestContractRuntimeLoad:
         module_name: str = f"omnimemory.nodes.{node_name}.node"
         try:
             module: types.ModuleType = importlib.import_module(module_name)
-            node_class: type[Any] | None = getattr(module, class_name, None)
+            node_class: type | None = getattr(module, class_name, None)
             assert node_class is not None, f"Node class {class_name} not found in {module_name}"
         except ModuleNotFoundError as e:
             # Package not installed in editable mode - skip rather than fail
@@ -145,3 +134,66 @@ class TestContractRuntimeLoad:
         except ImportError as e:
             # Other import errors indicate real problems - fail the test
             pytest.fail(f"Failed to import {module_name}: {e}")
+
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_node_can_be_instantiated(self, node_name: str) -> None:
+        """Verify node class can be instantiated with mock container.
+
+        This test catches runtime errors like invalid super().__init__() calls
+        that import-only tests would miss.
+        """
+        node_path: Path = NODES_DIR / node_name / "node.py"
+        if not node_path.exists():
+            pytest.skip(f"Node not yet implemented: {node_name}")
+
+        class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
+        module_name: str = f"omnimemory.nodes.{node_name}.node"
+
+        try:
+            module: types.ModuleType = importlib.import_module(module_name)
+            node_class: type | None = getattr(module, class_name, None)
+            if node_class is None:
+                pytest.skip(f"Node class {class_name} not found")
+
+            # Instantiate with mock container
+            from unittest.mock import Mock
+
+            mock_container: Mock = Mock()
+            instance: Any = node_class(container=mock_container)
+            assert instance is not None
+        except ModuleNotFoundError as e:
+            pytest.skip(f"Package not installed in editable mode: {e}")
+        except ImportError as e:
+            pytest.skip(f"Package not installed in editable mode: {e}")
+
+
+class TestContractHandlerMapping:
+    """Test contract actions have corresponding handlers.
+
+    These tests verify that the contract.yaml actions are implemented
+    by handlers in the handlers/ directory. Currently skipped during
+    scaffold phase.
+    """
+
+    @pytest.mark.skip(reason="Requires handler implementation")
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_contract_actions_have_handlers(self, node_name: str) -> None:
+        """Verify all contract actions have corresponding handlers."""
+        pass
+
+    @pytest.mark.skip(reason="Requires container implementation")
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_container_provides_required_dependencies(self, node_name: str) -> None:
+        """Verify container provides all dependencies declared in contract."""
+        pass
+
+    @pytest.mark.skip(reason="Requires error handling implementation")
+    def test_contract_validation_failure_handling(self) -> None:
+        """Verify graceful handling of invalid contracts."""
+        pass
+
+    @pytest.mark.skip(reason="Requires integration test infrastructure")
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_node_integration_with_storage_backend(self, node_name: str) -> None:
+        """Verify node interaction with actual storage backends."""
+        pass

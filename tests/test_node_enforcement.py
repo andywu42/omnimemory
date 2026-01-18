@@ -10,7 +10,8 @@ Ensures all node.py files follow the FULLY DECLARATIVE pattern:
 from __future__ import annotations
 
 import ast
-from typing import NamedTuple, Union
+from functools import lru_cache
+from typing import NamedTuple
 
 import pytest
 from pathlib import Path
@@ -38,11 +39,20 @@ class NodeValidationResult(NamedTuple):
 def validate_node_py(filepath: Path) -> NodeValidationResult:
     """Enforce declarative node pattern via AST parsing.
 
+    Results are cached to improve test performance.
+
     Rules:
     1. Exactly one class definition
     2. Only __init__ method allowed
     3. __init__ must only call super().__init__(container)
     """
+    return _validate_node_py_cached(str(filepath))
+
+
+@lru_cache(maxsize=32)
+def _validate_node_py_cached(filepath_str: str) -> NodeValidationResult:
+    """Cached implementation of node.py validation."""
+    filepath = Path(filepath_str)
     if not filepath.exists():
         return NodeValidationResult(False, f"File not found: {filepath}")
 
@@ -64,7 +74,7 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
     cls: ast.ClassDef = classes[0]
 
     # Get all methods (FunctionDef nodes that are direct children of class)
-    methods: list[Union[ast.FunctionDef, ast.AsyncFunctionDef]] = [
+    methods: list[ast.FunctionDef | ast.AsyncFunctionDef] = [
         n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
 

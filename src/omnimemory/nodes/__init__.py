@@ -21,7 +21,21 @@ ORCHESTRATOR (2):
 - agent_coordinator_orchestrator: Cross-agent coordination
 """
 
+from omnimemory.nodes.base import (
+    BaseComputeNode,
+    BaseEffectNode,
+    BaseNode,
+    BaseOrchestratorNode,
+    BaseReducerNode,
+)
+
 __all__: list[str] = [
+    # Base classes
+    "BaseNode",
+    "BaseEffectNode",
+    "BaseComputeNode",
+    "BaseReducerNode",
+    "BaseOrchestratorNode",
     # Effect nodes
     "memory_storage_effect",
     "memory_retrieval_effect",

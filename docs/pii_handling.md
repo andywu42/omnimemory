@@ -54,7 +54,7 @@ config = PIIDetectorConfig(
     high_confidence=0.98,
     medium_confidence=0.90,
     low_confidence=0.60,
-    max_text_length=100000,
+    max_text_length=50000,
     max_matches_per_type=50,
     enable_context_analysis=True
 )
@@ -353,7 +353,7 @@ PRODUCTION_CONFIG = PIIDetectorConfig(
     high_confidence=0.98,
     medium_confidence=0.92,
     low_confidence=0.80,
-    max_text_length=100000,
+    max_text_length=50000,
     max_matches_per_type=50,
 )
 

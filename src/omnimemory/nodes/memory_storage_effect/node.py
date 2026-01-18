@@ -13,11 +13,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from omnimemory.nodes.base import BaseEffectNode
+
 if TYPE_CHECKING:
     from omnibase_core.nodes.base import NodeContainer
 
 
-class NodeMemoryStorageEffect:
+class NodeMemoryStorageEffect(BaseEffectNode):
     """Memory storage effect node for CRUD operations.
 
     This node handles memory storage operations following the ONEX EFFECT
