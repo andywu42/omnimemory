@@ -23,14 +23,14 @@ class TestConnectionPool:
     """Test connection pool functionality."""
 
     @pytest.mark.asyncio
-    async def test_connection_pool_creation(self):
+    async def test_connection_pool_creation(self) -> None:
         """Test connection pool can be created with valid parameters."""
         pool = ConnectionPool(max_size=5, timeout=30.0)
         assert pool.max_size == 5
         assert pool.timeout == 30.0
 
     @pytest.mark.asyncio
-    async def test_connection_pool_acquire_release(self):
+    async def test_connection_pool_acquire_release_cycle(self) -> None:
         """Test connection acquisition and release."""
         pool = ConnectionPool(max_size=2, timeout=1.0)
 
@@ -47,7 +47,7 @@ class TestConnectionPool:
         assert pool.active_connections == 0
 
     @pytest.mark.asyncio
-    async def test_connection_pool_max_size_limit(self):
+    async def test_connection_pool_max_size_limit(self) -> None:
         """Test connection pool respects max size limit."""
         pool = ConnectionPool(max_size=1, timeout=0.1)
         pool._create_connection = Mock(return_value=Mock())
@@ -60,13 +60,14 @@ class TestConnectionPool:
                     pass
 
     @pytest.mark.asyncio
-    async def test_connection_pool_iterative_retry_prevents_recursion(self):
+    async def test_connection_pool_iterative_retry_prevents_recursion(self) -> None:
         """Test that connection pool uses iterative retry to prevent stack overflow."""
         pool = ConnectionPool(max_size=1, timeout=1.0)
 
         # Mock connection factory that fails first few times
         call_count = 0
-        def create_failing_connection():
+
+        def create_failing_connection() -> Mock:
             nonlocal call_count
             call_count += 1
             if call_count <= 2:  # Fail first 2 attempts
@@ -84,7 +85,7 @@ class TestConnectionPool:
 class TestCircuitBreaker:
     """Test circuit breaker functionality."""
 
-    def test_circuit_breaker_creation(self):
+    def test_circuit_breaker_creation(self) -> None:
         """Test circuit breaker can be created with valid parameters."""
         cb = CircuitBreaker(failure_threshold=3, recovery_timeout=60.0)
         assert cb.failure_threshold == 3
@@ -92,12 +93,12 @@ class TestCircuitBreaker:
         assert cb.state == CircuitBreakerState.CLOSED
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_success_flow(self):
+    async def test_circuit_breaker_success_flow(self) -> None:
         """Test circuit breaker allows successful operations."""
         cb = CircuitBreaker(failure_threshold=2)
 
         @with_circuit_breaker(cb)
-        async def successful_operation():
+        async def successful_operation() -> str:
             return "success"
 
         result = await successful_operation()
@@ -106,12 +107,12 @@ class TestCircuitBreaker:
         assert cb.failure_count == 0
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_failure_threshold(self):
+    async def test_circuit_breaker_failure_threshold(self) -> None:
         """Test circuit breaker opens after failure threshold."""
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
 
         @with_circuit_breaker(cb)
-        async def failing_operation():
+        async def failing_operation() -> None:
             raise ValueError("Operation failed")
 
         # First failure
@@ -129,13 +130,14 @@ class TestCircuitBreaker:
             await failing_operation()
 
     @pytest.mark.asyncio
-    async def test_circuit_breaker_half_open_recovery(self):
+    async def test_circuit_breaker_half_open_recovery(self) -> None:
         """Test circuit breaker recovery through half-open state."""
         cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.1)
 
         call_count = 0
+
         @with_circuit_breaker(cb)
-        async def recovering_operation():
+        async def recovering_operation() -> str:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -160,10 +162,11 @@ class TestTimeoutDecorator:
     """Test timeout decorator functionality."""
 
     @pytest.mark.asyncio
-    async def test_with_timeout_success(self):
+    async def test_with_timeout_success(self) -> None:
         """Test timeout decorator allows fast operations."""
+
         @with_timeout(1.0)
-        async def fast_operation():
+        async def fast_operation() -> str:
             await asyncio.sleep(0.1)
             return "completed"
 
@@ -171,10 +174,11 @@ class TestTimeoutDecorator:
         assert result == "completed"
 
     @pytest.mark.asyncio
-    async def test_with_timeout_failure(self):
+    async def test_with_timeout_failure(self) -> None:
         """Test timeout decorator cancels slow operations."""
+
         @with_timeout(0.1)
-        async def slow_operation():
+        async def slow_operation() -> str:
             await asyncio.sleep(1.0)
             return "should not complete"
 
@@ -186,22 +190,23 @@ class TestRetryDecorator:
     """Test retry decorator functionality."""
 
     @pytest.mark.asyncio
-    async def test_with_retry_success(self):
+    async def test_with_retry_success(self) -> None:
         """Test retry decorator allows successful operations."""
+
         @with_retry(max_attempts=3, delay=0.1)
-        async def successful_operation():
+        async def successful_operation() -> str:
             return "success"
 
         result = await successful_operation()
         assert result == "success"
 
     @pytest.mark.asyncio
-    async def test_with_retry_eventual_success(self):
+    async def test_with_retry_eventual_success(self) -> None:
         """Test retry decorator retries until success."""
         call_count = 0
 
         @with_retry(max_attempts=3, delay=0.01)
-        async def eventually_successful():
+        async def eventually_successful() -> str:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -213,12 +218,12 @@ class TestRetryDecorator:
         assert call_count == 3
 
     @pytest.mark.asyncio
-    async def test_with_retry_max_attempts_exceeded(self):
+    async def test_with_retry_max_attempts_exceeded(self) -> None:
         """Test retry decorator respects max attempts."""
         call_count = 0
 
         @with_retry(max_attempts=2, delay=0.01)
-        async def always_failing():
+        async def always_failing() -> None:
             nonlocal call_count
             call_count += 1
             raise ValueError(f"Attempt {call_count} failed")
@@ -228,12 +233,12 @@ class TestRetryDecorator:
         assert call_count == 2
 
     @pytest.mark.asyncio
-    async def test_with_retry_exponential_backoff(self):
+    async def test_with_retry_exponential_backoff(self) -> None:
         """Test retry decorator uses exponential backoff."""
-        call_times = []
+        call_times: list[float] = []
 
         @with_retry(max_attempts=3, delay=0.1, backoff_multiplier=2.0)
-        async def timing_operation():
+        async def timing_operation() -> str:
             call_times.append(asyncio.get_event_loop().time())
             if len(call_times) < 3:
                 raise ValueError("Not yet")
@@ -249,7 +254,7 @@ class TestRetryDecorator:
 
         # Second delay should be roughly twice the first
         assert 0.18 < delay2 < 0.22  # ~0.2s (0.1 * 2)
-        assert 0.08 < delay1 < 0.12   # ~0.1s
+        assert 0.08 < delay1 < 0.12  # ~0.1s
 
 
 @pytest.mark.integration
@@ -257,14 +262,15 @@ class TestConcurrencyIntegration:
     """Integration tests for concurrency utilities."""
 
     @pytest.mark.asyncio
-    async def test_connection_pool_with_circuit_breaker(self):
+    async def test_connection_pool_with_circuit_breaker(self) -> None:
         """Test connection pool integrated with circuit breaker."""
         pool = ConnectionPool(max_size=2, timeout=1.0)
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
 
         # Mock connection that fails first few times
         fail_count = 0
-        def create_connection():
+
+        def create_connection() -> Mock:
             nonlocal fail_count
             fail_count += 1
             if fail_count <= 2:
@@ -274,7 +280,7 @@ class TestConcurrencyIntegration:
         pool._create_connection = create_connection
 
         @with_circuit_breaker(cb)
-        async def get_connection():
+        async def get_connection() -> Mock:
             async with pool.acquire() as conn:
                 return conn
 
@@ -293,7 +299,7 @@ class TestConcurrencyIntegration:
             await get_connection()
 
     @pytest.mark.asyncio
-    async def test_retry_with_timeout_and_circuit_breaker(self):
+    async def test_retry_timeout_circuit_breaker_combined(self) -> None:
         """Test retry combined with timeout and circuit breaker."""
         cb = CircuitBreaker(failure_threshold=3, recovery_timeout=0.1)
 
@@ -302,7 +308,7 @@ class TestConcurrencyIntegration:
         @with_timeout(0.5)
         @with_retry(max_attempts=5, delay=0.05)
         @with_circuit_breaker(cb)
-        async def complex_operation():
+        async def complex_operation() -> str:
             nonlocal attempt_count
             attempt_count += 1
 

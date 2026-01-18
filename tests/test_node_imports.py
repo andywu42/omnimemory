@@ -31,7 +31,7 @@ NODES_DIR = Path(__file__).parent.parent / "src" / "omnimemory" / "nodes"
 class TestNodeImports:
     """Test that all nodes can be imported."""
 
-    def test_nodes_package_imports(self) -> None:
+    def test_nodes_package_import_succeeds(self) -> None:
         """Verify the nodes package can be imported."""
         try:
             import omnimemory.nodes
@@ -40,7 +40,7 @@ class TestNodeImports:
             pytest.skip(f"Package not installed in editable mode: {e}")
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_package_imports(self, node_name: str) -> None:
+    def test_node_package_import_succeeds(self, node_name: str) -> None:
         """Verify each node package can be imported."""
         module_name: str = f"omnimemory.nodes.{node_name}"
         try:
@@ -51,12 +51,12 @@ class TestNodeImports:
             pytest.skip(f"Node package not yet fully implemented: {e}")
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_class_can_be_imported(self, node_name: str) -> None:
+    def test_node_class_import_succeeds(self, node_name: str) -> None:
         """Verify node class can be imported from package."""
         # Check if node.py exists first
         node_path: Path = NODES_DIR / node_name / "node.py"
         if not node_path.exists():
-            pytest.skip(f"Node class not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {node_path}")
 
         # Convert node_name to class name (e.g., memory_storage_effect -> NodeMemoryStorageEffect)
         class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
@@ -71,7 +71,7 @@ class TestNodeImports:
         except ImportError as e:
             pytest.skip(f"Node not yet implemented: {e}")
 
-    def test_all_nodes_in_package_all(self) -> None:
+    def test_nodes_package_exports_core_nodes(self) -> None:
         """Verify __all__ in nodes package lists all Core 8 nodes.
 
         The nodes package __init__.py should export all Core 8 node
@@ -119,7 +119,7 @@ class TestNodeStructure:
         """
         node_dir: Path = NODES_DIR / node_name
         if not node_dir.exists():
-            pytest.skip(f"Node directory not yet created: {node_name}")
+            pytest.skip(f"Directory not yet created: {node_dir}")
         init_path: Path = node_dir / "__init__.py"
         assert init_path.exists(), f"Missing __init__.py: {init_path}"
 
@@ -134,7 +134,7 @@ class TestNodeStructure:
         """
         node_dir: Path = NODES_DIR / node_name
         if not node_dir.exists():
-            pytest.skip(f"Node directory not yet created: {node_name}")
+            pytest.skip(f"Directory not yet created: {node_dir}")
         handlers_dir: Path = node_dir / "handlers"
         assert handlers_dir.exists(), f"Missing handlers dir: {handlers_dir}"
         assert (handlers_dir / "__init__.py").exists(), "Missing handlers/__init__.py"

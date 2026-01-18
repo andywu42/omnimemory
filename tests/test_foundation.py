@@ -6,6 +6,8 @@ to ensure ONEX compliance and proper implementation of the ModelOnexContainer
 patterns, protocols, and error handling.
 """
 
+from __future__ import annotations
+
 import asyncio
 import pytest
 from datetime import datetime
@@ -39,27 +41,27 @@ from omnibase_spi import ProtocolLogger
 
 class MockMemoryStorageNode:
     """Mock implementation of memory storage service for testing."""
-    
+
     async def _check_storage_connectivity(self) -> bool:
         """Mock storage connectivity check."""
         return True
-    
+
     async def _get_storage_operation_count(self) -> int:
         """Mock storage operation count."""
         return 42
-    
+
     async def _get_cache_hit_rate(self) -> float:
         """Mock cache hit rate."""
         return 0.85
-    
+
     async def _get_storage_utilization(self) -> Dict[str, float]:
         """Mock storage utilization."""
         return {"disk": 0.60, "memory": 0.45}
-    
+
     async def _validate_configuration(self, config: Dict[str, Any]) -> bool:
         """Mock configuration validation."""
         return "invalid_key" not in config
-    
+
     async def _apply_configuration(self, config: Dict[str, Any]) -> None:
         """Mock configuration application."""
         pass
@@ -109,7 +111,7 @@ class TestFoundationArchitecture:
     def container(self) -> ModelOnexContainer:
         """Create a test container instance."""
         return ModelOnexContainer()
-    
+
     @pytest.fixture
     def sample_memory_record(self) -> MemoryRecord:
         """Create a sample memory record for testing."""
@@ -121,17 +123,16 @@ class TestFoundationArchitecture:
             access_level=AccessLevel.INTERNAL,
             tags=["test", "validation", "onex"],
         )
-    
-    def test_container_initialization(self, container: ModelOnexContainer):
+
+    def test_container_initialization(self, container: ModelOnexContainer) -> None:
         """Test that the ONEX container initializes properly."""
         assert container is not None
         assert hasattr(container, 'register_singleton')
         assert hasattr(container, 'register_transient')
         assert hasattr(container, 'resolve')
-    
-    def test_node_registration_and_resolution(self, container: ModelOnexContainer):
-        """Test ONEX node registration and resolution functionality."""
 
+    def test_container_node_registration_resolution(self, container: ModelOnexContainer) -> None:
+        """Test ONEX node registration and resolution functionality."""
         # Register mock storage node
         container.register_singleton(ProtocolMemoryStorage, MockMemoryStorageNode)
 
@@ -140,8 +141,8 @@ class TestFoundationArchitecture:
 
         assert storage_node is not None
         assert isinstance(storage_node, MockMemoryStorageNode)
-    
-    def test_memory_record_validation(self, sample_memory_record: MemoryRecord):
+
+    def test_memory_record_validation(self, sample_memory_record: MemoryRecord) -> None:
         """Test memory record creation and validation."""
         assert sample_memory_record.memory_id is not None
         assert sample_memory_record.content == "This is a test memory record for ONEX validation"
@@ -154,22 +155,22 @@ class TestFoundationArchitecture:
         assert "onex" in sample_memory_record.tags
         assert sample_memory_record.created_at is not None
         assert sample_memory_record.updated_at is not None
-    
-    def test_memory_store_request_creation(self, sample_memory_record: MemoryRecord):
+
+    def test_memory_store_request_creation(self, sample_memory_record: MemoryRecord) -> None:
         """Test memory store request creation and validation."""
         request = MemoryStoreRequest(
             memory=sample_memory_record,
             generate_embedding=True,
             index_immediately=True,
         )
-        
+
         assert request.memory == sample_memory_record
         assert request.generate_embedding is True
         assert request.index_immediately is True
         assert request.correlation_id is not None
         assert request.timestamp is not None
-    
-    def test_error_handling_creation(self):
+
+    def test_error_handling_creation(self) -> None:
         """Test ONEX error handling patterns."""
         # Test basic OmniMemoryError
         error = OmniMemoryError(
@@ -177,41 +178,40 @@ class TestFoundationArchitecture:
             message="Test error message",
             context={"test_key": "test_value"},
         )
-        
+
         assert error.omnimemory_error_code == OmniMemoryErrorCode.INVALID_INPUT
         assert error.message == "Test error message"
         assert error.context["test_key"] == "test_value"
         assert error.is_recoverable() is False  # Validation errors are not recoverable
-        
+
         # Test ValidationError
         validation_error = ValidationError(
             message="Invalid field value",
             field_name="test_field",
             field_value="invalid_value",
         )
-        
+
         assert validation_error.context["field_name"] == "test_field"
         assert validation_error.context["field_value"] == "invalid_value"
         assert "Review and correct the input" in validation_error.recovery_hint
-    
-    def test_error_categorization(self):
+
+    def test_error_categorization(self) -> None:
         """Test error categorization and metadata."""
         from omnimemory.protocols.error_models import get_error_category
-        
+
         # Test validation error category
         validation_category = get_error_category(OmniMemoryErrorCode.INVALID_INPUT)
         assert validation_category is not None
         assert validation_category.recoverable is False
         assert validation_category.default_retry_count == 0
-        
+
         # Test storage error category
         storage_category = get_error_category(OmniMemoryErrorCode.STORAGE_UNAVAILABLE)
         assert storage_category is not None
         assert storage_category.recoverable is True
         assert storage_category.default_retry_count > 0
-    
-    
-    def test_monadic_patterns(self):
+
+    def test_node_result_success_failure_composition(self) -> None:
         """Test monadic patterns and NodeResult composition."""
         # Test successful NodeResult
         success_result = NodeResult.success(
@@ -219,47 +219,47 @@ class TestFoundationArchitecture:
             provenance=["test.operation"],
             trust_score=1.0,
         )
-        
+
         assert success_result.is_success is True
         assert success_result.is_failure is False
         assert success_result.value == "test_value"
         assert "test.operation" in success_result.provenance
         assert success_result.trust_score == 1.0
-        
+
         # Test failure NodeResult
         error = SystemError(
             message="Test failure",
             system_component="test_component",
         )
-        
+
         failure_result = NodeResult.failure(
             error=error,
             provenance=["test.operation.failed"],
         )
-        
+
         assert failure_result.is_success is False
         assert failure_result.is_failure is True
         assert failure_result.error is not None
         assert "test.operation.failed" in failure_result.provenance
-    
-    def test_contract_compliance(self):
+
+    def test_contract_compliance(self) -> None:
         """Test that the implementation follows contract specifications."""
         # Verify contract.yaml can be loaded
         import yaml
         from pathlib import Path
-        
+
         contract_path = Path("contract.yaml")
         assert contract_path.exists(), "contract.yaml must exist"
-        
+
         with open(contract_path, 'r') as f:
             contract_data = yaml.safe_load(f)
-        
+
         # Verify contract structure
         assert "contract" in contract_data
         assert "protocols" in contract_data
         assert "schemas" in contract_data
         assert "error_handling" in contract_data
-        
+
         # Verify ONEX architecture mapping
         architecture = contract_data["contract"]["architecture"]
         assert architecture["pattern"] == "onex_4_node"
@@ -267,10 +267,11 @@ class TestFoundationArchitecture:
         assert "compute" in architecture["nodes"]
         assert "reducer" in architecture["nodes"]
         assert "orchestrator" in architecture["nodes"]
-    
-    async def test_end_to_end_memory_operation(self, container: ModelOnexContainer, sample_memory_record: MemoryRecord):
-        """Test end-to-end memory operation using ONEX nodes."""
 
+    async def test_memory_operation_e2e(
+        self, container: ModelOnexContainer, sample_memory_record: MemoryRecord
+    ) -> None:
+        """Test end-to-end memory operation using ONEX nodes."""
         # Register mock storage node
         container.register_singleton(ProtocolMemoryStorage, MockMemoryStorageNode)
 

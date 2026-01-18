@@ -38,7 +38,7 @@ class TestContractValidation:
         contract_path: Path = NODES_DIR / node_name / "contract.yaml"
         # Skip if not yet implemented (scaffold phase)
         if not contract_path.exists():
-            pytest.skip(f"Contract not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {contract_path}")
         assert contract_path.exists(), f"Missing contract: {contract_path}"
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
@@ -50,7 +50,7 @@ class TestContractValidation:
         """
         contract_path: Path = NODES_DIR / node_name / "contract.yaml"
         if not contract_path.exists():
-            pytest.skip(f"Contract not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {contract_path}")
 
         with open(contract_path) as f:
             data: dict[str, Any] = yaml.safe_load(f)
@@ -66,7 +66,7 @@ class TestContractValidation:
         """Verify contract validates against appropriate Pydantic model."""
         contract_path: Path = NODES_DIR / node_name / "contract.yaml"
         if not contract_path.exists():
-            pytest.skip(f"Contract not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {contract_path}")
 
         with open(contract_path) as f:
             data: dict[str, Any] = yaml.safe_load(f)
@@ -109,7 +109,7 @@ class TestContractRuntimeLoad:
     """
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_can_be_imported(self, node_name: str) -> None:
+    def test_node_import_succeeds(self, node_name: str) -> None:
         """Verify node class can be imported from its package.
 
         This test checks that the node.py file exists and that the
@@ -118,7 +118,7 @@ class TestContractRuntimeLoad:
         """
         node_path: Path = NODES_DIR / node_name / "node.py"
         if not node_path.exists():
-            pytest.skip(f"Node not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {node_path}")
 
         # Convert node_name to class name (e.g., memory_storage_effect -> NodeMemoryStorageEffect)
         class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
@@ -136,7 +136,7 @@ class TestContractRuntimeLoad:
             pytest.fail(f"Failed to import {module_name}: {e}")
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_can_be_instantiated(self, node_name: str) -> None:
+    def test_node_instantiation_succeeds(self, node_name: str) -> None:
         """Verify node class can be instantiated with mock container.
 
         This test catches runtime errors like invalid super().__init__() calls
@@ -144,7 +144,7 @@ class TestContractRuntimeLoad:
         """
         node_path: Path = NODES_DIR / node_name / "node.py"
         if not node_path.exists():
-            pytest.skip(f"Node not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {node_path}")
 
         class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
         module_name: str = f"omnimemory.nodes.{node_name}.node"

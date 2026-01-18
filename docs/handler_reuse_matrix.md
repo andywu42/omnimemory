@@ -6,7 +6,10 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 
 ## Existing Handlers in omnibase_infra
 
-### Core Infrastructure Handlers (`handlers/`)
+> **Note**: All paths below (e.g., `handlers/`, `runtime/`) are Python module paths within the
+> `omnibase_infra` package. Install via PyPI: `pip install omnibase-infra`.
+
+### Core Infrastructure Handlers (`omnibase_infra.handlers`)
 
 | Handler | Purpose | Key Operations | Reuse Potential |
 |---------|---------|----------------|-----------------|
@@ -20,21 +23,21 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 | `handler_mcp.py` | MCP protocol | MCP operations | LOW - agent communication |
 | `handler_manifest_persistence.py` | Manifest storage | persist manifests | LOW - specialized |
 
-### Registration Storage Handlers (`handlers/registration_storage/`)
+### Registration Storage Handlers (`omnibase_infra.handlers.registration_storage`)
 
 | Handler | Purpose | Reuse Potential |
 |---------|---------|-----------------|
 | `handler_registration_storage_postgres.py` | PostgreSQL registration | MEDIUM - storage patterns |
 | `handler_registration_storage_mock.py` | Mock for testing | HIGH - testing patterns |
 
-### Service Discovery Handlers (`handlers/service_discovery/`)
+### Service Discovery Handlers (`omnibase_infra.handlers.service_discovery`)
 
 | Handler | Purpose | Reuse Potential |
 |---------|---------|-----------------|
 | `handler_service_discovery_consul.py` | Consul discovery | LOW - infrastructure |
 | `handler_service_discovery_mock.py` | Mock discovery | HIGH - testing patterns |
 
-### Node-Specific Handlers (`nodes/node_registration_orchestrator/handlers/`)
+### Node-Specific Handlers (`omnibase_infra.nodes.node_registration_orchestrator.handlers`)
 
 | Handler | Purpose | Reuse Potential |
 |---------|---------|-----------------|
@@ -43,7 +46,7 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 | `handler_node_introspected.py` | Node introspection | LOW - specialized |
 | `handler_node_registration_acked.py` | Registration acknowledgment | LOW - specialized |
 
-### Registry Effect Handlers (`nodes/node_registry_effect/handlers/`)
+### Registry Effect Handlers (`omnibase_infra.nodes.node_registry_effect.handlers`)
 
 | Handler | Purpose | Reuse Potential |
 |---------|---------|-----------------|
@@ -53,7 +56,7 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 | `handler_consul_deregister.py` | Consul deregistration | LOW - infrastructure |
 | `handler_partial_retry.py` | Retry logic | HIGH - resilience patterns |
 
-### Runtime Handlers (`runtime/`)
+### Runtime Handlers (`omnibase_infra.runtime`)
 
 | Handler | Purpose | Reuse Potential |
 |---------|---------|-----------------|

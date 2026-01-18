@@ -584,6 +584,190 @@ class TestPIIDetector:
 
 ---
 
+## Performance Considerations
+
+PII detection is a critical component of memory operations and must meet OmniMemory's performance requirements. This section documents performance targets, benchmarks, and optimization strategies.
+
+### Performance Targets
+
+The PIIDetector is designed to meet OmniMemory's overall performance specifications from CLAUDE.md:
+
+| Metric | Target | Context |
+|--------|--------|---------|
+| **Memory Operations** | <100ms (95th percentile) | Overall system target for all memory operations |
+| **PII Scan (50KB text)** | <100ms | Maximum text length with PII present |
+| **PII Scan (clean text)** | <50ms | When no PII patterns are found |
+| **PII Throughput** | 10+ scans/second | For 10KB documents at medium sensitivity |
+| **Stress Test (max length)** | <200ms | Maximum text length with high sensitivity |
+
+These targets ensure PII detection does not become a bottleneck in memory storage workflows.
+
+### Performance Benchmarks
+
+Automated performance tests are available in `tests/test_performance.py`. The `TestPIIDetectorPerformance` class provides benchmarks for:
+
+```bash
+# Run all PII performance benchmarks
+pytest tests/test_performance.py -v -k "TestPIIDetectorPerformance"
+
+# Run quick benchmarks only (skip slow throughput tests)
+pytest tests/test_performance.py -v -m "benchmark and not slow"
+```
+
+**Key benchmark tests:**
+- `test_pii_scan_50kb_under_100ms` - Core performance validation
+- `test_pii_scan_clean_text_performance` - Clean text optimization
+- `test_pii_scan_throughput` - Sustained throughput measurement
+- `test_pii_scan_reports_duration` - Duration tracking validation
+
+### Optimization Strategies
+
+#### 1. Choose Appropriate Sensitivity Level
+
+Sensitivity level significantly impacts performance due to pattern matching thresholds:
+
+| Sensitivity | Patterns Evaluated | Performance Impact | Use Case |
+|-------------|-------------------|-------------------|----------|
+| `"low"` | Fewest (high-confidence only) | Fastest | Production storage, high-throughput |
+| `"medium"` | Balanced | Moderate | General use, default setting |
+| `"high"` | Most (includes weak patterns) | Slowest | Security audits, batch processing |
+
+```python
+# High-throughput scenario: use low sensitivity
+result = detector.detect_pii(content, sensitivity_level="low")
+
+# Security audit: use high sensitivity (accept performance cost)
+result = detector.detect_pii(content, sensitivity_level="high")
+```
+
+#### 2. Configure max_text_length Appropriately
+
+The `max_text_length` setting controls memory usage and scan time:
+
+```python
+# Production preset - optimized for performance
+config = PIIDetectorConfig(
+    max_text_length=50000,      # 50KB limit
+    max_matches_per_type=50,    # Limit match processing
+)
+
+# Large document processing - accept higher memory/time
+config = PIIDetectorConfig(
+    max_text_length=200000,     # 200KB limit
+    max_matches_per_type=500,   # More matches allowed
+)
+```
+
+**Memory usage considerations:**
+- Each additional 10KB of text adds approximately 1-2ms scan time
+- Match deduplication and sanitization have O(n log n) complexity
+- `max_matches_per_type` limits memory for documents with many PII items
+
+#### 3. Pre-filter Content When Possible
+
+For known content types, skip unnecessary scans:
+
+```python
+class OptimizedMemoryStorage:
+    def __init__(self):
+        self.pii_detector = PIIDetector()
+
+    async def store(self, content: str, content_type: str) -> StorageResult:
+        # Skip PII scan for known-safe content types
+        if content_type in ("metrics", "logs_sanitized", "system_generated"):
+            return await self._persist(content)
+
+        # Scan user-generated content
+        result = self.pii_detector.detect_pii(content, sensitivity_level="medium")
+        return await self._persist(result.sanitized_content)
+```
+
+#### 4. Batch Processing Optimization
+
+For bulk operations, process in parallel while respecting throughput limits:
+
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+class BatchPIIProcessor:
+    def __init__(self, max_workers: int = 4):
+        self.detector = PIIDetector()
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+
+    async def process_batch(self, items: List[str]) -> List[PIIDetectionResult]:
+        """Process batch with controlled parallelism."""
+        loop = asyncio.get_event_loop()
+
+        # Process in parallel using thread pool
+        futures = [
+            loop.run_in_executor(
+                self.executor,
+                self.detector.detect_pii,
+                item,
+                "medium"
+            )
+            for item in items
+        ]
+
+        return await asyncio.gather(*futures)
+```
+
+#### 5. Monitor and Track Performance
+
+Use the built-in `scan_duration_ms` metric for observability:
+
+```python
+class PerformanceTrackedDetector:
+    def __init__(self, alert_threshold_ms: float = 100.0):
+        self.detector = PIIDetector()
+        self.alert_threshold_ms = alert_threshold_ms
+        self.slow_scans = 0
+
+    def detect_pii(self, content: str, sensitivity_level: str = "medium"):
+        result = self.detector.detect_pii(content, sensitivity_level)
+
+        if result.scan_duration_ms > self.alert_threshold_ms:
+            self.slow_scans += 1
+            logger.warning(
+                "PII scan exceeded threshold",
+                duration_ms=result.scan_duration_ms,
+                content_length=len(content),
+                sensitivity=sensitivity_level,
+                matches_found=len(result.matches)
+            )
+
+        return result
+```
+
+### Performance vs. Security Trade-offs
+
+| Scenario | Recommended Configuration | Rationale |
+|----------|--------------------------|-----------|
+| Real-time API responses | Low sensitivity, 10KB limit | User-facing latency requirements |
+| Background batch jobs | High sensitivity, 200KB limit | Thoroughness over speed |
+| Stream processing | Medium sensitivity, 50KB limit | Balanced approach |
+| Security audits | High sensitivity, no limits | Maximum detection, scheduled runs |
+
+### Troubleshooting Performance Issues
+
+**Symptom: Scans consistently exceed 100ms**
+- Check content length (reduce `max_text_length` if needed)
+- Lower sensitivity level for high-throughput paths
+- Profile regex patterns for complex content
+
+**Symptom: High memory usage during batch processing**
+- Reduce `max_matches_per_type` setting
+- Process in smaller batches
+- Implement streaming for very large documents
+
+**Symptom: Inconsistent scan times**
+- Content with many PII items takes longer to sanitize
+- High-sensitivity scans evaluate more patterns
+- Consider caching for repeated content
+
+---
+
 ## Related Documentation
 
 - [Handler Reuse Matrix](./handler_reuse_matrix.md) - Handler integration patterns

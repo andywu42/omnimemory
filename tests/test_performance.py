@@ -526,7 +526,7 @@ class TestPIIDetectorPerformance:
     """
 
     @pytest.mark.benchmark
-    def test_pii_scan_50kb_under_100ms(self):
+    def test_pii_scan_50kb_under_100ms(self) -> None:
         """
         Benchmark: PIIDetector should scan 50KB of text in under 100ms.
 
@@ -557,7 +557,7 @@ class TestPIIDetectorPerformance:
         )
 
     @pytest.mark.benchmark
-    def test_pii_scan_clean_text_performance(self):
+    def test_pii_scan_clean_text_performance(self) -> None:
         """
         Benchmark: PIIDetector should be fast when no PII is present.
 
@@ -581,7 +581,7 @@ class TestPIIDetectorPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.slow
-    def test_pii_scan_throughput(self):
+    def test_pii_scan_throughput(self) -> None:
         """
         Benchmark: Measure PII detection throughput over multiple scans.
 
@@ -603,7 +603,7 @@ class TestPIIDetectorPerformance:
         )
 
     @pytest.mark.benchmark
-    def test_pii_scan_reports_duration(self):
+    def test_pii_scan_reports_duration(self) -> None:
         """
         Verify PIIDetector correctly reports scan duration in result.
         """
@@ -629,7 +629,7 @@ class TestModelSerializationPerformance:
     """
 
     @pytest.mark.benchmark
-    def test_memory_item_serialization_speed(self):
+    def test_memory_item_serialization_speed(self) -> None:
         """
         Benchmark: ModelMemoryItem serialization should be fast.
 
@@ -654,7 +654,7 @@ class TestModelSerializationPerformance:
         )
 
     @pytest.mark.benchmark
-    def test_memory_item_deserialization_speed(self):
+    def test_memory_item_deserialization_speed(self) -> None:
         """
         Benchmark: ModelMemoryItem deserialization should be fast.
 
@@ -680,7 +680,7 @@ class TestModelSerializationPerformance:
         )
 
     @pytest.mark.benchmark
-    def test_memory_item_json_roundtrip_speed(self):
+    def test_memory_item_json_roundtrip_speed(self) -> None:
         """
         Benchmark: Full JSON roundtrip (serialize -> JSON string -> deserialize).
 
@@ -708,7 +708,7 @@ class TestModelSerializationPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.slow
-    def test_batch_serialization_throughput(self):
+    def test_batch_serialization_throughput(self) -> None:
         """
         Benchmark: Batch serialization should support >10K items/second.
 
@@ -742,7 +742,7 @@ class TestConcurrencyPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_fair_semaphore_acquisition_speed(self):
+    async def test_fair_semaphore_acquisition_speed(self) -> None:
         """
         Benchmark: FairSemaphore acquisition should have minimal overhead.
 
@@ -770,7 +770,7 @@ class TestConcurrencyPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_priority_lock_acquisition_speed(self):
+    async def test_priority_lock_acquisition_speed(self) -> None:
         """
         Benchmark: PriorityLock acquisition should have minimal overhead.
 
@@ -799,7 +799,7 @@ class TestConcurrencyPerformance:
     @pytest.mark.benchmark
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_concurrent_semaphore_throughput(self):
+    async def test_concurrent_semaphore_throughput(self) -> None:
         """
         Benchmark: Measure throughput under concurrent semaphore contention.
 
@@ -807,9 +807,9 @@ class TestConcurrencyPerformance:
         Target: Process 1000 operations in under 2 seconds with 10 workers.
         """
         semaphore = FairSemaphore(value=5, name="throughput_semaphore")
-        completed: List[tuple] = []
+        completed: List[tuple[int, int]] = []
 
-        async def worker(worker_id: int, num_ops: int):
+        async def worker(worker_id: int, num_ops: int) -> None:
             for i in range(num_ops):
                 async with semaphore.acquire(timeout=5.0):
                     await asyncio.sleep(0.001)
@@ -834,7 +834,7 @@ class TestConcurrencyPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_semaphore_stats_overhead(self):
+    async def test_semaphore_stats_overhead(self) -> None:
         """
         Benchmark: Statistics tracking should not significantly impact performance.
         """
@@ -869,7 +869,7 @@ class TestIntegratedPerformance:
 
     @pytest.mark.benchmark
     @pytest.mark.slow
-    def test_memory_item_creation_with_pii_scan(self):
+    def test_memory_item_creation_with_pii_scan(self) -> None:
         """
         Benchmark: Memory item creation + PII scan combined workflow.
 
@@ -895,14 +895,14 @@ class TestIntegratedPerformance:
     @pytest.mark.benchmark
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_concurrent_memory_operations(self):
+    async def test_concurrent_memory_operations(self) -> None:
         """
         Benchmark: Concurrent memory operations under load.
         """
         semaphore = FairSemaphore(value=5, name="memory_ops_semaphore")
         results: List[bool] = []
 
-        async def memory_operation(op_id: int):
+        async def memory_operation(op_id: int) -> None:
             async with semaphore.acquire(timeout=10.0):
                 item = create_memory_item(content_size=2000)
                 json_str = item.model_dump_json()
@@ -937,7 +937,7 @@ class TestStressPerformance:
     """
 
     @pytest.mark.benchmark
-    def test_pii_detector_max_text_length(self):
+    def test_pii_detector_max_text_length(self) -> None:
         """
         Stress test: PIIDetector at maximum configured text length.
         """
@@ -956,7 +956,7 @@ class TestStressPerformance:
         )
 
     @pytest.mark.benchmark
-    def test_large_batch_model_operations(self):
+    def test_large_batch_model_operations(self) -> None:
         """
         Stress test: Large batch of model serialization operations.
 

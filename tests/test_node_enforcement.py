@@ -219,7 +219,7 @@ class TestNodeEnforcement:
         node_path: Path = NODES_DIR / node_name / "node.py"
         # Skip if not yet implemented
         if not node_path.exists():
-            pytest.skip(f"Node not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {node_path}")
         assert node_path.exists()
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
@@ -232,7 +232,7 @@ class TestNodeEnforcement:
         """
         node_path: Path = NODES_DIR / node_name / "node.py"
         if not node_path.exists():
-            pytest.skip(f"Node not yet implemented: {node_name}")
+            pytest.skip(f"File not yet implemented: {node_path}")
 
         result: NodeValidationResult = validate_node_py(node_path)
         assert result.valid, f"Node {node_name} failed enforcement: {result.error}"
