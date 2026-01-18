@@ -48,10 +48,9 @@ asyncio-mqtt = "^0.16.0"
 # JSON and YAML processing
 pyyaml = "^6.0.2"
 
-# ONEX dependencies for canary node preparation - HTTPS format for improved CI/CD compatibility
-# Authentication via git config with Personal Access Token
-omnibase_spi = {git = "https://github.com/OmniNode-ai/omnibase_spi.git", branch = "main"}
-omnibase_core = {git = "https://github.com/OmniNode-ai/omnibase_core.git", branch = "main"}
+# ONEX dependencies - versioned releases from PyPI
+omnibase-core = "^0.8.0"
+omnibase-spi = "^0.5.0"
 
 # Logging and monitoring
 structlog = "^24.4.0"
@@ -64,6 +63,7 @@ psutil = "^7.0.0"
 aiohttp = "^3.12.15"
 
 [tool.poetry.group.dev.dependencies]
+omnibase-infra = {path = "../omnibase_infra3", develop = true}
 black = "^24.10.0"
 isort = "^5.13.2"
 mypy = "^1.14.0"
