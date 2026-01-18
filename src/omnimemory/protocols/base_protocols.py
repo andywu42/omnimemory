@@ -18,7 +18,11 @@ from datetime import datetime
 from typing import Optional, Protocol
 from uuid import UUID
 
-from omnibase_core.core.monadic.model_node_result import NodeResult
+# Use local compatibility stub until omnibase_core provides NodeResult
+try:
+    from omnibase_core.core.monadic.model_node_result import NodeResult
+except (ImportError, ModuleNotFoundError):
+    from ..compat.node_result import NodeResult
 
 from ..models.foundation import (
     ModelHealthResponse,

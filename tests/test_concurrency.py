@@ -267,13 +267,16 @@ class TestConcurrencyIntegration:
         pool = ConnectionPool(max_size=2, timeout=1.0)
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
 
-        # Mock connection that fails first few times
+        # Mock connection that fails first several times
+        # The pool has internal retry logic (default 3 retries per acquire call)
+        # So we need to fail enough times to exhaust retries for 2 calls:
+        # 3 retries * 2 calls = 6 failures needed
         fail_count = 0
 
         def create_connection() -> Mock:
             nonlocal fail_count
             fail_count += 1
-            if fail_count <= 2:
+            if fail_count <= 6:
                 raise ConnectionError("Connection failed")
             return Mock()
 
@@ -284,7 +287,7 @@ class TestConcurrencyIntegration:
             async with pool.acquire() as conn:
                 return conn
 
-        # First two attempts should fail
+        # First two attempts should fail (each exhausts 3 pool retries)
         with pytest.raises(ConnectionError):
             await get_connection()
 

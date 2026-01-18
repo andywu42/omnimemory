@@ -1,0 +1,103 @@
+# OmniMemory Contract Definition
+# ONEX 4.0 Compliant Architecture Contract
+
+contract:
+  name: omnimemory
+  version: 1.0.0
+  description: Advanced memory management system following ONEX 4-node architecture
+  architecture:
+    pattern: onex_4_node
+    nodes:
+      effect:
+        description: External I/O operations for memory storage and retrieval
+        responsibilities:
+          - Memory persistence operations
+          - Vector database interactions
+          - Cache layer management
+          - External API communications
+      compute:
+        description: Pure transformations and algorithms for memory processing
+        responsibilities:
+          - Content analysis and parsing
+          - Semantic similarity calculations
+          - Memory scoring and ranking
+          - Data transformation pipelines
+      reducer:
+        description: Aggregation and consolidation of memory operations
+        responsibilities:
+          - Memory deduplication
+          - Results aggregation
+          - State consolidation
+          - Batch operation handling
+      orchestrator:
+        description: Workflow coordination for memory operations
+        responsibilities:
+          - Request routing
+          - Operation sequencing
+          - Cross-node coordination
+          - Workflow state management
+
+protocols:
+  memory_storage:
+    description: Protocol for memory storage operations
+    methods:
+      - store_memory
+      - retrieve_memory
+      - delete_memory
+      - update_memory
+  memory_search:
+    description: Protocol for memory search and retrieval
+    methods:
+      - semantic_search
+      - keyword_search
+      - temporal_search
+      - composite_search
+  memory_lifecycle:
+    description: Protocol for memory lifecycle management
+    methods:
+      - create_memory
+      - archive_memory
+      - restore_memory
+      - expire_memory
+
+schemas:
+  memory_record:
+    description: Core memory record schema
+    fields:
+      - memory_id
+      - content
+      - content_type
+      - tags
+      - priority
+      - created_at
+      - updated_at
+  memory_request:
+    description: Memory operation request schema
+    fields:
+      - request_id
+      - operation_type
+      - memory_data
+      - options
+  memory_response:
+    description: Memory operation response schema
+    fields:
+      - response_id
+      - status
+      - result
+      - metadata
+
+error_handling:
+  strategy: monadic_result
+  error_codes:
+    - MEMORY_NOT_FOUND
+    - STORAGE_FAILURE
+    - VALIDATION_ERROR
+    - TIMEOUT_ERROR
+    - CAPACITY_EXCEEDED
+  recovery:
+    retry_policy:
+      max_attempts: 3
+      backoff_multiplier: 2.0
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30

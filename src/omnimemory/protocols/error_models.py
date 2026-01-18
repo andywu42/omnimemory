@@ -7,10 +7,14 @@ that integrate with NodeResult for consistent error handling across the system.
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from omnibase_core.core.errors.core_errors import OnexError as BaseOnexError
+# Use local compatibility stub until omnibase_core provides OnexError
+try:
+    from omnibase_core.core.errors.core_errors import OnexError as BaseOnexError
+except (ImportError, ModuleNotFoundError):
+    from ..compat.onex_error import OnexError as BaseOnexError
 from pydantic import BaseModel, Field
 
 from ..models.foundation import ModelMetadata

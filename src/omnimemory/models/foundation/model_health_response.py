@@ -122,7 +122,7 @@ class ModelCircuitBreakerStats(BaseModel):
 class ModelCircuitBreakerStatsCollection(BaseModel):
     """Collection of circuit breaker statistics for all dependencies."""
 
-    stats: dict[str, ModelCircuitBreakerStats] = Field(
+    circuit_breakers: dict[str, ModelCircuitBreakerStats] = Field(
         description="Circuit breaker statistics keyed by dependency name"
     )
     timestamp: datetime = Field(
@@ -134,11 +134,22 @@ class ModelCircuitBreakerStatsCollection(BaseModel):
 class ModelRateLimitedHealthCheckResponse(BaseModel):
     """Rate-limited health check response."""
 
+    status: str = Field(
+        description="Status of the rate-limited response"
+    )
+    message: str = Field(
+        description="Human-readable message about the rate limit status"
+    )
+    details: dict[str, str | int | float] = Field(
+        default_factory=dict,
+        description="Additional details including retry_after and current_window_requests"
+    )
     health_check: Optional[ModelHealthResponse] = Field(
         default=None,
         description="Health check result if within rate limit"
     )
     rate_limited: bool = Field(
+        default=True,
         description="Whether the request was rate limited"
     )
     rate_limit_reset_time: Optional[datetime] = Field(

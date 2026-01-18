@@ -56,6 +56,18 @@ class ModelStringList(BaseModel):
 
         return result
 
+    def __contains__(self, item: str) -> bool:
+        """Support 'in' operator for checking membership."""
+        return item in self.values
+
+    def __iter__(self):
+        """Support iteration over values."""
+        return iter(self.values)
+
+    def __len__(self) -> int:
+        """Support len() function."""
+        return len(self.values)
+
 
 class ModelOptionalStringList(BaseModel):
     """Optional strongly typed list of strings."""

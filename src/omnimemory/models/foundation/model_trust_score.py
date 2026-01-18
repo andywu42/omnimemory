@@ -8,7 +8,7 @@ from functools import lru_cache
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from omnimemory.enums import EnumTrustLevel, EnumDecayFunction
 
@@ -78,22 +78,10 @@ class ModelTrustScore(BaseModel):
         description="Number of trust violations recorded",
     )
 
-    # Performance optimization caching
-    _cached_score: Optional[float] = Field(
-        default=None,
-        exclude=True,
-        description="Cached current score to avoid expensive recalculation",
-    )
-    _cache_timestamp: Optional[datetime] = Field(
-        default=None,
-        exclude=True,
-        description="Timestamp when the score was cached",
-    )
-    _cache_ttl_seconds: int = Field(
-        default=300,  # 5 minutes cache TTL
-        exclude=True,
-        description="Cache time-to-live in seconds",
-    )
+    # Performance optimization caching (using PrivateAttr for underscore names)
+    _cached_score: Optional[float] = PrivateAttr(default=None)
+    _cache_timestamp: Optional[datetime] = PrivateAttr(default=None)
+    _cache_ttl_seconds: int = PrivateAttr(default=300)
     
     @field_validator('trust_level')
     @classmethod

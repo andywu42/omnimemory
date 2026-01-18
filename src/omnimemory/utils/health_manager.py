@@ -146,6 +146,9 @@ class HealthStatus(Enum):
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
+    TIMEOUT = "timeout"
+    RATE_LIMITED = "rate_limited"
+    CIRCUIT_OPEN = "circuit_open"
 
 class DependencyType(Enum):
     """Types of system dependencies."""
@@ -534,7 +537,7 @@ class HealthCheckManager:
                 last_failure_time=circuit_breaker.stats.last_failure_time,
                 state_changed_at=circuit_breaker.stats.state_changed_at
             )
-        return ModelCircuitBreakerStatsCollection(stats=stats)
+        return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
 
     async def rate_limited_health_check(self, client_identifier: str) -> ModelRateLimitedHealthCheckResponse:
         """
@@ -656,3 +659,327 @@ async def create_pinecone_health_check(api_key: str, environment: str) -> Callab
             )
 
     return check_pinecone
+
+
+# === TEST-COMPATIBLE INTERFACES ===
+# These classes provide the interface expected by test_health_manager.py
+
+
+class ResourceHealthCheck(BaseModel):
+    """Result of a resource health check."""
+    status: HealthStatus = Field(description="Health status of the resource")
+    response_time: float = Field(default=0.0, description="Response time in seconds")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional details")
+    correlation_id: Optional[str] = Field(default=None, description="Correlation ID for tracking")
+
+    class Config:
+        """Pydantic config."""
+        use_enum_values = False
+
+
+class SystemHealth(BaseModel):
+    """Overall system health status."""
+    overall_status: HealthStatus = Field(description="Overall system health status")
+    resource_statuses: Dict[str, ResourceHealthCheck] = Field(
+        default_factory=dict,
+        description="Health status of individual resources"
+    )
+    timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of health check")
+
+    class Config:
+        """Pydantic config."""
+        use_enum_values = False
+
+
+class HealthManager:
+    """
+    Health manager with test-compatible interface.
+
+    Provides:
+    - Health check registration and execution
+    - Circuit breaker integration
+    - Rate limiting for health checks
+    - System-wide health aggregation
+    """
+
+    def __init__(
+        self,
+        default_timeout: float = 5.0,
+        rate_limit_window: float = 60.0,
+        max_checks_per_window: int = 100
+    ):
+        """
+        Initialize health manager.
+
+        Args:
+            default_timeout: Default timeout for health checks in seconds
+            rate_limit_window: Time window for rate limiting in seconds
+            max_checks_per_window: Maximum health checks per window
+        """
+        self.default_timeout = default_timeout
+        self.rate_limit_window = rate_limit_window
+        self.max_checks_per_window = max_checks_per_window
+
+        self.health_checks: Dict[str, Callable[[], Awaitable[Dict[str, Any]]]] = {}
+        self.circuit_breakers: Dict[str, Any] = {}
+        self._check_counts: Dict[str, List[float]] = {}
+        self._rate_limiter = RateLimiter(
+            max_requests=max_checks_per_window,
+            window_seconds=int(rate_limit_window)
+        )
+
+    def register_health_check(
+        self,
+        name: str,
+        check_func: Callable[[], Awaitable[Dict[str, Any]]]
+    ) -> None:
+        """
+        Register a health check function.
+
+        Args:
+            name: Name of the resource to check
+            check_func: Async function that performs the health check
+        """
+        self.health_checks[name] = check_func
+        self._check_counts[name] = []
+        logger.info("health_check_registered", resource_name=name)
+
+    async def check_resource_health(
+        self,
+        name: str,
+        correlation_id: Optional[str] = None
+    ) -> ResourceHealthCheck:
+        """
+        Check health of a specific resource.
+
+        Args:
+            name: Name of the resource to check
+            correlation_id: Optional correlation ID for tracking
+
+        Returns:
+            ResourceHealthCheck: Result of the health check
+        """
+        # Check rate limiting
+        current_time = time.time()
+        if name in self._check_counts:
+            # Clean old entries
+            cutoff = current_time - self.rate_limit_window
+            self._check_counts[name] = [
+                t for t in self._check_counts[name] if t > cutoff
+            ]
+            if len(self._check_counts[name]) >= self.max_checks_per_window:
+                return ResourceHealthCheck(
+                    status=HealthStatus.RATE_LIMITED,
+                    response_time=0.0,
+                    details={"reason": "Rate limit exceeded"},
+                    correlation_id=correlation_id
+                )
+            self._check_counts[name].append(current_time)
+
+        # Check circuit breaker
+        if name in self.circuit_breakers:
+            cb = self.circuit_breakers[name]
+            # Import here to avoid circular dependency
+            from .concurrency import CircuitBreakerState
+            if hasattr(cb, 'state') and cb.state == CircuitBreakerState.OPEN:
+                return ResourceHealthCheck(
+                    status=HealthStatus.CIRCUIT_OPEN,
+                    response_time=0.0,
+                    details={"reason": "Circuit breaker is open"},
+                    correlation_id=correlation_id
+                )
+
+        if name not in self.health_checks:
+            return ResourceHealthCheck(
+                status=HealthStatus.UNKNOWN,
+                response_time=0.0,
+                details={"error": f"Health check not registered: {name}"},
+                correlation_id=correlation_id
+            )
+
+        check_func = self.health_checks[name]
+        start_time = time.time()
+
+        try:
+            result = await asyncio.wait_for(
+                check_func(),
+                timeout=self.default_timeout
+            )
+            response_time = time.time() - start_time
+
+            # Record success on circuit breaker
+            if name in self.circuit_breakers:
+                cb = self.circuit_breakers[name]
+                if hasattr(cb, 'record_success'):
+                    cb.record_success()
+
+            return ResourceHealthCheck(
+                status=HealthStatus.HEALTHY,
+                response_time=response_time,
+                details=result if isinstance(result, dict) else {"result": str(result)},
+                correlation_id=correlation_id
+            )
+
+        except asyncio.TimeoutError:
+            response_time = time.time() - start_time
+            return ResourceHealthCheck(
+                status=HealthStatus.TIMEOUT,
+                response_time=response_time,
+                details={"error": f"Health check timed out after {self.default_timeout}s"},
+                correlation_id=correlation_id
+            )
+
+        except Exception as e:
+            response_time = time.time() - start_time
+
+            # Record failure on circuit breaker
+            if name in self.circuit_breakers:
+                cb = self.circuit_breakers[name]
+                if hasattr(cb, 'record_failure'):
+                    cb.record_failure()
+
+            return ResourceHealthCheck(
+                status=HealthStatus.UNHEALTHY,
+                response_time=response_time,
+                details={"error": str(e)},
+                correlation_id=correlation_id
+            )
+
+    async def check_multiple_resources(
+        self,
+        names: List[str]
+    ) -> Dict[str, ResourceHealthCheck]:
+        """
+        Check health of multiple resources in parallel.
+
+        Args:
+            names: List of resource names to check
+
+        Returns:
+            Dict mapping resource names to health check results
+        """
+        tasks = [self.check_resource_health(name) for name in names]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        return {
+            name: (
+                result if isinstance(result, ResourceHealthCheck)
+                else ResourceHealthCheck(
+                    status=HealthStatus.UNHEALTHY,
+                    details={"error": str(result)}
+                )
+            )
+            for name, result in zip(names, results)
+        }
+
+    async def get_system_health(self) -> SystemHealth:
+        """
+        Get overall system health by checking all registered resources.
+
+        Returns:
+            SystemHealth: Overall system health status
+        """
+        if not self.health_checks:
+            return SystemHealth(
+                overall_status=HealthStatus.HEALTHY,
+                resource_statuses={}
+            )
+
+        resource_statuses = await self.check_multiple_resources(
+            list(self.health_checks.keys())
+        )
+
+        # Determine overall status
+        statuses = [r.status for r in resource_statuses.values()]
+
+        if all(s == HealthStatus.HEALTHY for s in statuses):
+            overall_status = HealthStatus.HEALTHY
+        elif any(s == HealthStatus.UNHEALTHY for s in statuses):
+            overall_status = HealthStatus.DEGRADED
+        else:
+            overall_status = HealthStatus.DEGRADED
+
+        return SystemHealth(
+            overall_status=overall_status,
+            resource_statuses=resource_statuses
+        )
+
+    def get_circuit_breaker_stats(self) -> ModelCircuitBreakerStatsCollection:
+        """
+        Get statistics for all circuit breakers.
+
+        Returns:
+            ModelCircuitBreakerStatsCollection: Circuit breaker statistics
+        """
+        stats = {}
+        for name, cb in self.circuit_breakers.items():
+            state = getattr(cb, 'state', None)
+            state_value = state.value if hasattr(state, 'value') else str(state)
+
+            stats[name] = ModelCircuitBreakerStats(
+                state=state_value,
+                failure_count=getattr(cb, 'failure_count', 0),
+                success_count=getattr(cb, 'success_count', 0),
+                total_calls=getattr(cb, 'total_calls', 0),
+                total_timeouts=getattr(cb, 'total_timeouts', 0),
+                last_failure_time=getattr(cb, 'last_failure_time', None),
+                state_changed_at=getattr(cb, 'state_changed_at', None)
+            )
+
+        return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
+
+    def get_rate_limited_health_response(self) -> ModelRateLimitedHealthCheckResponse:
+        """
+        Get a rate-limited health response.
+
+        Returns:
+            ModelRateLimitedHealthCheckResponse: Rate limited response
+        """
+        return ModelRateLimitedHealthCheckResponse(
+            status="rate_limited",
+            message="Health check rate limited",
+            details={
+                "retry_after": self.rate_limit_window,
+                "current_window_requests": sum(
+                    len(counts) for counts in self._check_counts.values()
+                )
+            },
+            health_check=None,
+            rate_limited=True,
+            rate_limit_reset_time=None,
+            remaining_requests=0
+        )
+
+    def _sanitize_error(self, error: Exception) -> str:
+        """
+        Sanitize error message to remove sensitive information.
+
+        Args:
+            error: Exception to sanitize
+
+        Returns:
+            Sanitized error message
+        """
+        import re
+
+        error_str = str(error)
+        # Patterns to redact
+        patterns = [
+            (r'password=[^\s,]+', 'password=[REDACTED]'),
+            (r'token=[^\s,]+', 'token=[REDACTED]'),
+            (r'api_key=[^\s,]+', 'api_key=[REDACTED]'),
+            (r'secret=[^\s,]+', 'secret=[REDACTED]'),
+        ]
+
+        sanitized = error_str
+        for pattern, replacement in patterns:
+            sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+        return sanitized
+
+    async def cleanup(self) -> None:
+        """Clean up all health manager resources."""
+        self.health_checks.clear()
+        self.circuit_breakers.clear()
+        self._check_counts.clear()
+        logger.info("health_manager_cleanup_completed")

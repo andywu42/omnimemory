@@ -13,7 +13,7 @@ from functools import cached_property
 from typing import Dict, List, Optional, Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, PrivateAttr, computed_field
 
 from .model_typed_collections import ModelMetadata, ModelConfiguration
 from .model_progress_summary import ProgressSummaryResponse
@@ -22,10 +22,7 @@ from omnimemory.enums import MigrationStatus, MigrationPriority, FileProcessingS
 from ...utils.error_sanitizer import ErrorSanitizer, SanitizationLevel
 
 # Initialize error sanitizer for secure logging
-_error_sanitizer = ErrorSanitizer(
-    default_level=SanitizationLevel.STANDARD,
-    enable_stack_trace_filter=True
-)
+_error_sanitizer = ErrorSanitizer(level=SanitizationLevel.STANDARD)
 
 class BatchProcessingMetrics(BaseModel):
     """Metrics for batch processing operations."""
@@ -93,27 +90,11 @@ class MigrationProgressMetrics(BaseModel):
     current_batch: Optional[str] = Field(default=None, description="Current batch being processed")
     batch_metrics: List[BatchProcessingMetrics] = Field(default_factory=list, description="Batch processing metrics")
 
-    # Performance optimization: Cache expensive calculations
-    _cached_completion_percentage: Optional[float] = Field(
-        default=None,
-        exclude=True,
-        description="Cached completion percentage to avoid recalculation",
-    )
-    _cached_success_rate: Optional[float] = Field(
-        default=None,
-        exclude=True,
-        description="Cached success rate to avoid recalculation",
-    )
-    _cache_invalidated_at: Optional[datetime] = Field(
-        default=None,
-        exclude=True,
-        description="Timestamp when cache was last invalidated",
-    )
-    _cache_ttl_seconds: int = Field(
-        default=60,  # 1 minute cache TTL
-        exclude=True,
-        description="Cache time-to-live in seconds for metrics",
-    )
+    # Performance optimization: Cache expensive calculations (using PrivateAttr for underscore names)
+    _cached_completion_percentage: Optional[float] = PrivateAttr(default=None)
+    _cached_success_rate: Optional[float] = PrivateAttr(default=None)
+    _cache_invalidated_at: Optional[datetime] = PrivateAttr(default=None)
+    _cache_ttl_seconds: int = PrivateAttr(default=60)
 
     @computed_field
     @property

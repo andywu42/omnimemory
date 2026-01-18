@@ -30,17 +30,21 @@ class TestResourceManager:
         assert rm is not None
         assert isinstance(rm.resource_pools, dict)
 
-    def test_register_resource_pool(self) -> None:
+    @pytest.mark.asyncio
+    async def test_register_resource_pool(self) -> None:
         """Test registering resource pools."""
         rm = ResourceManager()
+
+        mock_factory = Mock(side_effect=lambda: Mock())
 
         pool_config = {
             "min_size": 2,
             "max_size": 10,
-            "timeout": 30.0
+            "timeout": 30.0,
+            "factory": mock_factory
         }
 
-        rm.register_pool(ResourceType.DATABASE, pool_config)
+        await rm.register_pool(ResourceType.DATABASE, pool_config)
         assert ResourceType.DATABASE in rm.resource_pools
 
     @pytest.mark.asyncio
@@ -58,7 +62,7 @@ class TestResourceManager:
             "factory": mock_factory
         }
 
-        rm.register_pool(ResourceType.MEMORY, pool_config)
+        await rm.register_pool(ResourceType.MEMORY, pool_config)
 
         # Acquire resource
         handle = await rm.acquire(ResourceType.MEMORY)
@@ -85,7 +89,7 @@ class TestResourceManager:
             "factory": mock_factory
         }
 
-        rm.register_pool(ResourceType.CACHE, pool_config)
+        await rm.register_pool(ResourceType.CACHE, pool_config)
 
         # Use context manager
         async with rm.acquire_context(ResourceType.CACHE) as handle:
@@ -109,7 +113,7 @@ class TestResourceManager:
             "timeout": 0.1
         }
 
-        rm.register_pool(ResourceType.NETWORK, pool_config)
+        await rm.register_pool(ResourceType.NETWORK, pool_config)
 
         # Acquire maximum resources
         handle1 = await rm.acquire(ResourceType.NETWORK)
@@ -150,7 +154,7 @@ class TestResourceManager:
             "health_check_interval": 0.1
         }
 
-        rm.register_pool(ResourceType.DATABASE, pool_config)
+        await rm.register_pool(ResourceType.DATABASE, pool_config)
 
         # Acquire healthy resource
         handle1 = await rm.acquire(ResourceType.DATABASE)
@@ -171,7 +175,8 @@ class TestResourceManager:
         await rm.release(handle1)
         await rm.release(handle2)
 
-    def test_resource_metrics_collection(self) -> None:
+    @pytest.mark.asyncio
+    async def test_resource_metrics_collection(self) -> None:
         """Test resource usage metrics collection."""
         rm = ResourceManager()
 
@@ -182,8 +187,9 @@ class TestResourceManager:
         assert "resource_types" in metrics
 
         # Register a pool
-        pool_config = {"min_size": 2, "max_size": 10}
-        rm.register_pool(ResourceType.MEMORY, pool_config)
+        mock_factory = Mock(side_effect=lambda: Mock())
+        pool_config = {"min_size": 2, "max_size": 10, "factory": mock_factory}
+        await rm.register_pool(ResourceType.MEMORY, pool_config)
 
         # Get updated metrics
         updated_metrics = rm.get_metrics()
@@ -207,13 +213,15 @@ class TestResourceManager:
 
         pool_config = {
             "min_size": 0,
-            "max_size": 5,
-            "factory": failing_factory
+            "max_size": 10,  # Allow room for all 10 attempts (some will fail)
+            "factory": failing_factory,
+            "timeout": 1.0  # Short timeout for faster test failure detection
         }
 
-        rm.register_pool(ResourceType.DATABASE, pool_config)
+        await rm.register_pool(ResourceType.DATABASE, pool_config)
 
-        # Try to acquire resources - some should fail
+        # Try to acquire resources - some should fail due to factory errors
+        # Factory fails on calls 3, 6, 9 (every 3rd call)
         successful_handles: list[ResourceHandle] = []
         failed_attempts = 0
 
@@ -247,7 +255,7 @@ class TestResourceManager:
             "scale_increment": 2
         }
 
-        rm.register_pool(ResourceType.MEMORY, pool_config)
+        await rm.register_pool(ResourceType.MEMORY, pool_config)
 
         # Initially should have min_size resources
         pool_stats = rm.get_pool_stats(ResourceType.MEMORY)
@@ -281,7 +289,7 @@ class TestResourceManager:
             "resource_ttl": 0.1  # Very short TTL for testing
         }
 
-        rm.register_pool(ResourceType.CACHE, pool_config)
+        await rm.register_pool(ResourceType.CACHE, pool_config)
 
         # Acquire resource
         handle = await rm.acquire(ResourceType.CACHE)
@@ -499,7 +507,7 @@ class TestResourceManagerIntegration:
             "resource_ttl": 10.0
         }
 
-        rm.register_pool(ResourceType.DATABASE, db_config)
+        await rm.register_pool(ResourceType.DATABASE, db_config)
 
         # Test multiple operations
         operations: list[asyncio.Future[str]] = []

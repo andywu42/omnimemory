@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..models.foundation import (
     ModelStringList,
@@ -279,6 +279,14 @@ class BaseMemoryResponse(BaseMemoryModel):
         description="Operation events for observability"
     )
 
+    @field_validator('provenance', 'warnings', mode='before')
+    @classmethod
+    def convert_list_to_model_string_list(cls, v):
+        """Convert plain lists to ModelStringList for easier API usage."""
+        if isinstance(v, list):
+            return ModelStringList(values=v)
+        return v
+
 
 # === CORE DATA MODELS ===
 
@@ -309,9 +317,9 @@ class MemoryRecord(BaseMemoryModel):
         None,
         description="Model used to generate embedding"
     )
-    tags: ModelStringList = Field(default_factory=ModelStringList,
-        description="Memory tags for categorization",
-        max_length=100
+    tags: ModelStringList = Field(
+        default_factory=ModelStringList,
+        description="Memory tags for categorization"
     )
     priority: MemoryPriority = Field(
         MemoryPriority.NORMAL,
@@ -364,6 +372,14 @@ class MemoryRecord(BaseMemoryModel):
         None,
         description="Last access timestamp"
     )
+
+    @field_validator('tags', 'provenance', mode='before')
+    @classmethod
+    def convert_list_to_model_string_list(cls, v):
+        """Convert plain lists to ModelStringList for easier API usage."""
+        if isinstance(v, list):
+            return ModelStringList(values=v)
+        return v
 
 
 # === MEMORY OPERATION REQUESTS/RESPONSES ===

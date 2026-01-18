@@ -34,9 +34,8 @@ from omnimemory import (
     SystemError,
 )
 
-from omnibase_core.core.monadic.model_node_result import NodeResult
-from omnibase_core.core.model_onex_container import ModelOnexContainer
-from omnibase_spi import ProtocolLogger
+# Use compat modules until omnibase_core components are available
+from omnimemory.compat import NodeResult, ModelOnexContainer
 
 
 class MockMemoryStorageNode:

@@ -5,6 +5,8 @@ This module provides retry decorators and utilities for handling transient
 failures in OmniMemory operations with configurable backoff strategies.
 """
 
+from __future__ import annotations
+
 __all__ = [
     "RetryConfig",
     "RetryAttempt",
@@ -14,8 +16,6 @@ __all__ = [
     "execute_with_retry",
     "retry_decorator"
 ]
-
-from __future__ import annotations
 
 import asyncio
 import functools
@@ -32,10 +32,7 @@ from .error_sanitizer import ErrorSanitizer, SanitizationLevel
 logger = logging.getLogger(__name__)
 
 # Initialize error sanitizer for secure logging
-_error_sanitizer = ErrorSanitizer(
-    default_level=SanitizationLevel.STANDARD,
-    enable_stack_trace_filter=True
-)
+_error_sanitizer = ErrorSanitizer(level=SanitizationLevel.STANDARD)
 
 T = TypeVar('T')
 

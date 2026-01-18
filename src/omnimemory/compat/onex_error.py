@@ -1,0 +1,76 @@
+"""
+OnexError compatibility stub.
+
+This is a local implementation of OnexError until
+omnibase_core.core.errors.core_errors is available.
+"""
+
+from __future__ import annotations
+
+from typing import Optional, Any
+
+
+class OnexError(Exception):
+    """
+    Base exception for all ONEX errors.
+
+    Provides structured error context and chaining support.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        code: Optional[str] = None,
+        context: Optional[dict[str, Any]] = None,
+        cause: Optional[Exception] = None,
+        error_code: Optional[str] = None,
+        correlation_id: Optional[Any] = None,
+        details: Optional[dict[str, Any]] = None,
+        **kwargs: Any,
+    ):
+        """
+        Initialize OnexError.
+
+        Args:
+            message: Human-readable error message
+            code: Error code identifier (legacy parameter)
+            context: Additional context data
+            cause: Original exception that caused this error
+            error_code: Error code identifier (preferred over code)
+            correlation_id: Request correlation ID for tracing
+            details: Additional details (merged into context)
+            **kwargs: Additional keyword arguments for extensibility
+        """
+        super().__init__(message)
+        self.message = message
+        # Support both 'code' and 'error_code' parameters
+        self.code = error_code or code or "ONEX_ERROR"
+        self.error_code = self.code  # Alias for compatibility
+        # Merge context and details
+        self.context = context or {}
+        if details:
+            self.context.update(details)
+        self.cause = cause
+        self.correlation_id = correlation_id
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        if self.code:
+            return f"[{self.code}] {self.message}"
+        return self.message
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "message": self.message,
+            "code": self.code,
+            "error_code": self.error_code,
+            "context": self.context,
+            "correlation_id": str(self.correlation_id) if self.correlation_id else None,
+            "cause": str(self.cause) if self.cause else None,
+        }
+
+
+class BaseOnexError(OnexError):
+    """Alias for OnexError for backward compatibility."""
+    pass
