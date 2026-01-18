@@ -2,9 +2,9 @@
 
 ## Overview
 
-This document maps existing handlers from `omnibase_infra3` to the Core 8 memory nodes in OmniMemory. The goal is to maximize reuse and minimize new code by leveraging proven infrastructure patterns.
+This document maps existing handlers from `omnibase_infra` to the Core 8 memory nodes in OmniMemory. The goal is to maximize reuse and minimize new code by leveraging proven infrastructure patterns.
 
-## Existing Handlers in omnibase_infra3
+## Existing Handlers in omnibase_infra
 
 ### Core Infrastructure Handlers (`handlers/`)
 
@@ -212,7 +212,7 @@ This document maps existing handlers from `omnibase_infra3` to the Core 8 memory
 
 ---
 
-## Pattern Reuse from omnibase_infra3
+## Pattern Reuse from omnibase_infra
 
 ### Mixins to Reuse
 - `MixinAsyncCircuitBreaker` - Fault tolerance
@@ -231,9 +231,9 @@ This document maps existing handlers from `omnibase_infra3` to the Core 8 memory
 
 ## File Locations
 
-**Source Handlers**: `/workspace/omnibase_infra3/src/omnibase_infra/handlers/`
+**Source Handlers**: `omnibase_infra` package (`src/omnibase_infra/handlers/` in sibling repository)
 
-**Target Nodes**: `/workspace/omnimemory/src/omnimemory/nodes/`
+**Target Nodes**: `src/omnimemory/nodes/` (this repository)
 
 **Recommended Import Strategy**:
 ```python
