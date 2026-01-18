@@ -1,0 +1,1121 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 OmniNode Team
+"""Comprehensive integration tests for memory_storage_effect node.
+
+This module tests all CRUD operations for the memory storage effect node,
+including the store/retrieve round-trip, error handling, and edge cases.
+
+Test Categories:
+    - Store Operations: Test storing memory snapshots to filesystem
+    - Retrieve Operations: Test fetching snapshots by ID
+    - Round-Trip: Test full store/retrieve cycle with data integrity
+    - Delete Operations: Test removing snapshots
+    - List Operations: Test listing stored snapshot IDs
+    - Update Operations: Test modifying existing snapshots
+    - Error Handling: Test validation and not_found scenarios
+
+Usage:
+    pytest tests/nodes/memory_storage_effect/ -v
+    pytest tests/nodes/memory_storage_effect/test_memory_storage_effect.py -v -k "store"
+
+.. versionadded:: 0.1.0
+    Initial implementation for OMN-1384.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+from omnibase_core.enums.enum_subject_type import EnumSubjectType
+from omnibase_core.models.omnimemory import (
+    ModelCostLedger,
+    ModelMemorySnapshot,
+    ModelSubjectRef,
+)
+
+from omnimemory.nodes.memory_storage_effect import (
+    HandlerFileSystemAdapter,
+    HandlerFileSystemAdapterConfig,
+    ModelMemoryStorageRequest,
+    ModelMemoryStorageResponse,
+)
+
+
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def adapter(tmp_path: Path) -> HandlerFileSystemAdapter:
+    """Create adapter with temporary directory.
+
+    Args:
+        tmp_path: Pytest fixture providing temporary directory path.
+
+    Returns:
+        Configured HandlerFileSystemAdapter instance.
+    """
+    config = HandlerFileSystemAdapterConfig(base_path=tmp_path)
+    adapter = HandlerFileSystemAdapter(config)
+    return adapter
+
+
+@pytest.fixture
+def sample_snapshot() -> ModelMemorySnapshot:
+    """Create a sample memory snapshot for testing.
+
+    Returns:
+        A valid ModelMemorySnapshot instance with minimal required fields.
+    """
+    subject = ModelSubjectRef(
+        subject_type=EnumSubjectType.AGENT,
+        subject_id=uuid4(),
+    )
+    ledger = ModelCostLedger(budget_total=100.0)
+    return ModelMemorySnapshot(
+        snapshot_id=uuid4(),
+        subject=subject,
+        cost_ledger=ledger,
+        schema_version="1.0.0",
+    )
+
+
+@pytest.fixture
+def sample_snapshot_with_id() -> ModelMemorySnapshot:
+    """Create a sample memory snapshot with a deterministic string ID for testing.
+
+    This fixture creates a snapshot with a specific snapshot_id format that
+    is easy to identify in tests.
+
+    Returns:
+        A valid ModelMemorySnapshot instance with a predictable ID format.
+    """
+    subject = ModelSubjectRef(
+        subject_type=EnumSubjectType.AGENT,
+        subject_id=uuid4(),
+        namespace="test",
+        subject_key="test-agent",
+    )
+    ledger = ModelCostLedger(budget_total=50.0)
+    return ModelMemorySnapshot(
+        snapshot_id=uuid4(),
+        subject=subject,
+        cost_ledger=ledger,
+        schema_version="1.0.0",
+        tags=("test", "sample"),
+    )
+
+
+def create_unique_snapshot(
+    version: int = 1,
+    tags: tuple[str, ...] = (),
+) -> ModelMemorySnapshot:
+    """Create a unique memory snapshot with specified attributes.
+
+    Args:
+        version: Version number for the snapshot.
+        tags: Optional tuple of tags.
+
+    Returns:
+        A new ModelMemorySnapshot instance with unique IDs.
+    """
+    subject = ModelSubjectRef(
+        subject_type=EnumSubjectType.AGENT,
+        subject_id=uuid4(),
+    )
+    ledger = ModelCostLedger(budget_total=100.0)
+    return ModelMemorySnapshot(
+        snapshot_id=uuid4(),
+        version=version,
+        subject=subject,
+        cost_ledger=ledger,
+        schema_version="1.0.0",
+        tags=tags,
+    )
+
+
+# =============================================================================
+# Store Operation Tests
+# =============================================================================
+
+
+class TestStoreOperation:
+    """Tests for the store operation."""
+
+    @pytest.mark.asyncio
+    async def test_store_snapshot_success(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test storing a snapshot returns success response.
+
+        Given: A valid memory snapshot
+        When: Executing a store operation
+        Then: Response status is 'success' and snapshot is returned
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "success", (
+            f"Expected status 'success', got '{response.status}'"
+        )
+        assert response.snapshot is not None, "Expected snapshot in response"
+        assert response.snapshot.snapshot_id == sample_snapshot.snapshot_id, (
+            "Snapshot ID mismatch"
+        )
+        assert response.error_message is None, (
+            f"Unexpected error: {response.error_message}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_creates_file(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that store operation creates a file on disk.
+
+        Given: A valid memory snapshot
+        When: Executing a store operation
+        Then: A JSON file is created at the expected path
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+
+        await adapter.execute(request)
+
+        expected_file = (
+            adapter.snapshots_path / f"{sample_snapshot.snapshot_id}.json"
+        )
+        assert expected_file.exists(), (
+            f"Expected file {expected_file} was not created"
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_without_snapshot_returns_error(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that store operation without snapshot returns error.
+
+        Given: A store request with no snapshot
+        When: Executing the store operation
+        Then: Response status is 'error' with appropriate message
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=None,
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "error", (
+            f"Expected status 'error', got '{response.status}'"
+        )
+        assert response.error_message is not None, "Expected error message"
+        assert "snapshot" in response.error_message.lower(), (
+            f"Error should mention 'snapshot': {response.error_message}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_with_metadata(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test storing a snapshot with metadata succeeds.
+
+        Given: A valid memory snapshot and metadata
+        When: Executing a store operation with metadata
+        Then: Response status is 'success'
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+            metadata={"source": "test", "priority": "high"},
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "success", (
+            f"Expected status 'success', got '{response.status}'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_with_tags(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test storing a snapshot with tags succeeds.
+
+        Given: A valid memory snapshot and tags
+        When: Executing a store operation with tags
+        Then: Response status is 'success'
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+            tags=["important", "test-case"],
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "success", (
+            f"Expected status 'success', got '{response.status}'"
+        )
+
+
+# =============================================================================
+# Retrieve Operation Tests
+# =============================================================================
+
+
+class TestRetrieveOperation:
+    """Tests for the retrieve operation."""
+
+    @pytest.mark.asyncio
+    async def test_retrieve_stored_snapshot(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test retrieving a previously stored snapshot.
+
+        Given: A stored memory snapshot
+        When: Executing a retrieve operation with the snapshot ID
+        Then: Response contains the correct snapshot data
+        """
+        # Store first
+        store_request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+        await adapter.execute(store_request)
+
+        # Retrieve
+        retrieve_request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id=str(sample_snapshot.snapshot_id),
+        )
+        response = await adapter.execute(retrieve_request)
+
+        assert response.status == "success", (
+            f"Expected status 'success', got '{response.status}'"
+        )
+        assert response.snapshot is not None, "Expected snapshot in response"
+        assert response.snapshot.snapshot_id == sample_snapshot.snapshot_id, (
+            "Snapshot ID mismatch"
+        )
+
+    @pytest.mark.asyncio
+    async def test_retrieve_not_found(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test retrieving a non-existent snapshot returns not_found.
+
+        Given: A snapshot ID that doesn't exist in storage
+        When: Executing a retrieve operation
+        Then: Response status is 'not_found'
+        """
+        request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id="non-existent-snapshot-id-12345",
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "not_found", (
+            f"Expected status 'not_found', got '{response.status}'"
+        )
+        assert response.snapshot is None, "Should not return a snapshot"
+
+    @pytest.mark.asyncio
+    async def test_retrieve_without_snapshot_id_returns_error(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that retrieve operation without snapshot_id returns error.
+
+        Given: A retrieve request with no snapshot_id
+        When: Executing the retrieve operation
+        Then: Response status is 'error' with appropriate message
+        """
+        request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id=None,
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "error", (
+            f"Expected status 'error', got '{response.status}'"
+        )
+        assert response.error_message is not None, "Expected error message"
+        assert "snapshot_id" in response.error_message.lower(), (
+            f"Error should mention 'snapshot_id': {response.error_message}"
+        )
+
+
+# =============================================================================
+# Store-Retrieve Round-Trip Tests
+# =============================================================================
+
+
+class TestStoreRetrieveRoundTrip:
+    """Tests for full store/retrieve cycle with data integrity verification."""
+
+    @pytest.mark.asyncio
+    async def test_round_trip_basic(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test basic store-retrieve round-trip preserves data.
+
+        Given: A memory snapshot
+        When: Storing and then retrieving the snapshot
+        Then: Retrieved snapshot matches the original
+        """
+        # Store
+        store_request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+        store_response = await adapter.execute(store_request)
+        assert store_response.status == "success"
+
+        # Retrieve
+        retrieve_request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id=str(sample_snapshot.snapshot_id),
+        )
+        retrieve_response = await adapter.execute(retrieve_request)
+
+        assert retrieve_response.status == "success"
+        retrieved = retrieve_response.snapshot
+        assert retrieved is not None
+
+        # Verify key fields match
+        assert retrieved.snapshot_id == sample_snapshot.snapshot_id
+        assert retrieved.version == sample_snapshot.version
+        assert retrieved.schema_version == sample_snapshot.schema_version
+        assert retrieved.subject.subject_type == sample_snapshot.subject.subject_type
+        assert retrieved.cost_ledger.budget_total == (
+            sample_snapshot.cost_ledger.budget_total
+        )
+
+    @pytest.mark.asyncio
+    async def test_round_trip_with_tags(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test round-trip preserves tags.
+
+        Given: A snapshot with tags
+        When: Storing and retrieving
+        Then: Tags are preserved
+        """
+        snapshot = create_unique_snapshot(tags=("tag1", "tag2", "tag3"))
+
+        # Store
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+        )
+
+        # Retrieve
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="retrieve",
+                snapshot_id=str(snapshot.snapshot_id),
+            )
+        )
+
+        assert response.status == "success"
+        assert response.snapshot is not None
+        assert response.snapshot.tags == ("tag1", "tag2", "tag3")
+
+    @pytest.mark.asyncio
+    async def test_round_trip_multiple_snapshots(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test storing and retrieving multiple snapshots.
+
+        Given: Multiple unique snapshots
+        When: Storing all and retrieving each
+        Then: Each retrieved snapshot matches its original
+        """
+        snapshots = [create_unique_snapshot(version=i) for i in range(1, 4)]
+
+        # Store all
+        for snapshot in snapshots:
+            response = await adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+            )
+            assert response.status == "success"
+
+        # Retrieve all and verify
+        for original in snapshots:
+            response = await adapter.execute(
+                ModelMemoryStorageRequest(
+                    operation="retrieve",
+                    snapshot_id=str(original.snapshot_id),
+                )
+            )
+            assert response.status == "success"
+            assert response.snapshot is not None
+            assert response.snapshot.snapshot_id == original.snapshot_id
+            assert response.snapshot.version == original.version
+
+
+# =============================================================================
+# Delete Operation Tests
+# =============================================================================
+
+
+class TestDeleteOperation:
+    """Tests for the delete operation."""
+
+    @pytest.mark.asyncio
+    async def test_delete_stored_snapshot(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test deleting a previously stored snapshot.
+
+        Given: A stored memory snapshot
+        When: Executing a delete operation
+        Then: Response status is 'success'
+        """
+        # Store first
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Delete
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        assert response.status == "success", (
+            f"Expected status 'success', got '{response.status}'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_file(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that delete operation removes the file from disk.
+
+        Given: A stored snapshot file
+        When: Executing a delete operation
+        Then: The file no longer exists
+        """
+        # Store
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        expected_file = (
+            adapter.snapshots_path / f"{sample_snapshot.snapshot_id}.json"
+        )
+        assert expected_file.exists(), "File should exist after store"
+
+        # Delete
+        await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        assert not expected_file.exists(), "File should not exist after delete"
+
+    @pytest.mark.asyncio
+    async def test_delete_then_retrieve_returns_not_found(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that deleted snapshot cannot be retrieved.
+
+        Given: A stored and then deleted snapshot
+        When: Attempting to retrieve
+        Then: Response status is 'not_found'
+        """
+        # Store
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Delete
+        await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        # Attempt retrieve
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="retrieve",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        assert response.status == "not_found"
+
+    @pytest.mark.asyncio
+    async def test_delete_not_found(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test deleting a non-existent snapshot returns not_found.
+
+        Given: A snapshot ID that doesn't exist
+        When: Executing a delete operation
+        Then: Response status is 'not_found'
+        """
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id="non-existent-id-67890",
+            )
+        )
+
+        assert response.status == "not_found", (
+            f"Expected status 'not_found', got '{response.status}'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_without_snapshot_id_returns_error(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that delete operation without snapshot_id returns error.
+
+        Given: A delete request with no snapshot_id
+        When: Executing the delete operation
+        Then: Response status is 'error' with appropriate message
+        """
+        request = ModelMemoryStorageRequest(
+            operation="delete",
+            snapshot_id=None,
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "error", (
+            f"Expected status 'error', got '{response.status}'"
+        )
+        assert response.error_message is not None
+
+
+# =============================================================================
+# List Operation Tests
+# =============================================================================
+
+
+class TestListOperation:
+    """Tests for the list operation."""
+
+    @pytest.mark.asyncio
+    async def test_list_empty_storage(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test listing when no snapshots are stored.
+
+        Given: Empty storage
+        When: Executing a list operation
+        Then: Response returns empty list
+        """
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert response.snapshot_ids is not None
+        assert len(response.snapshot_ids) == 0
+
+    @pytest.mark.asyncio
+    async def test_list_single_snapshot(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test listing with one stored snapshot.
+
+        Given: One stored snapshot
+        When: Executing a list operation
+        Then: Response contains the snapshot ID
+        """
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert response.snapshot_ids is not None
+        assert len(response.snapshot_ids) == 1
+        assert str(sample_snapshot.snapshot_id) in response.snapshot_ids
+
+    @pytest.mark.asyncio
+    async def test_list_multiple_snapshots(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test listing with multiple stored snapshots.
+
+        Given: Multiple stored snapshots
+        When: Executing a list operation
+        Then: Response contains all snapshot IDs
+        """
+        snapshots = [create_unique_snapshot() for _ in range(5)]
+
+        for snapshot in snapshots:
+            await adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+            )
+
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert response.snapshot_ids is not None
+        assert len(response.snapshot_ids) == 5
+
+        # Verify all IDs are present
+        returned_ids = set(response.snapshot_ids)
+        for snapshot in snapshots:
+            assert str(snapshot.snapshot_id) in returned_ids
+
+    @pytest.mark.asyncio
+    async def test_list_after_delete(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that list reflects deletions.
+
+        Given: Multiple snapshots, one deleted
+        When: Executing a list operation
+        Then: Deleted snapshot ID is not in the list
+        """
+        snapshots = [create_unique_snapshot() for _ in range(3)]
+
+        for snapshot in snapshots:
+            await adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+            )
+
+        # Delete the second one
+        await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id=str(snapshots[1].snapshot_id),
+            )
+        )
+
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert response.snapshot_ids is not None
+        assert len(response.snapshot_ids) == 2
+        assert str(snapshots[1].snapshot_id) not in response.snapshot_ids
+
+
+# =============================================================================
+# Update Operation Tests
+# =============================================================================
+
+
+class TestUpdateOperation:
+    """Tests for the update operation."""
+
+    @pytest.mark.asyncio
+    async def test_update_existing_snapshot(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test updating an existing snapshot.
+
+        Given: A stored snapshot
+        When: Updating with new data (same snapshot_id)
+        Then: Retrieve returns the updated data
+        """
+        # Store original
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Create updated version with same ID but different data
+        updated_snapshot = sample_snapshot.model_copy(
+            update={"version": 2, "tags": ("updated",)}
+        )
+
+        # Update
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="update",
+                snapshot=updated_snapshot,
+            )
+        )
+
+        assert response.status == "success"
+
+        # Retrieve and verify update
+        retrieve_response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="retrieve",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        assert retrieve_response.status == "success"
+        assert retrieve_response.snapshot is not None
+        assert retrieve_response.snapshot.version == 2
+        assert retrieve_response.snapshot.tags == ("updated",)
+
+    @pytest.mark.asyncio
+    async def test_update_without_snapshot_returns_error(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that update operation without snapshot returns error.
+
+        Given: An update request with no snapshot
+        When: Executing the update operation
+        Then: Response status is 'error'
+        """
+        request = ModelMemoryStorageRequest(
+            operation="update",
+            snapshot=None,
+        )
+
+        response = await adapter.execute(request)
+
+        assert response.status == "error"
+        assert response.error_message is not None
+
+    @pytest.mark.asyncio
+    async def test_update_preserves_snapshot_id(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that update preserves the snapshot ID.
+
+        Given: A stored snapshot
+        When: Updating with modified version
+        Then: The snapshot ID remains the same
+        """
+        # Store original
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Update with new version
+        updated = sample_snapshot.model_copy(update={"version": 5})
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="update", snapshot=updated)
+        )
+
+        # List should still show only one snapshot
+        list_response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert list_response.snapshot_ids is not None
+        assert len(list_response.snapshot_ids) == 1
+
+
+# =============================================================================
+# Adapter Lifecycle Tests
+# =============================================================================
+
+
+class TestAdapterLifecycle:
+    """Tests for adapter initialization and shutdown."""
+
+    @pytest.mark.asyncio
+    async def test_adapter_auto_initializes(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that adapter initializes automatically on first execute.
+
+        Given: An uninitialized adapter
+        When: Executing an operation
+        Then: Adapter initializes automatically
+        """
+        config = HandlerFileSystemAdapterConfig(base_path=tmp_path)
+        adapter = HandlerFileSystemAdapter(config)
+
+        assert not adapter.is_initialized
+
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert adapter.is_initialized
+
+    @pytest.mark.asyncio
+    async def test_adapter_creates_snapshots_directory(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that adapter creates snapshots directory on initialization.
+
+        Given: A fresh adapter
+        When: Initializing or executing first operation
+        Then: Snapshots directory is created
+        """
+        config = HandlerFileSystemAdapterConfig(base_path=tmp_path)
+        adapter = HandlerFileSystemAdapter(config)
+
+        await adapter.initialize()
+
+        assert adapter.snapshots_path.exists()
+        assert adapter.snapshots_path.is_dir()
+
+    @pytest.mark.asyncio
+    async def test_adapter_shutdown(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that adapter shutdown works correctly.
+
+        Given: An initialized adapter
+        When: Calling shutdown
+        Then: Adapter is no longer initialized
+        """
+        # Initialize by executing an operation
+        await adapter.execute(ModelMemoryStorageRequest(operation="list"))
+        assert adapter.is_initialized
+
+        await adapter.shutdown()
+
+        assert not adapter.is_initialized
+
+    @pytest.mark.asyncio
+    async def test_adapter_reinitializes_after_shutdown(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that adapter can reinitialize after shutdown.
+
+        Given: An adapter that was shutdown
+        When: Executing a new operation
+        Then: Adapter reinitializes and operates correctly
+        """
+        # Initialize, store, shutdown
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+        await adapter.shutdown()
+
+        # Should reinitialize on next execute
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+
+        assert response.status == "success"
+        assert adapter.is_initialized
+
+
+# =============================================================================
+# Configuration Tests
+# =============================================================================
+
+
+class TestAdapterConfiguration:
+    """Tests for adapter configuration options."""
+
+    @pytest.mark.asyncio
+    async def test_custom_snapshots_dir(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test using a custom snapshots directory name.
+
+        Given: Configuration with custom snapshots_dir
+        When: Storing a snapshot
+        Then: File is created in the custom directory
+        """
+        config = HandlerFileSystemAdapterConfig(
+            base_path=tmp_path,
+            snapshots_dir="custom_memories",
+        )
+        adapter = HandlerFileSystemAdapter(config)
+        snapshot = create_unique_snapshot()
+
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+        )
+
+        expected_dir = tmp_path / "custom_memories"
+        expected_file = expected_dir / f"{snapshot.snapshot_id}.json"
+
+        assert expected_dir.exists()
+        assert expected_file.exists()
+
+    def test_config_has_properties(self, tmp_path: Path) -> None:
+        """Test that adapter exposes configuration properties.
+
+        Given: A configured adapter
+        When: Accessing properties
+        Then: Properties return expected values
+        """
+        config = HandlerFileSystemAdapterConfig(
+            base_path=tmp_path,
+            snapshots_dir="memories",
+            max_file_size=5 * 1024 * 1024,  # 5MB
+        )
+        adapter = HandlerFileSystemAdapter(config)
+
+        assert adapter.config.base_path == tmp_path
+        assert adapter.config.snapshots_dir == "memories"
+        assert adapter.config.max_file_size == 5 * 1024 * 1024
+        assert adapter.snapshots_path == tmp_path / "memories"
+
+
+# =============================================================================
+# Edge Cases and Error Handling
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_operation_returns_error(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that unknown operations return an error.
+
+        Given: A request with an invalid operation
+        When: Executing the request
+        Then: Response status is 'error'
+
+        Note: This test requires constructing an invalid request manually
+        since Pydantic validation would normally prevent this.
+        """
+        # Create a request and modify the operation after construction
+        # This simulates receiving an unknown operation type
+        # We use type: ignore to bypass Pydantic's type checking
+        try:
+            request = ModelMemoryStorageRequest(
+                operation="unknown_operation",  # type: ignore[arg-type]
+            )
+            # If Pydantic allows it, execute should handle it
+            response = await adapter.execute(request)
+            # The handler should return an error for unknown operations
+            assert response.status == "error"
+        except ValueError:
+            # Pydantic validation correctly rejects invalid operation
+            pass
+
+    @pytest.mark.asyncio
+    async def test_store_overwrite_existing(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that storing with same ID overwrites existing.
+
+        Given: A stored snapshot
+        When: Storing another snapshot with the same ID
+        Then: The file is overwritten with new content
+        """
+        # Store original
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Store with same ID but different version
+        updated = sample_snapshot.model_copy(update={"version": 99})
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=updated)
+        )
+
+        # Retrieve should return updated version
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="retrieve",
+                snapshot_id=str(sample_snapshot.snapshot_id),
+            )
+        )
+
+        assert response.snapshot is not None
+        assert response.snapshot.version == 99
+
+    @pytest.mark.asyncio
+    async def test_concurrent_operations(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test handling multiple operations without issues.
+
+        Given: Multiple snapshots
+        When: Performing various operations
+        Then: All operations complete successfully
+        """
+        import asyncio
+
+        snapshots = [create_unique_snapshot() for _ in range(5)]
+
+        # Store all concurrently
+        store_tasks = [
+            adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=s)
+            )
+            for s in snapshots
+        ]
+        store_results = await asyncio.gather(*store_tasks)
+
+        assert all(r.status == "success" for r in store_results)
+
+        # Retrieve all concurrently
+        retrieve_tasks = [
+            adapter.execute(
+                ModelMemoryStorageRequest(
+                    operation="retrieve",
+                    snapshot_id=str(s.snapshot_id),
+                )
+            )
+            for s in snapshots
+        ]
+        retrieve_results = await asyncio.gather(*retrieve_tasks)
+
+        assert all(r.status == "success" for r in retrieve_results)
+        assert all(r.snapshot is not None for r in retrieve_results)
