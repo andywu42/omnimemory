@@ -10,10 +10,17 @@ from ...enums.enum_memory_operation_type import EnumMemoryOperationType
 from .model_memory_context import ModelMemoryContext
 from .model_memory_parameters import ModelMemoryParameters, ModelMemoryOptions
 from ..foundation.model_memory_data import ModelMemoryRequestData
+from ..foundation.model_contract_version import DEFAULT_CONTRACT_VERSION
 
 
 class ModelMemoryRequest(BaseModel):
     """Base memory request model following ONEX standards."""
+
+    # Contract version for schema tracking
+    contract_version: str = Field(
+        default=DEFAULT_CONTRACT_VERSION,
+        description="Schema version for this request contract (semver format)",
+    )
 
     # Request identification
     request_id: UUID = Field(

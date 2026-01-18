@@ -64,13 +64,21 @@ from .protocols import (
     # Data models
     BaseMemoryRequest,
     BaseMemoryResponse,
+    MemoryRecord,
+    MemoryStoreRequest,
+    MemoryStoreResponse,
 
     # Enums
     OperationStatus,
+    ContentType,
+    MemoryPriority,
+    AccessLevel,
 
     # Error handling
     OmniMemoryError,
     OmniMemoryErrorCode,
+    ValidationError,
+    SystemError,
 )
 
 __all__ = [
@@ -113,11 +121,19 @@ __all__ = [
     # Data models
     "BaseMemoryRequest",
     "BaseMemoryResponse",
+    "MemoryRecord",
+    "MemoryStoreRequest",
+    "MemoryStoreResponse",
 
     # Enums
     "OperationStatus",
+    "ContentType",
+    "MemoryPriority",
+    "AccessLevel",
 
     # Error handling
     "OmniMemoryError",
     "OmniMemoryErrorCode",
+    "ValidationError",
+    "SystemError",
 ]

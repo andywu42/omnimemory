@@ -10,12 +10,12 @@ comprehensive validation, serialization, and observability features.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..models.foundation import (
     ModelStringList,
@@ -229,7 +229,7 @@ class BaseMemoryRequest(BaseMemoryModel):
         description="Correlation ID for request tracking"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Request timestamp"
     )
     user_context: Optional[UserContext] = Field(
@@ -253,7 +253,7 @@ class BaseMemoryResponse(BaseMemoryModel):
     correlation_id: UUID = Field(description="Correlation ID matching request")
     status: OperationStatus = Field(description="Operation execution status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Response timestamp"
     )
     execution_time_ms: int = Field(
@@ -278,6 +278,14 @@ class BaseMemoryResponse(BaseMemoryModel):
     events: ModelResultCollection = Field(default_factory=ModelResultCollection,
         description="Operation events for observability"
     )
+
+    @field_validator('provenance', 'warnings', mode='before')
+    @classmethod
+    def convert_list_to_model_string_list(cls, v):
+        """Convert plain lists to ModelStringList for easier API usage."""
+        if isinstance(v, list):
+            return ModelStringList(values=v)
+        return v
 
 
 # === CORE DATA MODELS ===
@@ -309,20 +317,20 @@ class MemoryRecord(BaseMemoryModel):
         None,
         description="Model used to generate embedding"
     )
-    tags: ModelStringList = Field(default_factory=ModelStringList,
-        description="Memory tags for categorization",
-        max_length=100
+    tags: ModelStringList = Field(
+        default_factory=ModelStringList,
+        description="Memory tags for categorization"
     )
     priority: MemoryPriority = Field(
         MemoryPriority.NORMAL,
         description="Memory priority level"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Last update timestamp"
     )
     expires_at: Optional[datetime] = Field(
@@ -364,6 +372,14 @@ class MemoryRecord(BaseMemoryModel):
         None,
         description="Last access timestamp"
     )
+
+    @field_validator('tags', 'provenance', mode='before')
+    @classmethod
+    def convert_list_to_model_string_list(cls, v):
+        """Convert plain lists to ModelStringList for easier API usage."""
+        if isinstance(v, list):
+            return ModelStringList(values=v)
+        return v
 
 
 # === MEMORY OPERATION REQUESTS/RESPONSES ===

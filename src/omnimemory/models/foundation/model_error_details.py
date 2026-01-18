@@ -4,7 +4,7 @@ Error details model following ONEX standards.
 Uses the standard ONEX error patterns from omnibase_core when available.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -112,7 +112,7 @@ class ModelErrorDetails(BaseModel):
 
     # Temporal information
     occurred_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the error occurred",
     )
     resolved_at: datetime | None = Field(
@@ -140,11 +140,11 @@ class ModelErrorDetails(BaseModel):
         description="Number of times this error has occurred",
     )
     first_occurrence: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this error first occurred",
     )
     last_occurrence: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this error last occurred",
     )
 

@@ -4,7 +4,7 @@ Memory response model following ONEX standards.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -17,10 +17,17 @@ from .model_provenance import ModelProvenanceChain
 from ..foundation.model_memory_data import ModelMemoryResponseData
 from ..foundation.model_error_details import ModelErrorDetails
 from ..foundation.model_trust_score import ModelTrustScore
+from ..foundation.model_contract_version import DEFAULT_CONTRACT_VERSION
 
 
 class ModelMemoryResponse(BaseModel):
     """Base memory response model following ONEX standards."""
+
+    # Contract version for schema tracking
+    contract_version: str = Field(
+        default=DEFAULT_CONTRACT_VERSION,
+        description="Schema version for this response contract (semver format)",
+    )
 
     # Response identification
     request_id: UUID = Field(
@@ -68,7 +75,7 @@ class ModelMemoryResponse(BaseModel):
 
     # Timing information
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the response was created",
     )
     processed_at: datetime | None = Field(

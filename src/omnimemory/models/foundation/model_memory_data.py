@@ -2,20 +2,50 @@
 Memory data models following ONEX standards.
 """
 
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Union
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from ...enums.enum_data_type import EnumDataType
 
+# Type alias for JSON-compatible primitive values
+JsonPrimitive = Union[str, int, float, bool, None]
+
+# Type alias for JSON-compatible nested values (one level of nesting)
+# Using 'object' for nested collections provides flexibility while avoiding
+# recursive type issues with Pydantic V2
+JsonNestedValue = Union[str, int, float, bool, list[object], dict[str, object], None]
+
+# Type alias for memory data values - explicit Union instead of Any
+# Supports common serializable types used in memory systems:
+# - Primitive types: str, int, float, bool
+# - Binary data: bytes (use with encoding="base64" metadata)
+# - Collections: list and dict with JSON-compatible contents
+# - Null: None
+#
+# Note: For deeply nested JSON structures, the list[object] and dict[str, object]
+# types accept any JSON-serializable content. This is a deliberate design choice
+# to avoid recursive type definitions that cause Pydantic V2 compatibility issues.
+MemoryDataValueType = Union[
+    str,
+    int,
+    float,
+    bool,
+    bytes,  # Binary data support - use with encoding metadata
+    list[JsonNestedValue],  # JSON arrays with nested values
+    dict[str, JsonNestedValue],  # JSON objects with nested values
+    None,
+]
+
 
 class ModelMemoryDataValue(BaseModel):
     """Individual memory data value following ONEX standards."""
 
-    value: Any = Field(
-        description="The actual data value",
+    value: MemoryDataValueType = Field(
+        default=None,
+        description="The actual data value (string, number, boolean, list, or dict)",
     )
     data_type: EnumDataType = Field(
         description="Type of the data value",
@@ -94,7 +124,7 @@ class ModelMemoryDataContent(BaseModel):
         description="Reference or identifier in the source system",
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the data content was created",
     )
     modified_at: datetime | None = Field(
@@ -114,7 +144,7 @@ class ModelMemoryDataContent(BaseModel):
     def add_metadata(self, key: str, value: ModelMemoryDataValue) -> None:
         """Add metadata to the data content."""
         self.metadata[key] = value
-        self.modified_at = datetime.utcnow()
+        self.modified_at = datetime.now(timezone.utc)
 
     def get_metadata(self, key: str) -> ModelMemoryDataValue | None:
         """Get metadata by key."""
@@ -123,12 +153,12 @@ class ModelMemoryDataContent(BaseModel):
     def add_relationship(self, relationship_type: str, target_id: UUID) -> None:
         """Add a relationship to another data content."""
         self.relationships[relationship_type] = target_id
-        self.modified_at = datetime.utcnow()
+        self.modified_at = datetime.now(timezone.utc)
 
     def record_access(self) -> None:
         """Record an access to this data content."""
         self.access_count += 1
-        self.last_accessed_at = datetime.utcnow()
+        self.last_accessed_at = datetime.now(timezone.utc)
 
     @property
     def total_size_bytes(self) -> int:
@@ -143,7 +173,7 @@ class ModelMemoryDataContent(BaseModel):
         """Check if data was accessed recently."""
         if not self.last_accessed_at:
             return False
-        delta = datetime.utcnow() - self.last_accessed_at
+        delta = datetime.now(timezone.utc) - self.last_accessed_at
         return delta.total_seconds() / 3600 < hours
 
 

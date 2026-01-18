@@ -2,7 +2,7 @@
 Operation metadata model for tracking operation-specific information.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field

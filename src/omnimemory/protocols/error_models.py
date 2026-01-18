@@ -7,10 +7,18 @@ that integrate with NodeResult for consistent error handling across the system.
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional, Union
 from uuid import UUID
 
-from omnibase_core.core.errors.core_errors import OnexError as BaseOnexError
+# Type alias for field values in validation errors
+# Supports common field types that can fail validation
+FieldValueType = Union[str, int, float, bool, bytes, list[object], dict[str, object], None]
+
+# Use local compatibility stub until omnibase_core provides OnexError
+try:
+    from omnibase_core.core.errors.core_errors import OnexError as BaseOnexError
+except (ImportError, ModuleNotFoundError):
+    from ..compat.onex_error import OnexError as BaseOnexError
 from pydantic import BaseModel, Field
 
 from ..models.foundation import ModelMetadata
@@ -271,12 +279,12 @@ class OmniMemoryError(BaseOnexError):
 
 class ValidationError(OmniMemoryError):
     """Exception for input validation errors."""
-    
+
     def __init__(
         self,
         message: str,
         field_name: Optional[str] = None,
-        field_value: Optional[Any] = None,
+        field_value: Optional[FieldValueType] = None,
         validation_rule: Optional[str] = None,
         **kwargs,
     ):

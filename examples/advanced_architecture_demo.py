@@ -17,7 +17,7 @@ ONEX Compliance:
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
 
@@ -67,7 +67,7 @@ class ONEXArchitectureDemo:
             keywords=["architecture", "demo", "patterns"],
             storage_type="vector",  # This will need to be fixed with proper enum
             storage_location="demo_storage",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             importance_score=0.8,
             relevance_score=0.9,
             quality_score=0.85,
@@ -86,7 +86,7 @@ class ONEXArchitectureDemo:
             priority="normal",
             timeout_seconds=30,
             retry_count=3,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata={"demo": True, "node_type": "effect"}
         )
 
@@ -99,7 +99,7 @@ class ONEXArchitectureDemo:
         processing_metrics = ModelProcessingMetrics(
             correlation_id=self.demo_correlation_id,
             operation_type="store",
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(timezone.utc),
             execution_time_ms=100,
             memory_usage_mb=2.5,
             cpu_usage_percent=15.0,
@@ -117,7 +117,7 @@ class ONEXArchitectureDemo:
         # Create intelligence processing request
         intelligence_request = IntelligenceProcessRequest(
             correlation_id=self.demo_correlation_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             raw_data="Process this intelligence data using ONEX patterns",
             processing_type="semantic_analysis",
             metadata={"demo": True, "node_type": "compute"}
@@ -132,7 +132,7 @@ class ONEXArchitectureDemo:
         intelligence_response = IntelligenceProcessResponse(
             correlation_id=self.demo_correlation_id,
             status="success",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             execution_time_ms=200,
             provenance=["onex_demo_system", "intelligence_processor"],
             trust_score=0.88,
@@ -203,7 +203,7 @@ class ONEXArchitectureDemo:
                 "step": step_name,
                 "status": "completed",
                 "duration_ms": int(duration * 1000),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
 
         total_workflow_time = sum(r["duration_ms"] for r in workflow_results)

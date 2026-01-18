@@ -1,0 +1,158 @@
+# OmniMemory Contract Definition
+# ONEX 4.0 Compliant Architecture Contract
+
+# Contract schema version - tracks the contract format itself
+# Follows semantic versioning: MAJOR.MINOR.PATCH
+# - MAJOR: Breaking changes to contract schema
+# - MINOR: Backwards-compatible additions to schema
+# - PATCH: Documentation or cosmetic changes
+contract_version: "1.0.0"
+
+contract:
+  name: omnimemory
+  version: 1.0.0
+  # Node version tracks the implementation version of this node
+  # Follows semantic versioning independent of contract_version
+  node_version: "1.0.0"
+  description: Advanced memory management system following ONEX 4-node architecture
+  architecture:
+    pattern: onex_4_node
+    nodes:
+      effect:
+        description: External I/O operations for memory storage and retrieval
+        responsibilities:
+          - Memory persistence operations
+          - Vector database interactions
+          - Cache layer management
+          - External API communications
+      compute:
+        description: Pure transformations and algorithms for memory processing
+        responsibilities:
+          - Content analysis and parsing
+          - Semantic similarity calculations
+          - Memory scoring and ranking
+          - Data transformation pipelines
+      reducer:
+        description: Aggregation and consolidation of memory operations
+        responsibilities:
+          - Memory deduplication
+          - Results aggregation
+          - State consolidation
+          - Batch operation handling
+      orchestrator:
+        description: Workflow coordination for memory operations
+        responsibilities:
+          - Request routing
+          - Operation sequencing
+          - Cross-node coordination
+          - Workflow state management
+
+protocols:
+  memory_storage:
+    description: Protocol for memory storage operations
+    methods:
+      - store_memory
+      - retrieve_memory
+      - delete_memory
+      - update_memory
+  memory_search:
+    description: Protocol for memory search and retrieval
+    methods:
+      - semantic_search
+      - keyword_search
+      - temporal_search
+      - composite_search
+  memory_lifecycle:
+    description: Protocol for memory lifecycle management
+    methods:
+      - create_memory
+      - archive_memory
+      - restore_memory
+      - expire_memory
+
+schemas:
+  memory_record:
+    description: Core memory record schema
+    fields:
+      - name: memory_id
+        type: string
+        description: Unique identifier for the memory record
+        required: true
+      - name: content
+        type: string
+        description: The actual memory content
+        required: true
+      - name: content_type
+        type: string
+        description: MIME type or content classification
+        required: true
+      - name: tags
+        type: list[string]
+        description: Tags for categorization and search
+        required: false
+      - name: priority
+        type: integer
+        description: Priority level (1-10, higher is more important)
+        required: false
+      - name: created_at
+        type: datetime
+        description: Timestamp when memory was created
+        required: true
+      - name: updated_at
+        type: datetime
+        description: Timestamp when memory was last updated
+        required: false
+  memory_request:
+    description: Memory operation request schema
+    fields:
+      - name: request_id
+        type: string
+        description: Unique identifier for the request
+        required: true
+      - name: operation_type
+        type: string
+        description: Type of operation (store, retrieve, delete, update)
+        required: true
+      - name: memory_data
+        type: object
+        description: Memory data payload
+        required: false
+      - name: options
+        type: object
+        description: Optional configuration for the operation
+        required: false
+  memory_response:
+    description: Memory operation response schema
+    fields:
+      - name: response_id
+        type: string
+        description: Unique identifier for the response
+        required: true
+      - name: status
+        type: string
+        description: Operation status (success, error, pending)
+        required: true
+      - name: result
+        type: object
+        description: Operation result data
+        required: false
+      - name: metadata
+        type: object
+        description: Additional response metadata
+        required: false
+
+error_handling:
+  strategy: monadic_result
+  error_codes:
+    - MEMORY_NOT_FOUND
+    - STORAGE_FAILURE
+    - VALIDATION_ERROR
+    - TIMEOUT_ERROR
+    - CAPACITY_EXCEEDED
+  recovery:
+    retry_policy:
+      max_attempts: 3
+      backoff_multiplier: 2.0
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30

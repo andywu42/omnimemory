@@ -2,11 +2,11 @@
 Service health model following ONEX standards.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
-from omnibase_core.enums.node import EnumHealthStatus
+from omnibase_core.enums import EnumHealthStatus
 
 
 class ModelServiceHealth(BaseModel):
@@ -99,7 +99,7 @@ class ModelServiceHealth(BaseModel):
 
     # Health check information
     last_health_check: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the health check was performed",
     )
     health_check_duration_ms: float = Field(

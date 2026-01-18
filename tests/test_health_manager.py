@@ -26,28 +26,28 @@ from omnimemory.models.foundation.model_health_response import (
 class TestHealthManager:
     """Test health manager functionality."""
 
-    def test_health_manager_creation(self):
+    def test_health_manager_creation(self) -> None:
         """Test health manager can be created with valid parameters."""
         hm = HealthManager()
         assert hm is not None
         assert isinstance(hm.circuit_breakers, dict)
 
-    def test_register_health_check(self):
+    def test_register_health_check(self) -> None:
         """Test registering health checks."""
         hm = HealthManager()
 
-        async def mock_health_check():
+        async def mock_health_check() -> dict[str, str]:
             return {"status": "healthy", "details": "All systems operational"}
 
         hm.register_health_check("database", mock_health_check)
         assert "database" in hm.health_checks
 
     @pytest.mark.asyncio
-    async def test_check_resource_health_success(self):
+    async def test_check_resource_health_success(self) -> None:
         """Test resource health check with successful result."""
         hm = HealthManager()
 
-        async def healthy_check():
+        async def healthy_check() -> dict[str, str | float]:
             return {"status": "healthy", "response_time": 0.05}
 
         hm.register_health_check("api", healthy_check)
@@ -55,29 +55,32 @@ class TestHealthManager:
 
         assert result.status == HealthStatus.HEALTHY
         assert result.response_time < 1.0
-        assert "status" in result.details
+        # Details is a HealthCheckDetails model with structured attributes
+        assert result.details is not None
 
     @pytest.mark.asyncio
-    async def test_check_resource_health_failure(self):
+    async def test_check_resource_health_failure(self) -> None:
         """Test resource health check with failure."""
         hm = HealthManager()
 
-        async def failing_check():
+        async def failing_check() -> None:
             raise ConnectionError("Database connection failed")
 
         hm.register_health_check("database", failing_check)
         result = await hm.check_resource_health("database")
 
         assert result.status == HealthStatus.UNHEALTHY
-        assert "error" in result.details
-        assert "Database connection failed" in result.details["error"]
+        # Details is a HealthCheckDetails model - access error via attribute
+        assert result.details.error is not None
+        # Error is sanitized but should contain relevant error type
+        assert "ConnectionError" in result.details.error
 
     @pytest.mark.asyncio
-    async def test_check_resource_health_timeout(self):
+    async def test_check_resource_health_timeout(self) -> None:
         """Test resource health check with timeout."""
         hm = HealthManager(default_timeout=0.1)
 
-        async def slow_check():
+        async def slow_check() -> dict[str, str]:
             import asyncio
             await asyncio.sleep(0.5)  # Longer than timeout
             return {"status": "healthy"}
@@ -89,14 +92,14 @@ class TestHealthManager:
         assert result.response_time >= 0.1
 
     @pytest.mark.asyncio
-    async def test_get_system_health(self):
+    async def test_get_system_health(self) -> None:
         """Test getting overall system health."""
         hm = HealthManager()
 
-        async def healthy_check():
+        async def healthy_check() -> dict[str, str]:
             return {"status": "healthy"}
 
-        async def unhealthy_check():
+        async def unhealthy_check() -> None:
             raise ValueError("Service down")
 
         hm.register_health_check("service1", healthy_check)
@@ -115,7 +118,7 @@ class TestHealthManager:
         assert service1_status.status == HealthStatus.HEALTHY
         assert service2_status.status == HealthStatus.UNHEALTHY
 
-    def test_get_circuit_breaker_stats(self):
+    def test_get_circuit_breaker_stats(self) -> None:
         """Test getting circuit breaker statistics."""
         hm = HealthManager()
 
@@ -151,12 +154,13 @@ class TestHealthManager:
         assert service2_stats.failure_count == 2
 
     @pytest.mark.asyncio
-    async def test_rate_limited_health_check(self):
+    async def test_rate_limited_health_check(self) -> None:
         """Test rate-limited health check functionality."""
         hm = HealthManager(rate_limit_window=1.0, max_checks_per_window=2)
 
         call_count = 0
-        async def counting_check():
+
+        async def counting_check() -> dict[str, str | int]:
             nonlocal call_count
             call_count += 1
             return {"status": "healthy", "call_count": call_count}
@@ -178,7 +182,7 @@ class TestHealthManager:
         assert result3.status == HealthStatus.RATE_LIMITED
         assert call_count == 2  # Should not have incremented
 
-    def test_get_rate_limited_health_response(self):
+    def test_get_rate_limited_health_response(self) -> None:
         """Test getting rate-limited health check response."""
         hm = HealthManager()
 
@@ -191,7 +195,7 @@ class TestHealthManager:
         assert "current_window_requests" in response.details
 
     @pytest.mark.asyncio
-    async def test_health_check_with_circuit_breaker(self):
+    async def test_health_check_with_circuit_breaker(self) -> None:
         """Test health check integrated with circuit breaker."""
         hm = HealthManager()
 
@@ -200,7 +204,8 @@ class TestHealthManager:
         hm.circuit_breakers["flaky_service"] = cb
 
         failure_count = 0
-        async def flaky_check():
+
+        async def flaky_check() -> dict[str, str]:
             nonlocal failure_count
             failure_count += 1
             if failure_count <= 2:
@@ -223,7 +228,7 @@ class TestHealthManager:
         result3 = await hm.check_resource_health("flaky_service")
         assert result3.status == HealthStatus.CIRCUIT_OPEN
 
-    def test_sanitize_error_details(self):
+    def test_sanitize_error_details(self) -> None:
         """Test error sanitization in health checks."""
         hm = HealthManager()
 
@@ -237,11 +242,11 @@ class TestHealthManager:
         assert "[REDACTED]" in sanitized
 
     @pytest.mark.asyncio
-    async def test_health_check_correlation_tracking(self):
+    async def test_health_check_correlation_tracking(self) -> None:
         """Test health checks include correlation tracking."""
         hm = HealthManager()
 
-        async def tracked_check():
+        async def tracked_check() -> dict[str, str]:
             return {"status": "healthy", "service": "test"}
 
         hm.register_health_check("tracked_service", tracked_check)
@@ -256,19 +261,19 @@ class TestHealthManager:
         assert result.status == HealthStatus.HEALTHY
 
     @pytest.mark.asyncio
-    async def test_bulk_health_check(self):
+    async def test_bulk_health_check(self) -> None:
         """Test checking multiple resources in parallel."""
         hm = HealthManager()
 
-        async def service1_check():
+        async def service1_check() -> dict[str, str]:
             return {"status": "healthy", "service": "service1"}
 
-        async def service2_check():
+        async def service2_check() -> dict[str, str]:
             import asyncio
             await asyncio.sleep(0.1)
             return {"status": "healthy", "service": "service2"}
 
-        async def service3_check():
+        async def service3_check() -> None:
             raise ValueError("Service3 is down")
 
         hm.register_health_check("service1", service1_check)
@@ -285,12 +290,12 @@ class TestHealthManager:
         assert results["service3"].status == HealthStatus.UNHEALTHY
 
     @pytest.mark.asyncio
-    async def test_health_manager_cleanup(self):
+    async def test_health_manager_cleanup(self) -> None:
         """Test health manager resource cleanup."""
         hm = HealthManager()
 
         # Add some resources
-        async def test_check():
+        async def test_check() -> dict[str, str]:
             return {"status": "healthy"}
 
         hm.register_health_check("cleanup_test", test_check)
@@ -313,7 +318,7 @@ class TestHealthManagerIntegration:
     """Integration tests for health manager."""
 
     @pytest.mark.asyncio
-    async def test_complete_health_monitoring_workflow(self):
+    async def test_complete_health_monitoring_workflow(self) -> None:
         """Test complete health monitoring workflow."""
         hm = HealthManager(
             default_timeout=1.0,
@@ -322,16 +327,16 @@ class TestHealthManagerIntegration:
         )
 
         # Simulate different types of services
-        async def stable_service():
+        async def stable_service() -> dict[str, str]:
             return {"status": "healthy", "uptime": "99.9%"}
 
-        async def intermittent_service():
+        async def intermittent_service() -> dict[str, str]:
             import random
             if random.random() < 0.3:  # 30% failure rate
                 raise ConnectionError("Intermittent failure")
             return {"status": "healthy", "load": "normal"}
 
-        async def slow_service():
+        async def slow_service() -> dict[str, str]:
             import asyncio
             await asyncio.sleep(0.5)
             return {"status": "healthy", "response_time": "slow"}
@@ -348,7 +353,7 @@ class TestHealthManagerIntegration:
         )
 
         # Perform multiple health checks
-        results = []
+        results: list[SystemHealth] = []
         for i in range(10):
             system_health = await hm.get_system_health()
             results.append(system_health)

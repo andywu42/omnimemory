@@ -3,7 +3,7 @@ Processing metrics model for operation timing and performance tracking.
 """
 
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict
 
 from pydantic import BaseModel, Field, computed_field
 

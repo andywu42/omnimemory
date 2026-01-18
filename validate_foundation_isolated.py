@@ -69,7 +69,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
 
         # Test basic model creation (using simple types to avoid omnibase_core)
         from uuid import uuid4
-        from datetime import datetime
+        from datetime import datetime, timezone
         from typing import Optional, Dict, List, Any
         from pydantic import BaseModel, Field
 
@@ -78,7 +78,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
             """Test model to verify Pydantic patterns work."""
             memory_id: str = Field(default_factory=lambda: str(uuid4()))
             content: str = Field(max_length=1000)
-            created_at: datetime = Field(default_factory=datetime.utcnow)
+            created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
             metadata: Optional[Dict[str, Any]] = None
 
         test_instance = TestMemoryModel(

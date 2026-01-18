@@ -5,6 +5,8 @@ This module provides retry decorators and utilities for handling transient
 failures in OmniMemory operations with configurable backoff strategies.
 """
 
+from __future__ import annotations
+
 __all__ = [
     "RetryConfig",
     "RetryAttempt",
@@ -15,13 +17,11 @@ __all__ = [
     "retry_decorator"
 ]
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from uuid import UUID
 
@@ -32,10 +32,7 @@ from .error_sanitizer import ErrorSanitizer, SanitizationLevel
 logger = logging.getLogger(__name__)
 
 # Initialize error sanitizer for secure logging
-_error_sanitizer = ErrorSanitizer(
-    default_level=SanitizationLevel.STANDARD,
-    enable_stack_trace_filter=True
-)
+_error_sanitizer = ErrorSanitizer(level=SanitizationLevel.STANDARD)
 
 T = TypeVar('T')
 
@@ -96,7 +93,7 @@ class RetryAttemptInfo(BaseModel):
         description="Exception that triggered the retry"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the attempt was made"
     )
     correlation_id: Optional[UUID] = Field(
@@ -409,7 +406,6 @@ class RetryManager:
             Operation result
         """
         retry_config = config or self.default_config
-        start_time = datetime.utcnow()
 
         try:
             result = await retry_with_backoff(

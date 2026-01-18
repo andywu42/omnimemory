@@ -3,12 +3,12 @@ Trust score model with time decay following ONEX standards.
 """
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from omnimemory.enums import EnumTrustLevel, EnumDecayFunction
 
@@ -50,11 +50,11 @@ class ModelTrustScore(BaseModel):
     
     # Temporal information
     initial_timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the trust score was initially established",
     )
     last_updated: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the trust score was last updated",
     )
     last_verified: Optional[datetime] = Field(
@@ -78,22 +78,10 @@ class ModelTrustScore(BaseModel):
         description="Number of trust violations recorded",
     )
 
-    # Performance optimization caching
-    _cached_score: Optional[float] = Field(
-        default=None,
-        exclude=True,
-        description="Cached current score to avoid expensive recalculation",
-    )
-    _cache_timestamp: Optional[datetime] = Field(
-        default=None,
-        exclude=True,
-        description="Timestamp when the score was cached",
-    )
-    _cache_ttl_seconds: int = Field(
-        default=300,  # 5 minutes cache TTL
-        exclude=True,
-        description="Cache time-to-live in seconds",
-    )
+    # Performance optimization caching (using PrivateAttr for underscore names)
+    _cached_score: Optional[float] = PrivateAttr(default=None)
+    _cache_timestamp: Optional[datetime] = PrivateAttr(default=None)
+    _cache_ttl_seconds: int = PrivateAttr(default=300)
     
     @field_validator('trust_level')
     @classmethod
@@ -123,7 +111,7 @@ class ModelTrustScore(BaseModel):
     def calculate_current_score(self, as_of: Optional[datetime] = None, force_recalculate: bool = False) -> float:
         """Calculate current trust score with time decay and caching for performance."""
         if as_of is None:
-            as_of = datetime.utcnow()
+            as_of = datetime.now(timezone.utc)
 
         # Check cache validity if not forcing recalculation
         if not force_recalculate and self._is_cache_valid(as_of):
@@ -186,10 +174,10 @@ class ModelTrustScore(BaseModel):
         self.base_score = new_base_score
         self.current_score = self.calculate_current_score()
         self.trust_level = self._score_to_level(self.current_score)
-        self.last_updated = datetime.utcnow()
+        self.last_updated = datetime.now(timezone.utc)
         
         if verified:
-            self.last_verified = datetime.utcnow()
+            self.last_verified = datetime.now(timezone.utc)
             self.verification_count += 1
     
     def record_violation(self, penalty: float = 0.1) -> None:
@@ -199,7 +187,7 @@ class ModelTrustScore(BaseModel):
         self.base_score = max(0.0, self.base_score - penalty_factor)
         self.current_score = self.calculate_current_score()
         self.trust_level = self._score_to_level(self.current_score)
-        self.last_updated = datetime.utcnow()
+        self.last_updated = datetime.now(timezone.utc)
     
     def refresh_current_score(self) -> None:
         """Refresh the current score based on time decay."""

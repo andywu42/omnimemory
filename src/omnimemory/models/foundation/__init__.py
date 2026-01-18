@@ -68,6 +68,11 @@ from .model_connection_metadata import (
     SemaphoreMetrics,
 )
 from .model_progress_summary import ProgressSummaryResponse
+from .model_contract_version import (
+    ModelContractVersion,
+    ContractVersionMixin,
+    DEFAULT_CONTRACT_VERSION,
+)
 
 __all__ = [
     "EnumErrorCode",
@@ -137,4 +142,9 @@ __all__ = [
     "ConnectionPoolStats",
     "SemaphoreMetrics",
     "ProgressSummaryResponse",
+
+    # Contract versioning support
+    "ModelContractVersion",
+    "ContractVersionMixin",
+    "DEFAULT_CONTRACT_VERSION",
 ]

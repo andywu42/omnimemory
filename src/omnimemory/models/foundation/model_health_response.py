@@ -4,7 +4,7 @@ Health response model following ONEX standards.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -67,7 +67,7 @@ class ModelHealthResponse(BaseModel):
         description="Health check response time in milliseconds"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the health check was performed"
     )
     resource_usage: ModelResourceMetrics = Field(
@@ -122,11 +122,11 @@ class ModelCircuitBreakerStats(BaseModel):
 class ModelCircuitBreakerStatsCollection(BaseModel):
     """Collection of circuit breaker statistics for all dependencies."""
 
-    stats: dict[str, ModelCircuitBreakerStats] = Field(
+    circuit_breakers: dict[str, ModelCircuitBreakerStats] = Field(
         description="Circuit breaker statistics keyed by dependency name"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When the statistics were collected"
     )
 
@@ -134,11 +134,24 @@ class ModelCircuitBreakerStatsCollection(BaseModel):
 class ModelRateLimitedHealthCheckResponse(BaseModel):
     """Rate-limited health check response."""
 
+    status: str = Field(
+        default="rate_limited",
+        description="Status of the rate-limited response"
+    )
+    message: str = Field(
+        default="Rate limit status",
+        description="Human-readable message about the rate limit status"
+    )
+    details: dict[str, str | int | float] = Field(
+        default_factory=dict,
+        description="Additional details including retry_after and current_window_requests"
+    )
     health_check: Optional[ModelHealthResponse] = Field(
         default=None,
         description="Health check result if within rate limit"
     )
     rate_limited: bool = Field(
+        default=True,
         description="Whether the request was rate limited"
     )
     rate_limit_reset_time: Optional[datetime] = Field(
