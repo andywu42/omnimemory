@@ -421,3 +421,57 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_assign)
         assert not result.valid, "Assignment before super().__init__ should be rejected"
+
+    def test_validate_node_py_rejects_missing_container_arg(self, tmp_path: Path) -> None:
+        """Test that validator rejects super().__init__() without correct container arg.
+
+        The super().__init__() call must have exactly one positional argument
+        named 'container'. This test verifies rejection of:
+        - No arguments
+        - Wrong argument name
+        - Too many arguments
+        - Keyword arguments
+        """
+        # Test case 1: super().__init__() with no arguments
+        bad_node_no_args = tmp_path / "bad_node_no_args.py"
+        bad_node_no_args.write_text('''
+class BadNode:
+    def __init__(self, container):
+        super().__init__()
+''')
+        result = validate_node_py(bad_node_no_args)
+        assert not result.valid, "super().__init__() without args should be rejected"
+        assert "super().__init__(container)" in result.error
+
+        # Test case 2: super().__init__() with wrong argument name
+        bad_node_wrong_name = tmp_path / "bad_node_wrong_name.py"
+        bad_node_wrong_name.write_text('''
+class BadNode:
+    def __init__(self, container):
+        super().__init__(wrong_name)
+''')
+        result = validate_node_py(bad_node_wrong_name)
+        assert not result.valid, "super().__init__(wrong_name) should be rejected"
+        assert "super().__init__(container)" in result.error
+
+        # Test case 3: super().__init__() with too many arguments
+        bad_node_too_many = tmp_path / "bad_node_too_many.py"
+        bad_node_too_many.write_text('''
+class BadNode:
+    def __init__(self, container):
+        super().__init__(container, extra)
+''')
+        result = validate_node_py(bad_node_too_many)
+        assert not result.valid, "super().__init__(container, extra) should be rejected"
+        assert "super().__init__(container)" in result.error
+
+        # Test case 4: super().__init__() with keyword argument
+        bad_node_keyword = tmp_path / "bad_node_keyword.py"
+        bad_node_keyword.write_text('''
+class BadNode:
+    def __init__(self, container):
+        super().__init__(container=container)
+''')
+        result = validate_node_py(bad_node_keyword)
+        assert not result.valid, "super().__init__(container=container) should be rejected"
+        assert "super().__init__(container)" in result.error
