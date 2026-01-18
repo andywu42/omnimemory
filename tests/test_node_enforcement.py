@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 OmniNode Team
-"""Node.py enforcement tests - AST-based declarative pattern validation.
+"""Contract enforcement tests - ONEX declarative node validation.
 
-Ensures all node.py files follow the FULLY DECLARATIVE pattern:
-- Exactly one class
-- Only __init__ method
-- Only super().__init__(container) in body
+Ensures all ONEX nodes follow the FULLY DECLARATIVE pattern:
+- contract.yaml defines node type, inputs, outputs, handlers
+- handlers/ directory contains business logic
+- No node.py class needed (contracts ARE the nodes)
 
-This module uses AST parsing to validate the declarative pattern statically,
-catching violations at test time rather than runtime.
+This module validates that node directories contain proper contracts
+and handler registrations, catching violations at test time.
 
 Skip Behavior:
-    Tests skip gracefully when node.py files don't exist during scaffold phase,
+    Tests skip gracefully when contracts don't exist during scaffold phase,
     using pytest.skip() with clear messages about what's missing.
 
 Path Resolution:
@@ -19,501 +19,202 @@ Path Resolution:
 """
 from __future__ import annotations
 
-import ast
-from functools import lru_cache
 from typing import NamedTuple
 
 import pytest
+import yaml
 from pathlib import Path
 
 from tests.conftest import CORE_8_NODES, NODES_DIR
 
 
-class NodeValidationResult(NamedTuple):
-    """Result of node.py validation."""
+# Valid ONEX node types
+VALID_NODE_TYPES: frozenset[str] = frozenset({"effect", "compute", "reducer", "orchestrator"})
+
+
+class ContractValidationResult(NamedTuple):
+    """Result of contract.yaml validation."""
     valid: bool
     error: str | None = None
 
 
-def validate_node_py(filepath: Path) -> NodeValidationResult:
-    """Enforce declarative node pattern via AST parsing.
+def validate_contract(contract_path: Path) -> ContractValidationResult:
+    """Validate ONEX contract follows required structure.
 
-    Results are cached to improve test performance.
+    Supports two formats:
+    1. Flat format: name and node_type at root level (preferred)
+    2. Nested format: name and node_type under 'onex' key
 
     Rules:
-    1. Exactly one class definition
-    2. Only __init__ method allowed
-    3. __init__ must only call super().__init__(container)
+    1. Must be valid YAML
+    2. Must specify valid node_type (effect, compute, reducer, orchestrator)
+    3. Must have name field
     """
-    return _validate_node_py_cached(str(filepath))
+    if not contract_path.exists():
+        return ContractValidationResult(False, f"Contract not found: {contract_path}")
 
+    try:
+        with open(contract_path) as f:
+            data: dict = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        return ContractValidationResult(False, f"Invalid YAML: {e}")
 
-@lru_cache(maxsize=32)
-def _validate_node_py_cached(filepath_str: str) -> NodeValidationResult:
-    """Cached implementation of node.py validation."""
-    filepath = Path(filepath_str)
-    if not filepath.exists():
-        return NodeValidationResult(False, f"File not found: {filepath}")
+    if not isinstance(data, dict):
+        return ContractValidationResult(False, "Contract must be a YAML mapping")
 
-    with open(filepath) as f:
-        try:
-            tree: ast.Module = ast.parse(f.read())
-        except SyntaxError as e:
-            return NodeValidationResult(False, f"Syntax error: {e}")
+    # Support both flat format (preferred) and nested 'onex' format
+    if "onex" in data and isinstance(data["onex"], dict):
+        contract_data: dict = data["onex"]
+    else:
+        contract_data = data
 
-    # Find all class definitions (excluding TYPE_CHECKING blocks)
-    classes: list[ast.ClassDef] = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    # Check for required fields
+    if "node_type" not in contract_data:
+        return ContractValidationResult(False, "Missing 'node_type' in contract")
 
-    if len(classes) == 0:
-        return NodeValidationResult(False, "No class found in node.py")
-
-    if len(classes) > 1:
-        return NodeValidationResult(False, f"Expected 1 class, found {len(classes)}")
-
-    cls: ast.ClassDef = classes[0]
-
-    # Get all methods (FunctionDef nodes that are direct children of class)
-    methods: list[ast.FunctionDef | ast.AsyncFunctionDef] = [
-        n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-
-    # Filter out __all__ and other non-method assignments
-    method_names: list[str] = [m.name for m in methods]
-
-    if len(methods) == 0:
-        return NodeValidationResult(False, "No __init__ method found")
-
-    if len(methods) > 1:
-        extra_methods: list[str] = [m for m in method_names if m != "__init__"]
-        return NodeValidationResult(
+    node_type: str = str(contract_data["node_type"]).lower()
+    if node_type not in VALID_NODE_TYPES:
+        return ContractValidationResult(
             False,
-            f"Node.py must have ONLY __init__, found extra methods: {extra_methods}"
+            f"Invalid node_type '{node_type}', must be one of: {', '.join(sorted(VALID_NODE_TYPES))}"
         )
 
-    if methods[0].name != "__init__":
-        return NodeValidationResult(
-            False,
-            f"Expected __init__, found: {methods[0].name}"
-        )
+    if "name" not in contract_data:
+        return ContractValidationResult(False, "Missing 'name' in contract")
 
-    # Check __init__ body - should only have super().__init__(container)
-    init_body: list[ast.stmt] = methods[0].body
-
-    # Allow docstring (ONLY first statement, ONLY if it's a string constant)
-    # Docstrings in Python are ALWAYS:
-    # 1. The first statement in the function body
-    # 2. A string literal (not other constants like int/float)
-    first_stmt_is_docstring: bool = (
-        bool(init_body)
-        and isinstance(init_body[0], ast.Expr)
-        and isinstance(init_body[0].value, ast.Constant)
-        and isinstance(init_body[0].value.value, str)
-    )
-    non_docstring_stmts: list[ast.stmt] = init_body[1:] if first_stmt_is_docstring else init_body
-
-    if len(non_docstring_stmts) > 1:
-        return NodeValidationResult(
-            False,
-            f"__init__ should only call super().__init__(container), found {len(non_docstring_stmts)} statements"
-        )
-
-    if len(non_docstring_stmts) == 0:
-        return NodeValidationResult(
-            False,
-            "__init__ must call super().__init__(container)"
-        )
-
-    # Validate that the single statement is super().__init__(container)
-    stmt: ast.stmt = non_docstring_stmts[0]
-    if not _is_super_init_call(stmt):
-        return NodeValidationResult(
-            False,
-            "__init__ body must be exactly super().__init__(container)"
-        )
-
-    return NodeValidationResult(True)
+    return ContractValidationResult(True)
 
 
-def _is_super_init_call(stmt: ast.stmt) -> bool:
-    """Check if statement is super().__init__(container) call.
+class TestContractEnforcement:
+    """Test that all nodes have valid ONEX contracts.
 
-    Valid AST structure:
-        Expr(
-            value=Call(
-                func=Attribute(
-                    value=Call(func=Name(id='super'), args=[]),
-                    attr='__init__'
-                ),
-                args=[Name(id='container')]
-            )
-        )
-    """
-    # Must be an expression statement
-    if not isinstance(stmt, ast.Expr):
-        return False
+    These tests verify that node directories contain proper contract.yaml
+    files that define the node declaratively. No node.py files are needed -
+    the contract IS the node definition.
 
-    # Must be a function call
-    call: ast.expr = stmt.value
-    if not isinstance(call, ast.Call):
-        return False
-
-    # Must be calling an attribute (super().__init__)
-    if not isinstance(call.func, ast.Attribute):
-        return False
-
-    attr: ast.Attribute = call.func
-    if attr.attr != "__init__":
-        return False
-
-    # The attribute's value must be super() call
-    if not isinstance(attr.value, ast.Call):
-        return False
-
-    super_call: ast.Call = attr.value
-    if not isinstance(super_call.func, ast.Name):
-        return False
-
-    if super_call.func.id != "super":
-        return False
-
-    # super() should have no arguments
-    if super_call.args or super_call.keywords:
-        return False
-
-    # __init__ must have exactly one positional argument named 'container'
-    if len(call.args) != 1:
-        return False
-
-    arg: ast.expr = call.args[0]
-    if not isinstance(arg, ast.Name):
-        return False
-
-    if arg.id != "container":
-        return False
-
-    # No keyword arguments allowed
-    if call.keywords:
-        return False
-
-    return True
-
-
-class TestNodeEnforcement:
-    """Test that all node.py files follow declarative pattern.
-
-    These tests use AST parsing to verify that node.py files conform to
-    the ONEX declarative pattern requirements:
-    - Exactly one class definition
-    - Only __init__ method allowed
-    - __init__ body must be exactly super().__init__(container)
-    - Optional docstring allowed as first statement in __init__
+    ONEX Declarative Pattern:
+    - contract.yaml defines: node_type, name, inputs, outputs, handlers
+    - handlers/ contains business logic implementations
+    - Runtime instantiates nodes from contracts, not classes
     """
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_py_exists(self, node_name: str) -> None:
-        """Verify node.py exists for each Core 8 node.
+    def test_contract_exists(self, node_name: str) -> None:
+        """Verify contract.yaml exists for each Core 8 node.
 
         Skipped for nodes not yet implemented during scaffold phase.
         """
-        node_path: Path = NODES_DIR / node_name / "node.py"
+        contract_path: Path = NODES_DIR / node_name / "contract.yaml"
         # Skip if not yet implemented
-        if not node_path.exists():
-            pytest.skip(f"File not yet implemented: {node_path}")
-        assert node_path.exists()
+        if not contract_path.exists():
+            pytest.skip(f"Contract not yet implemented: {contract_path}")
+        assert contract_path.exists()
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_py_is_declarative(self, node_name: str) -> None:
-        """Verify node.py follows declarative pattern.
+    def test_contract_is_valid(self, node_name: str) -> None:
+        """Verify contract.yaml follows ONEX schema.
 
-        Uses AST-based validation to ensure the node.py file contains
-        exactly one class with only __init__ that calls super().__init__(container).
+        Validates that the contract contains required fields:
+        - onex.node_type (effect, compute, reducer, orchestrator)
+        - onex.name
+
         Skipped for nodes not yet implemented.
         """
-        node_path: Path = NODES_DIR / node_name / "node.py"
-        if not node_path.exists():
-            pytest.skip(f"File not yet implemented: {node_path}")
+        contract_path: Path = NODES_DIR / node_name / "contract.yaml"
+        if not contract_path.exists():
+            pytest.skip(f"Contract not yet implemented: {contract_path}")
 
-        result: NodeValidationResult = validate_node_py(node_path)
-        assert result.valid, f"Node {node_name} failed enforcement: {result.error}"
+        result: ContractValidationResult = validate_contract(contract_path)
+        assert result.valid, f"Contract {node_name} failed validation: {result.error}"
 
-    def test_validate_node_py_rejects_custom_methods(self, tmp_path: Path) -> None:
-        """Test that validator rejects nodes with custom methods."""
-        bad_node: Path = tmp_path / "bad_node.py"
-        bad_node.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(container)
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_no_node_py_exists(self, node_name: str) -> None:
+        """Verify no node.py files exist (fully declarative pattern).
 
-    def custom_method(self):
-        pass
-''')
-        result: NodeValidationResult = validate_node_py(bad_node)
+        ONEX nodes are defined by contracts, not Python classes.
+        The presence of a node.py file indicates legacy architecture.
+        """
+        node_py_path: Path = NODES_DIR / node_name / "node.py"
+        assert not node_py_path.exists(), (
+            f"node.py should not exist for {node_name} - "
+            "use contract.yaml for declarative node definition"
+        )
+
+    def test_validate_contract_accepts_flat_format(self, tmp_path: Path) -> None:
+        """Test that validator accepts flat format (no 'onex' wrapper)."""
+        good_contract: Path = tmp_path / "flat_contract.yaml"
+        good_contract.write_text("""
+name: test_node
+node_type: effect
+version: {major: 1, minor: 0, patch: 0}
+""")
+        result: ContractValidationResult = validate_contract(good_contract)
+        assert result.valid, f"Flat format should be valid: {result.error}"
+
+    def test_validate_contract_rejects_invalid_node_type(self, tmp_path: Path) -> None:
+        """Test that validator rejects invalid node_type values."""
+        bad_contract: Path = tmp_path / "bad_contract.yaml"
+        bad_contract.write_text("""
+onex:
+  name: test
+  node_type: invalid_type
+""")
+        result: ContractValidationResult = validate_contract(bad_contract)
         assert not result.valid
         assert result.error is not None
-        assert "extra methods" in result.error.lower() or "only __init__" in result.error.lower()
+        assert "invalid" in result.error.lower() or "node_type" in result.error.lower()
 
-    def test_validate_node_py_accepts_valid_node(self, tmp_path: Path) -> None:
-        """Test that validator accepts properly declarative nodes."""
-        good_node: Path = tmp_path / "good_node.py"
-        good_node.write_text('''
-class GoodNode:
-    def __init__(self, container):
-        super().__init__(container)
-''')
-        result: NodeValidationResult = validate_node_py(good_node)
+    def test_validate_contract_rejects_missing_name(self, tmp_path: Path) -> None:
+        """Test that validator rejects contracts without name field."""
+        bad_contract: Path = tmp_path / "bad_contract.yaml"
+        bad_contract.write_text("""
+onex:
+  node_type: effect
+""")
+        result: ContractValidationResult = validate_contract(bad_contract)
+        assert not result.valid
+        assert result.error is not None
+        assert "name" in result.error.lower()
+
+    def test_validate_contract_accepts_valid_contract(self, tmp_path: Path) -> None:
+        """Test that validator accepts properly formed contracts."""
+        good_contract: Path = tmp_path / "good_contract.yaml"
+        good_contract.write_text("""
+onex:
+  name: memory_storage
+  node_type: effect
+  version: 1.0.0
+  handlers:
+    - handler_db
+    - handler_redis
+""")
+        result: ContractValidationResult = validate_contract(good_contract)
         assert result.valid, f"Should be valid: {result.error}"
 
-    def test_validate_node_py_rejects_wrong_init_body(self, tmp_path: Path) -> None:
-        """Test that validator rejects nodes with incorrect __init__ body.
+    @pytest.mark.parametrize("node_type", ["effect", "compute", "reducer", "orchestrator"])
+    def test_validate_contract_accepts_all_node_types(
+        self, tmp_path: Path, node_type: str
+    ) -> None:
+        """Test that validator accepts all valid node types."""
+        contract: Path = tmp_path / f"{node_type}_contract.yaml"
+        contract.write_text(f"""
+onex:
+  name: test_{node_type}
+  node_type: {node_type}
+""")
+        result: ContractValidationResult = validate_contract(contract)
+        assert result.valid, f"node_type '{node_type}' should be valid: {result.error}"
 
-        The __init__ must contain exactly super().__init__(container).
-        Any other statement should be rejected.
-        """
-        # Test case 1: print statement instead of super().__init__
-        bad_node_print: Path = tmp_path / "bad_node_print.py"
-        bad_node_print.write_text('''
-class BadNode:
-    def __init__(self, container):
-        print("hello")
-''')
-        result: NodeValidationResult = validate_node_py(bad_node_print)
+    def test_validate_contract_rejects_invalid_yaml(self, tmp_path: Path) -> None:
+        """Test that validator rejects malformed YAML."""
+        bad_contract: Path = tmp_path / "bad_yaml.yaml"
+        bad_contract.write_text("""
+onex:
+  name: test
+  node_type: effect
+  invalid: [unclosed bracket
+""")
+        result: ContractValidationResult = validate_contract(bad_contract)
         assert not result.valid
         assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 2: assignment instead of super().__init__
-        bad_node_assign: Path = tmp_path / "bad_node_assign.py"
-        bad_node_assign.write_text('''
-class BadNode:
-    def __init__(self, container):
-        self.container = container
-''')
-        result = validate_node_py(bad_node_assign)
-        assert not result.valid
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 3: wrong argument name
-        bad_node_arg: Path = tmp_path / "bad_node_arg.py"
-        bad_node_arg.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(self)
-''')
-        result = validate_node_py(bad_node_arg)
-        assert not result.valid
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 4: calling wrong method on super()
-        bad_node_method: Path = tmp_path / "bad_node_method.py"
-        bad_node_method.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().setup(container)
-''')
-        result = validate_node_py(bad_node_method)
-        assert not result.valid
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 5: empty __init__ body (only pass)
-        bad_node_empty: Path = tmp_path / "bad_node_empty.py"
-        bad_node_empty.write_text('''
-class BadNode:
-    def __init__(self, container):
-        pass
-''')
-        result = validate_node_py(bad_node_empty)
-        assert not result.valid
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-    def test_validate_node_py_accepts_valid_node_with_docstring(self, tmp_path: Path) -> None:
-        """Test that validator accepts nodes with docstring + super().__init__."""
-        good_node: Path = tmp_path / "good_node_docstring.py"
-        good_node.write_text('''
-class GoodNode:
-    def __init__(self, container):
-        """Initialize the node with container."""
-        super().__init__(container)
-''')
-        result: NodeValidationResult = validate_node_py(good_node)
-        assert result.valid, f"Should be valid with docstring: {result.error}"
-
-    def test_validate_node_py_rejects_non_string_constant(self, tmp_path: Path) -> None:
-        """Test that non-string constants are NOT treated as docstrings.
-
-        Only string literals in first position are valid docstrings.
-        Integer, float, and other constants must be rejected.
-        """
-        # Test case 1: Integer constant before super().__init__
-        bad_node_int: Path = tmp_path / "bad_node_int.py"
-        bad_node_int.write_text('''
-class BadNode:
-    def __init__(self, container):
-        42
-        super().__init__(container)
-''')
-        result: NodeValidationResult = validate_node_py(bad_node_int)
-        assert not result.valid, "Integer constant should not be treated as docstring"
-        assert result.error is not None
-        assert "super().__init__" in result.error or "2 statements" in result.error
-
-        # Test case 2: Float constant before super().__init__
-        bad_node_float: Path = tmp_path / "bad_node_float.py"
-        bad_node_float.write_text('''
-class BadNode:
-    def __init__(self, container):
-        3.14
-        super().__init__(container)
-''')
-        result = validate_node_py(bad_node_float)
-        assert not result.valid, "Float constant should not be treated as docstring"
-
-        # Test case 3: None constant before super().__init__
-        bad_node_none: Path = tmp_path / "bad_node_none.py"
-        bad_node_none.write_text('''
-class BadNode:
-    def __init__(self, container):
-        None
-        super().__init__(container)
-''')
-        result = validate_node_py(bad_node_none)
-        assert not result.valid, "None constant should not be treated as docstring"
-
-        # Test case 4: Boolean constant before super().__init__
-        bad_node_bool: Path = tmp_path / "bad_node_bool.py"
-        bad_node_bool.write_text('''
-class BadNode:
-    def __init__(self, container):
-        True
-        super().__init__(container)
-''')
-        result = validate_node_py(bad_node_bool)
-        assert not result.valid, "Boolean constant should not be treated as docstring"
-
-    def test_validate_node_py_rejects_string_after_super_init(self, tmp_path: Path) -> None:
-        """Test that string constants after super().__init__ are rejected.
-
-        Only the FIRST statement can be a docstring. String literals
-        appearing after super().__init__() are invalid extra statements.
-        """
-        bad_node: Path = tmp_path / "bad_node_string_after.py"
-        bad_node.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(container)
-        """This is NOT a docstring - it comes after super().__init__"""
-''')
-        result: NodeValidationResult = validate_node_py(bad_node)
-        assert not result.valid, "String after super().__init__ should be rejected"
-        assert result.error is not None
-        assert "2 statements" in result.error or "super().__init__" in result.error
-
-    def test_validate_node_py_rejects_docstring_only(self, tmp_path: Path) -> None:
-        """Test that docstring without super().__init__() is rejected.
-
-        Even a valid docstring requires super().__init__(container) call.
-        """
-        bad_node: Path = tmp_path / "bad_node_docstring_only.py"
-        bad_node.write_text('''
-class BadNode:
-    def __init__(self, container):
-        """This is a docstring but no super().__init__() call."""
-''')
-        result: NodeValidationResult = validate_node_py(bad_node)
-        assert not result.valid, "Docstring-only init should be rejected"
-        assert result.error is not None
-        assert "must call super().__init__(container)" in result.error
-
-    def test_validate_node_py_rejects_extra_statements_with_super(self, tmp_path: Path) -> None:
-        """Test that extra statements are rejected even with valid super().__init__().
-
-        The __init__ body must contain ONLY:
-        - Optionally a docstring (first statement)
-        - super().__init__(container)
-        """
-        # Test case 1: Docstring + super + extra print
-        bad_node_extra: Path = tmp_path / "bad_node_extra.py"
-        bad_node_extra.write_text('''
-class BadNode:
-    def __init__(self, container):
-        """Valid docstring."""
-        super().__init__(container)
-        print("extra statement")
-''')
-        result: NodeValidationResult = validate_node_py(bad_node_extra)
-        assert not result.valid, "Extra statements after super().__init__ should be rejected"
-        assert result.error is not None
-        assert "2 statements" in result.error
-
-        # Test case 2: Docstring + assignment + super
-        bad_node_assign: Path = tmp_path / "bad_node_assign_before.py"
-        bad_node_assign.write_text('''
-class BadNode:
-    def __init__(self, container):
-        """Valid docstring."""
-        self.x = 1
-        super().__init__(container)
-''')
-        result = validate_node_py(bad_node_assign)
-        assert not result.valid, "Assignment before super().__init__ should be rejected"
-
-    def test_validate_node_py_rejects_missing_container_arg(self, tmp_path: Path) -> None:
-        """Test that validator rejects super().__init__() without correct container arg.
-
-        The super().__init__() call must have exactly one positional argument
-        named 'container'. This test verifies rejection of:
-        - No arguments
-        - Wrong argument name
-        - Too many arguments
-        - Keyword arguments
-        """
-        # Test case 1: super().__init__() with no arguments
-        bad_node_no_args: Path = tmp_path / "bad_node_no_args.py"
-        bad_node_no_args.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__()
-''')
-        result: NodeValidationResult = validate_node_py(bad_node_no_args)
-        assert not result.valid, "super().__init__() without args should be rejected"
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 2: super().__init__() with wrong argument name
-        bad_node_wrong_name: Path = tmp_path / "bad_node_wrong_name.py"
-        bad_node_wrong_name.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(wrong_name)
-''')
-        result = validate_node_py(bad_node_wrong_name)
-        assert not result.valid, "super().__init__(wrong_name) should be rejected"
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 3: super().__init__() with too many arguments
-        bad_node_too_many: Path = tmp_path / "bad_node_too_many.py"
-        bad_node_too_many.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(container, extra)
-''')
-        result = validate_node_py(bad_node_too_many)
-        assert not result.valid, "super().__init__(container, extra) should be rejected"
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
-
-        # Test case 4: super().__init__() with keyword argument
-        bad_node_keyword: Path = tmp_path / "bad_node_keyword.py"
-        bad_node_keyword.write_text('''
-class BadNode:
-    def __init__(self, container):
-        super().__init__(container=container)
-''')
-        result = validate_node_py(bad_node_keyword)
-        assert not result.valid, "super().__init__(container=container) should be rejected"
-        assert result.error is not None
-        assert "super().__init__(container)" in result.error
+        assert "yaml" in result.error.lower() or "invalid" in result.error.lower()

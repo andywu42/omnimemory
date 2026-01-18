@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 OmniNode Team
-"""Node import tests - verify all Core 8 nodes import cleanly.
+"""Node structure tests - verify Core 8 nodes follow ONEX patterns.
 
-These tests ensure the node package structure is correct and all
-nodes can be imported without errors. Tests verify:
+These tests ensure the node package structure is correct:
 - The nodes package can be imported
-- Each node subpackage can be imported
-- Node classes can be imported and have correct names
-- Package __all__ exports list all Core 8 nodes
-- Directory structure follows ONEX patterns
+- Each node subpackage exists and can be imported
+- Directory structure follows ONEX declarative patterns
+- Contract-based architecture (no node.py files)
 
 Skip Behavior:
-    Tests skip gracefully when node.py files don't exist during scaffold phase,
-    using pytest.skip() with clear messages about what's missing.
+    Tests skip gracefully when optional files don't exist during scaffold phase.
 
 Path Resolution:
     Uses Path(__file__) for CWD-independent path resolution via conftest.py.
@@ -29,7 +26,7 @@ from tests.conftest import CORE_8_NODES, NODES_DIR
 
 
 class TestNodeImports:
-    """Test that all nodes can be imported."""
+    """Test that all node packages can be imported."""
 
     def test_nodes_package_import_succeeds(self) -> None:
         """Verify the nodes package can be imported."""
@@ -49,27 +46,6 @@ class TestNodeImports:
         except ImportError as e:
             # Expected during scaffold phase
             pytest.skip(f"Node package not yet fully implemented: {e}")
-
-    @pytest.mark.parametrize("node_name", CORE_8_NODES)
-    def test_node_class_import_succeeds(self, node_name: str) -> None:
-        """Verify node class can be imported from package."""
-        # Check if node.py exists first
-        node_path: Path = NODES_DIR / node_name / "node.py"
-        if not node_path.exists():
-            pytest.skip(f"File not yet implemented: {node_path}")
-
-        # Convert node_name to class name (e.g., memory_storage_effect -> NodeMemoryStorageEffect)
-        class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
-
-        module_name: str = f"omnimemory.nodes.{node_name}.node"
-        try:
-            module: types.ModuleType = importlib.import_module(module_name)
-            node_class: type | None = getattr(module, class_name, None)
-            if node_class is None:
-                pytest.skip(f"Node class {class_name} not found in {module_name}")
-            assert node_class is not None
-        except ImportError as e:
-            pytest.skip(f"Node not yet implemented: {e}")
 
     def test_nodes_package_exports_core_nodes(self) -> None:
         """Verify __all__ in nodes package lists all Core 8 nodes.
@@ -97,6 +73,7 @@ class TestNodeStructure:
     - Node directory exists
     - __init__.py exists in each node directory
     - Effect and Orchestrator nodes have handlers subdirectory
+    - No node.py files (fully declarative pattern)
     """
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
@@ -123,18 +100,33 @@ class TestNodeStructure:
         init_path: Path = node_dir / "__init__.py"
         assert init_path.exists(), f"Missing __init__.py: {init_path}"
 
-    @pytest.mark.parametrize("node_name", ["memory_storage_effect", "memory_retrieval_effect",
-                                           "memory_lifecycle_orchestrator", "agent_coordinator_orchestrator"])
-    def test_node_effect_orchestrator_has_handlers_dir(self, node_name: str) -> None:
-        """Verify Effect and Orchestrator nodes have handlers directory.
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_no_node_py_exists(self, node_name: str) -> None:
+        """Verify no node.py files exist (fully declarative pattern).
 
-        Effect and Orchestrator nodes require a handlers subdirectory
-        to contain their handler implementations. This is part of the
-        ONEX 4-node architecture pattern.
+        ONEX nodes are defined by contracts, not Python classes.
+        The presence of a node.py file indicates legacy architecture.
+        """
+        node_py_path: Path = NODES_DIR / node_name / "node.py"
+        assert not node_py_path.exists(), (
+            f"node.py should not exist for {node_name} - "
+            "use contract.yaml for declarative node definition"
+        )
+
+    @pytest.mark.parametrize("node_name", CORE_8_NODES)
+    def test_no_local_handlers_dir(self, node_name: str) -> None:
+        """Verify nodes do NOT have local handlers directories.
+
+        Handlers are reused from omnibase_infra, not duplicated locally.
+        Contracts reference handlers by import path:
+        - EFFECT nodes: omnibase_infra.handlers.handler_db, handler_qdrant, etc.
+        - ORCHESTRATOR nodes: omnibase_infra.nodes.node_registration_orchestrator.handlers.*
         """
         node_dir: Path = NODES_DIR / node_name
         if not node_dir.exists():
             pytest.skip(f"Directory not yet created: {node_dir}")
         handlers_dir: Path = node_dir / "handlers"
-        assert handlers_dir.exists(), f"Missing handlers dir: {handlers_dir}"
-        assert (handlers_dir / "__init__.py").exists(), "Missing handlers/__init__.py"
+        assert not handlers_dir.exists(), (
+            f"handlers/ should not exist in {node_name} - "
+            "reuse handlers from omnibase_infra instead"
+        )

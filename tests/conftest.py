@@ -80,15 +80,19 @@ def core_8_nodes() -> list[str]:
 
 @pytest.fixture
 def implemented_nodes(nodes_dir: Path) -> list[str]:
-    """Provide list of nodes that have node.py implemented.
+    """Provide list of nodes that have contract.yaml implemented.
+
+    In the fully declarative ONEX pattern, nodes are defined by contracts
+    not Python classes. A node is considered "implemented" when it has
+    a valid contract.yaml file.
 
     Returns:
-        List of node names with existing node.py files
+        List of node names with existing contract.yaml files
     """
     return [
         node_name
         for node_name in CORE_8_NODES
-        if (nodes_dir / node_name / "node.py").exists()
+        if (nodes_dir / node_name / "contract.yaml").exists()
     ]
 
 

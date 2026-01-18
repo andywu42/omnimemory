@@ -4,9 +4,12 @@
 
 CRUD operations to storage backends (PostgreSQL, Redis, Pinecone).
 
-This module exports the declarative ONEX node class that follows the
-EFFECT pattern for external I/O operations.
-"""
-from omnimemory.nodes.memory_storage_effect.node import NodeMemoryStorageEffect
+This is a fully declarative ONEX node:
+- Node behavior defined in contract.yaml
+- Business logic implemented in handlers/
+- No node.py class needed
 
-__all__: list[str] = ["NodeMemoryStorageEffect"]
+Node Type: EFFECT
+"""
+
+__all__: list[str] = []
