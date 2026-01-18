@@ -133,6 +133,244 @@ This document maps existing handlers from `omnibase_infra` to the Core 8 memory 
 
 ---
 
+## Security Considerations
+
+When reusing handlers from `omnibase_infra`, security must be addressed at multiple layers. Each handler type presents distinct security challenges that require specific mitigations.
+
+### Input Validation Requirements
+
+All handlers must validate inputs before processing. Validation requirements vary by handler type:
+
+| Handler Type | Validation Requirements | Implementation |
+|--------------|------------------------|----------------|
+| **Database (handler_db.py)** | Parameterized queries only, no string interpolation; validate column/table names against allowlist; enforce maximum query complexity | Use SQLAlchemy parameterized queries; reject raw SQL strings |
+| **Vector Store (handler_qdrant.py)** | Validate embedding dimensions match schema; sanitize metadata keys/values; enforce payload size limits | Check vector dimensions before storage; limit metadata to predefined fields |
+| **Filesystem (handler_filesystem.py)** | Path whitelisting (already implemented); validate file extensions; enforce size limits; reject symlinks to sensitive paths | Use `os.path.realpath()` and compare against whitelist |
+| **HTTP (handler_http.py)** | Validate URLs against allowlist; sanitize request headers; enforce response size limits; validate SSL certificates | Maintain URL allowlist for LLM endpoints; reject self-signed certs in production |
+| **Graph (handler_graph.py)** | Validate Cypher/Gremlin query structure; parameterize all user inputs; limit traversal depth | Use parameterized queries; enforce `max_depth` parameter |
+
+### Data Sanitization at Boundaries
+
+Memory content flowing through handlers must be sanitized to prevent data leakage and injection attacks.
+
+#### PII Detection Integration
+
+Use the existing `PIIDetector` utility at `src/omnimemory/utils/pii_detector.py` for content sanitization.
+
+> **Documentation**: See [PII Handling Guide](./pii_handling.md) for comprehensive integration patterns, sensitivity levels, configuration options, and best practices.
+
+```python
+from omnimemory.utils.pii_detector import PIIDetector, PIIDetectorConfig
+
+# Configure PII detection for memory storage
+pii_config = PIIDetectorConfig(
+    high_confidence=0.98,
+    enable_context_analysis=True,
+    max_text_length=50000
+)
+detector = PIIDetector(config=pii_config)
+
+# Sanitize before storage
+async def store_memory_securely(content: str, handler: HandlerDb) -> str:
+    result = detector.detect_pii(content, sensitivity_level="high")
+    if result.has_pii:
+        # Log detection (without PII) and use sanitized content
+        logger.warning(f"PII detected: types={result.pii_types_detected}")
+        content = result.sanitized_content
+    return await handler.execute(insert_query, {"content": content})
+```
+
+#### Sanitization by Handler Type
+
+| Handler | Sanitization Layer | Implementation |
+|---------|-------------------|----------------|
+| **handler_db.py** | SQL injection prevention | Parameterized queries; escape special characters; validate input types |
+| **handler_qdrant.py** | Metadata sanitization | Strip HTML/scripts from metadata; validate JSON structure; limit string lengths |
+| **handler_filesystem.py** | Path traversal prevention | Already implements path whitelisting; additionally validate no `..` sequences after normalization |
+| **handler_http.py** | Request/response sanitization | Sanitize headers; validate JSON structure; strip sensitive headers from logs |
+| **handler_graph.py** | Injection prevention | Parameterize all Cypher queries; validate node/edge labels against allowlist |
+
+#### Boundary Enforcement
+
+```
+[User Input] → [PII Detection] → [Input Validation] → [Handler] → [Output Sanitization] → [Response]
+                     ↓                   ↓                              ↓
+              Log (sanitized)    Reject invalid           Strip internal metadata
+```
+
+### Circuit Breaker Timeout Configurations
+
+Each handler type requires specific timeout configurations based on operation characteristics. Use `MixinAsyncCircuitBreaker` from `omnibase_infra`.
+
+| Handler | Operation | Recommended Timeout | Circuit Breaker Config | Rationale |
+|---------|-----------|---------------------|------------------------|-----------|
+| **handler_db.py** | Simple query | 5s | failures=3, reset=30s | Fast local queries |
+| **handler_db.py** | Complex aggregation | 30s | failures=5, reset=60s | Allows for large dataset processing |
+| **handler_qdrant.py** | Single vector query | 2s | failures=3, reset=15s | Vector search is fast |
+| **handler_qdrant.py** | Batch operations | 30s | failures=3, reset=30s | Batch may involve thousands of vectors |
+| **handler_filesystem.py** | Read/write | 10s | failures=5, reset=30s | I/O varies with file size |
+| **handler_http.py** | LLM embedding call | 60s | failures=2, reset=120s | External services may be slow |
+| **handler_http.py** | Health check | 5s | failures=3, reset=30s | Should be fast |
+| **handler_graph.py** | Simple traversal | 5s | failures=3, reset=30s | Shallow traversals |
+| **handler_graph.py** | Deep traversal | 30s | failures=3, reset=60s | Deep graph queries |
+
+**Configuration Example**:
+
+```python
+from omnibase_infra.mixins.mixin_async_circuit_breaker import MixinAsyncCircuitBreaker
+
+class MemoryStorageHandler(MixinAsyncCircuitBreaker):
+    def __init__(self):
+        super().__init__(
+            failure_threshold=3,
+            reset_timeout_seconds=30,
+            half_open_max_calls=1
+        )
+
+    async def store(self, data: MemoryData) -> str:
+        async with self.circuit_breaker():
+            return await self._db_handler.execute(
+                query=self._insert_query,
+                params=data.model_dump(),
+                timeout=5.0  # Per-operation timeout
+            )
+```
+
+### Error Handling
+
+Secure error handling prevents information disclosure while maintaining debuggability.
+
+#### Error Message Guidelines
+
+| Context | Allowed in Response | Prohibited in Response |
+|---------|---------------------|------------------------|
+| **User-facing errors** | Generic error type, request ID, retry guidance | Stack traces, SQL queries, internal paths, connection strings |
+| **Internal logs** | Full stack traces, sanitized query details, timing | Raw credentials, full PII, encryption keys |
+| **Metrics/alerts** | Error counts, latency percentiles, error categories | Individual error content, user data |
+
+#### Secure Error Pattern
+
+```python
+from omnibase_infra.models.model_infra_error_context import ModelInfraErrorContext
+
+class SecureMemoryError(Exception):
+    """Base exception that sanitizes error details for external consumption."""
+
+    def __init__(self, message: str, internal_details: str, correlation_id: str):
+        self.external_message = message  # Safe for users
+        self.internal_details = internal_details  # For logs only
+        self.correlation_id = correlation_id
+        super().__init__(message)
+
+    def to_user_response(self) -> dict:
+        return {
+            "error": self.external_message,
+            "correlation_id": self.correlation_id,
+            "retry_after": 30  # Guidance, not internals
+        }
+
+# Usage in handlers
+try:
+    result = await handler.execute(query)
+except DatabaseError as e:
+    # Log full details internally
+    logger.error(f"Database error: {e}", extra={"query": sanitize_query(query)})
+    # Return sanitized error externally
+    raise SecureMemoryError(
+        message="Memory storage temporarily unavailable",
+        internal_details=str(e),
+        correlation_id=ctx.correlation_id
+    )
+```
+
+#### Error Logging with PII Protection
+
+```python
+def sanitize_for_logging(data: dict) -> dict:
+    """Remove sensitive fields before logging."""
+    sensitive_keys = {"password", "token", "api_key", "secret", "ssn", "credit_card"}
+    return {
+        k: "[REDACTED]" if k.lower() in sensitive_keys else v
+        for k, v in data.items()
+    }
+```
+
+### Authentication and Authorization
+
+Handler access must be controlled at multiple layers.
+
+#### Handler Access Control Matrix
+
+| Handler | Auth Requirement | Authorization Model | Notes |
+|---------|------------------|---------------------|-------|
+| **handler_db.py** | Connection credentials | Role-based (PostgreSQL roles) | Use least-privilege DB users |
+| **handler_qdrant.py** | API key | Collection-level ACLs | Separate keys per collection |
+| **handler_filesystem.py** | Process permissions | Path whitelist + Unix permissions | Run with minimal filesystem access |
+| **handler_http.py** | Bearer tokens / API keys | Endpoint-specific | Rotate keys; use short-lived tokens |
+| **handler_graph.py** | Connection credentials | Label-based access control | Restrict node/edge type access |
+| **handler_vault.py** | Vault token | Policy-based | Use AppRole for services |
+| **handler_consul.py** | ACL token | Service-level policies | Read-only for most operations |
+
+#### Implementation Pattern
+
+```python
+from dataclasses import dataclass
+from enum import Enum
+
+class HandlerPermission(str, Enum):
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    ADMIN = "admin"
+
+@dataclass
+class HandlerAuthContext:
+    """Authentication context passed to all handler operations."""
+    principal_id: str  # User or service ID
+    permissions: set[HandlerPermission]
+    correlation_id: str
+    tenant_id: str | None = None  # For multi-tenant deployments
+
+class SecureHandler:
+    def __init__(self, required_permission: HandlerPermission):
+        self._required_permission = required_permission
+
+    def _check_authorization(self, ctx: HandlerAuthContext) -> None:
+        if self._required_permission not in ctx.permissions:
+            raise AuthorizationError(
+                f"Permission {self._required_permission} required",
+                correlation_id=ctx.correlation_id
+            )
+
+    async def execute(self, ctx: HandlerAuthContext, **kwargs):
+        self._check_authorization(ctx)
+        # Proceed with operation
+```
+
+#### Credential Management
+
+- **Never hardcode credentials** - Use `handler_vault.py` or environment variables
+- **Rotate credentials regularly** - Implement automated rotation via Vault
+- **Audit access** - Log all handler invocations with principal ID (not credentials)
+- **Use service accounts** - Avoid shared credentials between services
+
+### Security Checklist for Handler Integration
+
+Before integrating any handler from `omnibase_infra`, verify:
+
+- [ ] Input validation implemented for all user-provided parameters
+- [ ] PII detection integrated at data ingestion points
+- [ ] Circuit breaker configured with appropriate timeouts
+- [ ] Error messages sanitized (no internal details exposed)
+- [ ] Credentials sourced from Vault or secure environment
+- [ ] Access control enforced at handler level
+- [ ] Audit logging enabled with sanitized payloads
+- [ ] SQL/Cypher queries use parameterization (no string interpolation)
+- [ ] File paths validated against whitelist
+- [ ] HTTP endpoints validated against allowlist
+
+---
+
 ## Recommendations
 
 ### High-Priority Reuse (DIRECT)

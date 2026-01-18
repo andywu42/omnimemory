@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 OmniNode Team
+
+# Memory Storage EFFECT - ONEX Contract
+# EFFECT node for memory CRUD operations across storage backends.
+
+# === REQUIRED ROOT FIELDS ===
+name: "memory_storage_effect"
+version: {major: 0, minor: 1, patch: 0}
+description: "Memory storage effect node for CRUD operations to storage backends. Handles persistent storage operations across PostgreSQL, Redis, and Pinecone."
+node_type: "EFFECT"
+input_model: "MemoryStoreRequest"
+output_model: "MemoryStoreResponse"
+
+# === IO OPERATIONS (Required for EFFECT nodes) ===
+io_operations:
+  - operation_type: "database_write"
+    atomic: true
+    timeout_seconds: 30
+    validation_enabled: true
+  - operation_type: "database_read"
+    atomic: false
+    timeout_seconds: 10
+    validation_enabled: true
+  - operation_type: "cache_write"
+    atomic: false
+    timeout_seconds: 5
+    validation_enabled: true
+  - operation_type: "cache_read"
+    atomic: false
+    timeout_seconds: 5
+    validation_enabled: true
+
+# === NODE CONFIGURATION ===
+tool_specification:
+  tool_name: "node_memory_storage_effect"
+  version: {major: 0, minor: 1, patch: 0}
+  description: "Memory storage effect node for CRUD operations"
+  main_tool_class: "NodeMemoryStorageEffect"
+  container_injection: "ONEXContainer"
+  business_logic_pattern: "effect"
+
+# === SERVICE CONFIGURATION ===
+service_configuration:
+  is_persistent_service: false
+  requires_external_dependencies: true
+
+# === INPUT/OUTPUT STATE ===
+input_state:
+  object_type: "object"
+  required: ["operation_type", "data"]
+  optional: ["metadata", "correlation_id"]
+
+output_state:
+  object_type: "object"
+  required: ["success", "result"]
+  optional: ["error_message", "metadata"]
+
+# === ACTIONS ===
+actions:
+  - name: "store_memory"
+    description: "Store a memory record with metadata and provenance"
+    inputs: ["data", "metadata"]
+    outputs: ["memory_id", "status"]
+
+  - name: "retrieve_memory"
+    description: "Retrieve a memory record by identifier"
+    inputs: ["memory_id"]
+    outputs: ["data", "metadata"]
+
+  - name: "update_memory"
+    description: "Update an existing memory record"
+    inputs: ["memory_id", "data"]
+    outputs: ["status"]
+
+  - name: "delete_memory"
+    description: "Soft delete a memory record with audit trail"
+    inputs: ["memory_id"]
+    outputs: ["status"]
+
+  - name: "list_memories"
+    description: "List memory records with filtering and pagination"
+    inputs: ["filters", "pagination"]
+    outputs: ["memories", "total_count"]
+
+  - name: "health_check"
+    description: "Check node health status"
+    inputs: []
+    outputs: ["status"]
+
+# === DEPENDENCIES ===
+dependencies:
+  - name: postgresql
+    dependency_type: service
+    description: PostgreSQL database for persistent memory storage
+  - name: redis
+    dependency_type: service
+    description: Redis cache for high-speed temporal memory
+  - name: pinecone
+    dependency_type: service
+    description: Pinecone vector database for semantic memory
+  - name: ProtocolMemoryStorage
+    dependency_type: protocol
+    description: Core storage operations protocol
+  - name: ProtocolMemoryOperations
+    dependency_type: protocol
+    description: Memory CRUD operations protocol
+  - name: ProtocolMemoryBase
+    dependency_type: protocol
+    description: Base memory interface protocol
+
+# === PERFORMANCE ===
+performance:
+  max_response_time_ms: 100
+
+# === EVENT TYPE CONFIGURATION ===
+event_type:
+  version: {major: 1, minor: 0, patch: 0}
+  primary_events: ["memory_stored", "memory_retrieved", "memory_updated", "memory_deleted"]
+  event_categories: ["memory", "effect", "storage"]
+  publish_events: true
+  subscribe_events: false
+  event_routing: "memory"
+
+# === INFRASTRUCTURE ===
+infrastructure:
+  storage_backends:
+    - postgresql
+    - redis
+    - pinecone
+
+# === VALIDATION RULES ===
+validation_rules:
+  strict_typing_enabled: true
+  input_validation_enabled: true
+  output_validation_enabled: true
+  performance_validation_enabled: true
+  constraint_definitions:
+    operation_type: "string type with values [store, retrieve, update, delete, list]"
+    data: "dict type required for memory operations"
+    memory_id: "string type for memory record identifier"
+
+# === TAGS ===
+tags:
+  - memory
+  - storage
+  - effect
+  - crud
+  - postgresql
+  - redis
+  - pinecone

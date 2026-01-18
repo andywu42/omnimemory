@@ -10,9 +10,10 @@ Ensures all node.py files follow the FULLY DECLARATIVE pattern:
 from __future__ import annotations
 
 import ast
+from typing import NamedTuple, Union
+
 import pytest
 from pathlib import Path
-from typing import NamedTuple
 
 CORE_8_NODES = [
     "memory_storage_effect",
@@ -47,12 +48,12 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
 
     with open(filepath) as f:
         try:
-            tree = ast.parse(f.read())
+            tree: ast.Module = ast.parse(f.read())
         except SyntaxError as e:
             return NodeValidationResult(False, f"Syntax error: {e}")
 
     # Find all class definitions (excluding TYPE_CHECKING blocks)
-    classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    classes: list[ast.ClassDef] = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
 
     if len(classes) == 0:
         return NodeValidationResult(False, "No class found in node.py")
@@ -60,19 +61,21 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
     if len(classes) > 1:
         return NodeValidationResult(False, f"Expected 1 class, found {len(classes)}")
 
-    cls = classes[0]
+    cls: ast.ClassDef = classes[0]
 
     # Get all methods (FunctionDef nodes that are direct children of class)
-    methods = [n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    methods: list[Union[ast.FunctionDef, ast.AsyncFunctionDef]] = [
+        n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
 
     # Filter out __all__ and other non-method assignments
-    method_names = [m.name for m in methods]
+    method_names: list[str] = [m.name for m in methods]
 
     if len(methods) == 0:
         return NodeValidationResult(False, "No __init__ method found")
 
     if len(methods) > 1:
-        extra_methods = [m for m in method_names if m != "__init__"]
+        extra_methods: list[str] = [m for m in method_names if m != "__init__"]
         return NodeValidationResult(
             False,
             f"Node.py must have ONLY __init__, found extra methods: {extra_methods}"
@@ -85,19 +88,19 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
         )
 
     # Check __init__ body - should only have super().__init__(container)
-    init_body = methods[0].body
+    init_body: list[ast.stmt] = methods[0].body
 
     # Allow docstring (ONLY first statement, ONLY if it's a string constant)
     # Docstrings in Python are ALWAYS:
     # 1. The first statement in the function body
     # 2. A string literal (not other constants like int/float)
-    first_stmt_is_docstring = (
-        init_body
+    first_stmt_is_docstring: bool = (
+        bool(init_body)
         and isinstance(init_body[0], ast.Expr)
         and isinstance(init_body[0].value, ast.Constant)
         and isinstance(init_body[0].value.value, str)
     )
-    non_docstring_stmts = init_body[1:] if first_stmt_is_docstring else init_body
+    non_docstring_stmts: list[ast.stmt] = init_body[1:] if first_stmt_is_docstring else init_body
 
     if len(non_docstring_stmts) > 1:
         return NodeValidationResult(
@@ -112,7 +115,7 @@ def validate_node_py(filepath: Path) -> NodeValidationResult:
         )
 
     # Validate that the single statement is super().__init__(container)
-    stmt = non_docstring_stmts[0]
+    stmt: ast.stmt = non_docstring_stmts[0]
     if not _is_super_init_call(stmt):
         return NodeValidationResult(
             False,
@@ -141,7 +144,7 @@ def _is_super_init_call(stmt: ast.stmt) -> bool:
         return False
 
     # Must be a function call
-    call = stmt.value
+    call: ast.expr = stmt.value
     if not isinstance(call, ast.Call):
         return False
 
@@ -149,7 +152,7 @@ def _is_super_init_call(stmt: ast.stmt) -> bool:
     if not isinstance(call.func, ast.Attribute):
         return False
 
-    attr = call.func
+    attr: ast.Attribute = call.func
     if attr.attr != "__init__":
         return False
 
@@ -157,7 +160,7 @@ def _is_super_init_call(stmt: ast.stmt) -> bool:
     if not isinstance(attr.value, ast.Call):
         return False
 
-    super_call = attr.value
+    super_call: ast.Call = attr.value
     if not isinstance(super_call.func, ast.Name):
         return False
 
@@ -172,7 +175,7 @@ def _is_super_init_call(stmt: ast.stmt) -> bool:
     if len(call.args) != 1:
         return False
 
-    arg = call.args[0]
+    arg: ast.expr = call.args[0]
     if not isinstance(arg, ast.Name):
         return False
 
@@ -187,12 +190,23 @@ def _is_super_init_call(stmt: ast.stmt) -> bool:
 
 
 class TestNodeEnforcement:
-    """Test that all node.py files follow declarative pattern."""
+    """Test that all node.py files follow declarative pattern.
+
+    These tests use AST parsing to verify that node.py files conform to
+    the ONEX declarative pattern requirements:
+    - Exactly one class definition
+    - Only __init__ method allowed
+    - __init__ body must be exactly super().__init__(container)
+    - Optional docstring allowed as first statement in __init__
+    """
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
     def test_node_py_exists(self, node_name: str) -> None:
-        """Verify node.py exists for each Core 8 node."""
-        node_path = NODES_DIR / node_name / "node.py"
+        """Verify node.py exists for each Core 8 node.
+
+        Skipped for nodes not yet implemented during scaffold phase.
+        """
+        node_path: Path = NODES_DIR / node_name / "node.py"
         # Skip if not yet implemented
         if not node_path.exists():
             pytest.skip(f"Node not yet implemented: {node_name}")
@@ -200,17 +214,22 @@ class TestNodeEnforcement:
 
     @pytest.mark.parametrize("node_name", CORE_8_NODES)
     def test_node_py_is_declarative(self, node_name: str) -> None:
-        """Verify node.py follows declarative pattern."""
-        node_path = NODES_DIR / node_name / "node.py"
+        """Verify node.py follows declarative pattern.
+
+        Uses AST-based validation to ensure the node.py file contains
+        exactly one class with only __init__ that calls super().__init__(container).
+        Skipped for nodes not yet implemented.
+        """
+        node_path: Path = NODES_DIR / node_name / "node.py"
         if not node_path.exists():
             pytest.skip(f"Node not yet implemented: {node_name}")
 
-        result = validate_node_py(node_path)
+        result: NodeValidationResult = validate_node_py(node_path)
         assert result.valid, f"Node {node_name} failed enforcement: {result.error}"
 
     def test_validate_node_py_rejects_custom_methods(self, tmp_path: Path) -> None:
         """Test that validator rejects nodes with custom methods."""
-        bad_node = tmp_path / "bad_node.py"
+        bad_node: Path = tmp_path / "bad_node.py"
         bad_node.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -219,19 +238,20 @@ class BadNode:
     def custom_method(self):
         pass
 ''')
-        result = validate_node_py(bad_node)
+        result: NodeValidationResult = validate_node_py(bad_node)
         assert not result.valid
+        assert result.error is not None
         assert "extra methods" in result.error.lower() or "only __init__" in result.error.lower()
 
     def test_validate_node_py_accepts_valid_node(self, tmp_path: Path) -> None:
         """Test that validator accepts properly declarative nodes."""
-        good_node = tmp_path / "good_node.py"
+        good_node: Path = tmp_path / "good_node.py"
         good_node.write_text('''
 class GoodNode:
     def __init__(self, container):
         super().__init__(container)
 ''')
-        result = validate_node_py(good_node)
+        result: NodeValidationResult = validate_node_py(good_node)
         assert result.valid, f"Should be valid: {result.error}"
 
     def test_validate_node_py_rejects_wrong_init_body(self, tmp_path: Path) -> None:
@@ -241,18 +261,19 @@ class GoodNode:
         Any other statement should be rejected.
         """
         # Test case 1: print statement instead of super().__init__
-        bad_node_print = tmp_path / "bad_node_print.py"
+        bad_node_print: Path = tmp_path / "bad_node_print.py"
         bad_node_print.write_text('''
 class BadNode:
     def __init__(self, container):
         print("hello")
 ''')
-        result = validate_node_py(bad_node_print)
+        result: NodeValidationResult = validate_node_py(bad_node_print)
         assert not result.valid
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 2: assignment instead of super().__init__
-        bad_node_assign = tmp_path / "bad_node_assign.py"
+        bad_node_assign: Path = tmp_path / "bad_node_assign.py"
         bad_node_assign.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -260,10 +281,11 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_assign)
         assert not result.valid
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 3: wrong argument name
-        bad_node_arg = tmp_path / "bad_node_arg.py"
+        bad_node_arg: Path = tmp_path / "bad_node_arg.py"
         bad_node_arg.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -271,10 +293,11 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_arg)
         assert not result.valid
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 4: calling wrong method on super()
-        bad_node_method = tmp_path / "bad_node_method.py"
+        bad_node_method: Path = tmp_path / "bad_node_method.py"
         bad_node_method.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -282,10 +305,11 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_method)
         assert not result.valid
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 5: empty __init__ body (only pass)
-        bad_node_empty = tmp_path / "bad_node_empty.py"
+        bad_node_empty: Path = tmp_path / "bad_node_empty.py"
         bad_node_empty.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -293,18 +317,19 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_empty)
         assert not result.valid
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
     def test_validate_node_py_accepts_valid_node_with_docstring(self, tmp_path: Path) -> None:
         """Test that validator accepts nodes with docstring + super().__init__."""
-        good_node = tmp_path / "good_node_docstring.py"
+        good_node: Path = tmp_path / "good_node_docstring.py"
         good_node.write_text('''
 class GoodNode:
     def __init__(self, container):
         """Initialize the node with container."""
         super().__init__(container)
 ''')
-        result = validate_node_py(good_node)
+        result: NodeValidationResult = validate_node_py(good_node)
         assert result.valid, f"Should be valid with docstring: {result.error}"
 
     def test_validate_node_py_rejects_non_string_constant(self, tmp_path: Path) -> None:
@@ -314,19 +339,20 @@ class GoodNode:
         Integer, float, and other constants must be rejected.
         """
         # Test case 1: Integer constant before super().__init__
-        bad_node_int = tmp_path / "bad_node_int.py"
+        bad_node_int: Path = tmp_path / "bad_node_int.py"
         bad_node_int.write_text('''
 class BadNode:
     def __init__(self, container):
         42
         super().__init__(container)
 ''')
-        result = validate_node_py(bad_node_int)
+        result: NodeValidationResult = validate_node_py(bad_node_int)
         assert not result.valid, "Integer constant should not be treated as docstring"
+        assert result.error is not None
         assert "super().__init__" in result.error or "2 statements" in result.error
 
         # Test case 2: Float constant before super().__init__
-        bad_node_float = tmp_path / "bad_node_float.py"
+        bad_node_float: Path = tmp_path / "bad_node_float.py"
         bad_node_float.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -337,7 +363,7 @@ class BadNode:
         assert not result.valid, "Float constant should not be treated as docstring"
 
         # Test case 3: None constant before super().__init__
-        bad_node_none = tmp_path / "bad_node_none.py"
+        bad_node_none: Path = tmp_path / "bad_node_none.py"
         bad_node_none.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -348,7 +374,7 @@ class BadNode:
         assert not result.valid, "None constant should not be treated as docstring"
 
         # Test case 4: Boolean constant before super().__init__
-        bad_node_bool = tmp_path / "bad_node_bool.py"
+        bad_node_bool: Path = tmp_path / "bad_node_bool.py"
         bad_node_bool.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -364,15 +390,16 @@ class BadNode:
         Only the FIRST statement can be a docstring. String literals
         appearing after super().__init__() are invalid extra statements.
         """
-        bad_node = tmp_path / "bad_node_string_after.py"
+        bad_node: Path = tmp_path / "bad_node_string_after.py"
         bad_node.write_text('''
 class BadNode:
     def __init__(self, container):
         super().__init__(container)
         """This is NOT a docstring - it comes after super().__init__"""
 ''')
-        result = validate_node_py(bad_node)
+        result: NodeValidationResult = validate_node_py(bad_node)
         assert not result.valid, "String after super().__init__ should be rejected"
+        assert result.error is not None
         assert "2 statements" in result.error or "super().__init__" in result.error
 
     def test_validate_node_py_rejects_docstring_only(self, tmp_path: Path) -> None:
@@ -380,14 +407,15 @@ class BadNode:
 
         Even a valid docstring requires super().__init__(container) call.
         """
-        bad_node = tmp_path / "bad_node_docstring_only.py"
+        bad_node: Path = tmp_path / "bad_node_docstring_only.py"
         bad_node.write_text('''
 class BadNode:
     def __init__(self, container):
         """This is a docstring but no super().__init__() call."""
 ''')
-        result = validate_node_py(bad_node)
+        result: NodeValidationResult = validate_node_py(bad_node)
         assert not result.valid, "Docstring-only init should be rejected"
+        assert result.error is not None
         assert "must call super().__init__(container)" in result.error
 
     def test_validate_node_py_rejects_extra_statements_with_super(self, tmp_path: Path) -> None:
@@ -398,7 +426,7 @@ class BadNode:
         - super().__init__(container)
         """
         # Test case 1: Docstring + super + extra print
-        bad_node_extra = tmp_path / "bad_node_extra.py"
+        bad_node_extra: Path = tmp_path / "bad_node_extra.py"
         bad_node_extra.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -406,12 +434,13 @@ class BadNode:
         super().__init__(container)
         print("extra statement")
 ''')
-        result = validate_node_py(bad_node_extra)
+        result: NodeValidationResult = validate_node_py(bad_node_extra)
         assert not result.valid, "Extra statements after super().__init__ should be rejected"
+        assert result.error is not None
         assert "2 statements" in result.error
 
         # Test case 2: Docstring + assignment + super
-        bad_node_assign = tmp_path / "bad_node_assign_before.py"
+        bad_node_assign: Path = tmp_path / "bad_node_assign_before.py"
         bad_node_assign.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -433,18 +462,19 @@ class BadNode:
         - Keyword arguments
         """
         # Test case 1: super().__init__() with no arguments
-        bad_node_no_args = tmp_path / "bad_node_no_args.py"
+        bad_node_no_args: Path = tmp_path / "bad_node_no_args.py"
         bad_node_no_args.write_text('''
 class BadNode:
     def __init__(self, container):
         super().__init__()
 ''')
-        result = validate_node_py(bad_node_no_args)
+        result: NodeValidationResult = validate_node_py(bad_node_no_args)
         assert not result.valid, "super().__init__() without args should be rejected"
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 2: super().__init__() with wrong argument name
-        bad_node_wrong_name = tmp_path / "bad_node_wrong_name.py"
+        bad_node_wrong_name: Path = tmp_path / "bad_node_wrong_name.py"
         bad_node_wrong_name.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -452,10 +482,11 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_wrong_name)
         assert not result.valid, "super().__init__(wrong_name) should be rejected"
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 3: super().__init__() with too many arguments
-        bad_node_too_many = tmp_path / "bad_node_too_many.py"
+        bad_node_too_many: Path = tmp_path / "bad_node_too_many.py"
         bad_node_too_many.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -463,10 +494,11 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_too_many)
         assert not result.valid, "super().__init__(container, extra) should be rejected"
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
 
         # Test case 4: super().__init__() with keyword argument
-        bad_node_keyword = tmp_path / "bad_node_keyword.py"
+        bad_node_keyword: Path = tmp_path / "bad_node_keyword.py"
         bad_node_keyword.write_text('''
 class BadNode:
     def __init__(self, container):
@@ -474,4 +506,5 @@ class BadNode:
 ''')
         result = validate_node_py(bad_node_keyword)
         assert not result.valid, "super().__init__(container=container) should be rejected"
+        assert result.error is not None
         assert "super().__init__(container)" in result.error
