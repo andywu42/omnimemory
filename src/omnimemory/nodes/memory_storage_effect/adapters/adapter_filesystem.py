@@ -104,25 +104,51 @@ def _is_not_found_infra_error(error: InfraConnectionError) -> bool:
 def _is_permission_denied_infra_error(error: InfraConnectionError) -> bool:
     """Check if an InfraConnectionError indicates a permission denied condition.
 
-    This helper encapsulates the detection of permission errors from the
-    filesystem handler. Similar to _is_not_found_infra_error, this uses
-    message content detection since the handler uses SERVICE_UNAVAILABLE
-    for all filesystem errors.
+    This helper uses a prioritized detection strategy to identify permission
+    errors from the filesystem handler:
 
-    Handler message patterns for permission errors:
-        - "permission denied" (OS-level permission errors)
-        - "access denied" (Windows-style permission errors)
+    Detection Priority:
+        1. Check __cause__ for PermissionError (standard Python exception)
+        2. Check error_code for PERMISSION_DENIED variants
+        3. Fall back to message pattern matching (fragile, last resort)
+
+    The filesystem handler (omnibase_infra) currently uses SERVICE_UNAVAILABLE
+    error code for all filesystem errors. This function provides forward
+    compatibility by checking structured attributes before falling back to
+    message parsing.
 
     Args:
         error: The InfraConnectionError to check.
 
     Returns:
-        True if the error indicates a permission was denied, False otherwise.
+        True if the error indicates permission was denied, False otherwise.
 
     Note:
-        This approach is fragile and depends on message format stability.
-        See _is_not_found_infra_error for detailed rationale.
+        Priority 1 and 2 are preferred as they use structured data. Priority 3
+        (message matching) is fragile and depends on message format stability
+        in omnibase_infra. This is documented as a single point of maintenance.
     """
+    # Priority 1: Check the underlying cause chain for PermissionError
+    cause: BaseException | None = error.__cause__
+    while cause is not None:
+        if isinstance(cause, PermissionError):
+            return True
+        cause = cause.__cause__
+
+    # Priority 2: Check error_code attribute for permission variants
+    # InfraConnectionError inherits error_code from ModelOnexError
+    error_code = getattr(error, "error_code", None)
+    if error_code is not None:
+        # Check both enum value and string representation
+        error_code_str = str(error_code).upper()
+        if any(
+            pattern in error_code_str
+            for pattern in ("PERMISSION_DENIED", "ACCESS_DENIED", "FORBIDDEN")
+        ):
+            return True
+
+    # Priority 3: Fall back to message pattern matching (fragile, last resort)
+    # Handler message patterns: "permission denied", "access denied"
     message = str(error).lower()
     return "permission denied" in message or "access denied" in message
 
@@ -487,6 +513,17 @@ class HandlerFileSystemAdapter:
                 error_message=f"I/O error storing snapshot: {e}",
             )
         except InfraConnectionError as e:
+            # Check for permission denied first
+            if _is_permission_denied_infra_error(e):
+                logger.warning(
+                    "Permission denied storing snapshot %s: %s",
+                    snapshot_id,
+                    e,
+                )
+                return ModelMemoryStorageResponse(
+                    status="permission_denied",
+                    error_message=f"Permission denied writing to {file_path}: {e}",
+                )
             # Handler raises InfraConnectionError for various filesystem issues
             logger.warning(
                 "Infrastructure error storing snapshot %s: %s",
@@ -633,6 +670,17 @@ class HandlerFileSystemAdapter:
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
+                )
+            # Check for permission denied
+            if _is_permission_denied_infra_error(e):
+                logger.warning(
+                    "Permission denied retrieving snapshot %s: %s",
+                    request.snapshot_id,
+                    e,
+                )
+                return ModelMemoryStorageResponse(
+                    status="permission_denied",
+                    error_message=f"Permission denied reading {file_path}: {e}",
                 )
             logger.warning(
                 "Infrastructure error retrieving snapshot %s: %s",
