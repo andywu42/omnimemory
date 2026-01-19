@@ -18,8 +18,8 @@ Required fields:
     - operation (str): Operation name (e.g., "store", "retrieve", "delete")
     - handler (str): Handler name (e.g., "filesystem", "postgresql")
     - status (str): Operation status, one of "success" or "failure"
-    - latency_ms (float): Operation latency in milliseconds
-    - timestamp (str): ISO8601 timestamp when the event was logged
+    - latency_ms (float): Operation latency in milliseconds (rounded to 2 decimal places)
+    - timestamp (str): ISO8601 timestamp in UTC (format: YYYY-MM-DDTHH:MM:SS.sssZ)
 
 Optional fields (only present on failure):
     - error_type (str): Exception class name (e.g., "ValueError", "IOError")
@@ -46,6 +46,27 @@ Example log event (failure):
         "error_type": "IOError",
         "error_message": "Permission denied"
     }
+
+Metric Label Validation (strict_labels option):
+-----------------------------------------------
+All metric classes (Counter, Histogram, Gauge) support a `strict_labels` parameter:
+
+    - strict_labels=False (default): Labels are matched by name, missing labels
+      default to empty string, extra labels are ignored. Use for backwards
+      compatibility and flexibility.
+
+    - strict_labels=True: Validates that EXACTLY the expected labels are provided.
+      Raises ValueError if labels are missing or extra labels are passed.
+      RECOMMENDED for production code to prevent silent mis-tagging errors.
+
+Example:
+    # Lenient mode (default) - won't catch mistakes
+    counter = Counter("ops", ["operation", "status"])
+    counter.inc(operation="store")  # "status" defaults to "" - silent mis-tag!
+
+    # Strict mode - catches mistakes immediately
+    counter = Counter("ops", ["operation", "status"], strict_labels=True)
+    counter.inc(operation="store")  # Raises ValueError: missing labels: ['status']
 """
 
 from __future__ import annotations
@@ -59,7 +80,7 @@ from collections import OrderedDict, defaultdict
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import (
     AsyncGenerator,
@@ -302,6 +323,9 @@ class Counter:
 
         Raises:
             ValueError: If strict_labels is True and labels don't match expected names
+
+        Thread-safety: The value holder reference is captured under the lock
+        to prevent race conditions with reset() or eviction.
         """
         self._validate_labels(labels)
         key = self._labels_to_key(labels)
@@ -314,7 +338,10 @@ class Counter:
             else:
                 # Move to end to mark as recently used
                 self._values.move_to_end(key)
-        self._values[key].inc(amount)
+            # Capture reference under lock to prevent TOCTOU race with reset/eviction
+            value_holder = self._values[key]
+        # Safe to call outside lock - value_holder is our reference
+        value_holder.inc(amount)
 
     def get(self, **labels: str) -> int:
         """Get counter value for given labels."""
@@ -484,6 +511,9 @@ class Histogram:
 
         Raises:
             ValueError: If strict_labels is True and labels don't match expected names
+
+        Thread-safety: The value holder reference is captured under the lock
+        to prevent race conditions with reset() or eviction.
         """
         self._validate_labels(labels)
         key = self._labels_to_key(labels)
@@ -496,7 +526,10 @@ class Histogram:
             else:
                 # Move to end to mark as recently used
                 self._values.move_to_end(key)
-        self._values[key].observe(value)
+            # Capture reference under lock to prevent TOCTOU race with reset/eviction
+            value_holder = self._values[key]
+        # Safe to call outside lock - value_holder is our reference
+        value_holder.observe(value)
 
     def get(self, **labels: str) -> Dict[str, Union[float, int, List[int]]]:
         """Get histogram snapshot for given labels."""
@@ -623,6 +656,9 @@ class Gauge:
 
         Raises:
             ValueError: If strict_labels is True and labels don't match expected names
+
+        Thread-safety: The value holder reference is captured under the lock
+        to prevent race conditions with reset() or eviction.
         """
         self._validate_labels(labels)
         key = self._labels_to_key(labels)
@@ -635,7 +671,10 @@ class Gauge:
             else:
                 # Move to end to mark as recently used
                 self._values.move_to_end(key)
-        self._values[key].set(value)
+            # Capture reference under lock to prevent TOCTOU race with reset/eviction
+            value_holder = self._values[key]
+        # Safe to call outside lock - value_holder is our reference
+        value_holder.set(value)
 
     def get(self, **labels: str) -> float:
         """Get gauge value for given labels."""
@@ -688,10 +727,16 @@ class MetricsRegistry:
         2. Lock acquisition for creation
         3. Re-check inside lock (handles race between check and lock acquisition)
         4. Full initialization inside lock (prevents concurrent initialization)
+
+        Note: We cache _instance in a local variable to prevent TOCTOU race
+        conditions where _instance could change between the None check and
+        the _initialized check.
         """
         # Fast path: instance already exists and is initialized
-        if cls._instance is not None and getattr(cls._instance, "_initialized", False):
-            return cls._instance
+        # Cache in local variable to prevent TOCTOU race condition
+        instance = cls._instance
+        if instance is not None and getattr(instance, "_initialized", False):
+            return instance
 
         # Slow path: need to create or initialize
         with cls._lock:
@@ -783,9 +828,13 @@ class MetricsRegistry:
         code may lead to inconsistent state if other code holds references to
         metric objects.
 
-        This method clears all data from the existing instance rather than
-        setting _instance to None, which prevents inconsistent state when
-        other code holds references to the old instance.
+        Thread-safety: This method clears all data from the existing instance
+        rather than setting _instance to None. This ensures:
+        1. Existing references to the registry remain valid
+        2. Existing references to individual metrics remain valid
+        3. All metric data is atomically cleared (each metric's lock is acquired)
+
+        The instance itself is preserved, only the data is cleared.
         """
         # Warn if called outside tests (check for common test indicators)
         import sys
@@ -807,13 +856,35 @@ class MetricsRegistry:
             if cls._instance is not None and cls._instance._initialized:
                 # Clear all metrics data from the existing instance
                 # This preserves references while resetting state
+                # Note: We do NOT set _instance = None to avoid orphaning references
                 cls._instance._clear_all_metrics()
 
-            # Also reset the instance for fresh initialization on next access
+    @classmethod
+    def _reset_instance_for_testing(cls) -> None:
+        """Fully reset the singleton instance (TESTING ONLY).
+
+        WARNING: This method WILL orphan any existing references to the registry
+        or its metrics. Only use this in tests that need a completely fresh instance
+        and do not have any code holding references to the old instance.
+
+        For most tests, use reset() instead which preserves references.
+
+        Thread-safety: This method is safe against concurrent access but will
+        invalidate any references obtained before the reset completes.
+        """
+        with cls._lock:
+            if cls._instance is not None and cls._instance._initialized:
+                # Clear metrics first to help any stale references
+                cls._instance._clear_all_metrics()
+            # Reset the instance - next access will create a new one
             cls._instance = None
 
     def _clear_all_metrics(self) -> None:
-        """Clear all data from metrics (called by reset under lock)."""
+        """Clear all data from metrics (called by reset under lock).
+
+        Thread-safety: This method must be called while holding cls._lock.
+        It acquires each metric's individual lock to safely clear the data.
+        """
         # Clear counter values
         with self.memory_operation_total._lock:
             self.memory_operation_total._values.clear()
@@ -1007,8 +1078,26 @@ class ObservabilityManager:
                 try:
                     process = psutil.Process()
                     start_memory = process.memory_info().rss / 1024 / 1024  # MB
-                except (psutil.Error, OSError):
-                    # Gracefully handle psutil errors (e.g., permission issues)
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                    psutil.Error,
+                    OSError,
+                    AttributeError,
+                ) as e:
+                    # Gracefully handle all psutil errors:
+                    # - NoSuchProcess: process terminated
+                    # - AccessDenied: insufficient permissions
+                    # - ZombieProcess: process is zombie state
+                    # - Error: base psutil exception
+                    # - OSError: OS-level errors
+                    # - AttributeError: corrupted psutil module
+                    self._logger.debug(
+                        "psutil_memory_tracking_unavailable",
+                        reason=type(e).__name__,
+                        phase="start",
+                    )
                     start_memory = None
 
             metrics = PerformanceMetrics(
@@ -1066,9 +1155,26 @@ class ObservabilityManager:
                             metrics.memory_delta = (
                                 end_memory - metrics.memory_usage_start
                             )
-                        except (psutil.Error, OSError):
-                            # Gracefully handle psutil errors
-                            pass
+                        except (
+                            psutil.NoSuchProcess,
+                            psutil.AccessDenied,
+                            psutil.ZombieProcess,
+                            psutil.Error,
+                            OSError,
+                            AttributeError,
+                        ) as e:
+                            # Gracefully handle all psutil errors:
+                            # - NoSuchProcess: process terminated
+                            # - AccessDenied: insufficient permissions
+                            # - ZombieProcess: process is zombie state
+                            # - Error: base psutil exception
+                            # - OSError: OS-level errors
+                            # - AttributeError: corrupted psutil module
+                            self._logger.debug(
+                                "psutil_memory_tracking_unavailable",
+                                reason=type(e).__name__,
+                                phase="end",
+                            )
 
                 self._logger.info(
                     "operation_completed",
@@ -1493,37 +1599,52 @@ class HandlerObservabilityWrapper:
         All relevant metrics and context are included in a single event.
 
         Log Schema (consistent with module-level documentation):
-            Required fields:
+            Required fields (ALWAYS present):
                 - correlation_id (str): Unique request correlation identifier
                 - operation (str): Operation name (e.g., "store", "retrieve")
                 - handler (str): Handler name (e.g., "filesystem", "postgresql")
                 - status (str): "success" or "failure"
-                - latency_ms (float): Operation latency in milliseconds
-                - timestamp (str): ISO8601 timestamp (e.g., "2025-01-19T12:34:56.789Z")
+                - latency_ms (float): Operation latency in milliseconds (2 decimal places)
+                - timestamp (str): ISO8601 UTC timestamp (YYYY-MM-DDTHH:MM:SS.sssZ)
 
             Optional fields (only on failure):
                 - error_type (str): Exception class name
                 - error_message (str): Sanitized error message (PII-safe)
 
+        Schema Compliance:
+            This method strictly adheres to the documented schema at module level.
+            All required fields are ALWAYS present (never None). The timestamp
+            format is ISO8601 compliant with millisecond precision and 'Z' suffix
+            indicating UTC timezone.
+
         Args:
             metrics: Captured metrics for the operation
         """
-        # Generate ISO8601 timestamp for explicit time tracking
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        # Generate ISO8601 timestamp in UTC with millisecond precision
+        # Format: YYYY-MM-DDTHH:MM:SS.sssZ (e.g., "2025-01-19T12:34:56.789Z")
+        # Using timezone-aware datetime.now(timezone.utc) instead of deprecated utcnow()
+        timestamp = (
+            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        )
 
-        log_data: Dict[str, Union[str, float, None]] = {
-            "correlation_id": metrics.correlation_id,
-            "operation": metrics.operation,
-            "handler": metrics.handler,
-            "status": metrics.status,
-            "latency_ms": round(metrics.latency_ms, 2),
-            "timestamp": timestamp,
+        # Build log data with ALL required fields (schema compliance)
+        # Note: All required fields must be non-None strings/floats
+        log_data: Dict[str, Union[str, float]] = {
+            "correlation_id": metrics.correlation_id,  # Required: str
+            "operation": metrics.operation,  # Required: str
+            "handler": metrics.handler,  # Required: str
+            "status": metrics.status,  # Required: "success" | "failure"
+            "latency_ms": round(metrics.latency_ms, 2),  # Required: float (2 decimals)
+            "timestamp": timestamp,  # Required: ISO8601 UTC string
         }
 
-        if metrics.error_type:
-            log_data["error_type"] = metrics.error_type
-        if metrics.error_message:
-            log_data["error_message"] = metrics.error_message
+        # Add optional fields ONLY on failure (schema compliance)
+        # These fields are omitted entirely on success, not set to None
+        if metrics.status == "failure":
+            if metrics.error_type is not None:
+                log_data["error_type"] = metrics.error_type
+            if metrics.error_message is not None:
+                log_data["error_message"] = metrics.error_message
 
         # Log at appropriate level based on status
         if metrics.status == "success":
@@ -1544,30 +1665,40 @@ class HandlerObservabilityWrapper:
 
         Returns:
             Dict containing counter totals, histogram stats, and health status
+
+        Note:
+            This method filters metrics by converting keys back to labeled dicts
+            using each metric's `labels_from_key()` method, then checking the
+            'handler' label explicitly. This is safer than position-based matching
+            because it doesn't depend on the order of labels in label_names.
         """
         # Get all counter values for this handler
-        # Counter label_names are ["operation", "status", "handler"], so handler is at index 2
-        all_counters = self.registry.memory_operation_total.get_all()
+        # Use labels_from_key() for explicit label matching (avoids position-based issues)
+        counter_metric = self.registry.memory_operation_total
+        all_counters = counter_metric.get_all()
         handler_counters = {
             k: v
             for k, v in all_counters.items()
-            if len(k) > 2 and k[2] == self.handler_name  # Exact match at position 2
+            if counter_metric.labels_from_key(k).get("handler") == self.handler_name
         }
 
         # Get histogram stats for this handler
-        # Histogram label_names are ["operation", "handler"], so handler is at index 1
-        storage_histograms = self.registry.memory_storage_latency_ms.get_all()
-        retrieval_histograms = self.registry.memory_retrieval_latency_ms.get_all()
+        # Use labels_from_key() for explicit label matching
+        storage_metric = self.registry.memory_storage_latency_ms
+        retrieval_metric = self.registry.memory_retrieval_latency_ms
+
+        storage_histograms = storage_metric.get_all()
+        retrieval_histograms = retrieval_metric.get_all()
 
         handler_storage = {
             k: v
             for k, v in storage_histograms.items()
-            if len(k) > 1 and k[1] == self.handler_name  # Exact match at position 1
+            if storage_metric.labels_from_key(k).get("handler") == self.handler_name
         }
         handler_retrieval = {
             k: v
             for k, v in retrieval_histograms.items()
-            if len(k) > 1 and k[1] == self.handler_name  # Exact match at position 1
+            if retrieval_metric.labels_from_key(k).get("handler") == self.handler_name
         }
 
         # Get health status

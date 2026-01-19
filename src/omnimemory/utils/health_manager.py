@@ -17,7 +17,15 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Awaitable, Callable, Dict, List, Optional, Union
 
-import psutil
+# Optional psutil import for resource metrics - gracefully degrade if unavailable
+_PSUTIL_AVAILABLE = False
+try:
+    import psutil
+
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+
 import structlog
 from pydantic import BaseModel, Field
 
@@ -427,7 +435,24 @@ class HealthCheckManager:
                 return health_results
 
     def get_resource_metrics(self) -> ModelResourceMetrics:
-        """Get current system resource metrics."""
+        """Get current system resource metrics.
+
+        Returns default metrics if psutil is unavailable or any error occurs.
+        """
+        # Check if psutil is available
+        if not _PSUTIL_AVAILABLE or psutil is None:
+            logger.debug(
+                "resource_metrics_unavailable",
+                reason="psutil_not_installed",
+            )
+            return ModelResourceMetrics(
+                cpu_usage_percent=0.0,
+                memory_usage_mb=0.0,
+                memory_usage_percent=0.0,
+                disk_usage_percent=0.0,
+                network_throughput_mbps=0.0,
+            )
+
         try:
             # Get CPU usage
             cpu_percent = psutil.cpu_percent(interval=0.1)
@@ -455,6 +480,33 @@ class HealthCheckManager:
                 network_throughput_mbps=network_mbps,
             )
 
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            psutil.ZombieProcess,
+            psutil.Error,
+            OSError,
+            AttributeError,
+        ) as e:
+            # Handle specific psutil exceptions gracefully:
+            # - NoSuchProcess: process terminated
+            # - AccessDenied: insufficient permissions
+            # - ZombieProcess: process is zombie state
+            # - Error: base psutil exception
+            # - OSError: OS-level errors
+            # - AttributeError: corrupted psutil module
+            logger.warning(
+                "resource_metrics_psutil_error",
+                error=_sanitize_error(e),
+                error_type=type(e).__name__,
+            )
+            return ModelResourceMetrics(
+                cpu_usage_percent=0.0,
+                memory_usage_mb=0.0,
+                memory_usage_percent=0.0,
+                disk_usage_percent=0.0,
+                network_throughput_mbps=0.0,
+            )
         except Exception as e:
             logger.error(
                 "resource_metrics_error",

@@ -489,3 +489,194 @@ class TestHandlerMetricsDataclass:
         assert metrics.status == "failure"
         assert metrics.error_type == "ValueError"
         assert metrics.error_message == "Invalid input"
+
+
+class TestStrictLabelsValidation:
+    """Tests for strict_labels parameter on Counter, Histogram, and Gauge."""
+
+    def test_counter_strict_labels_missing(self) -> None:
+        """Test Counter raises ValueError when labels are missing in strict mode."""
+        counter = Counter("test_counter", ["operation", "status"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            counter.inc(operation="store")  # Missing "status"
+        assert "missing labels" in str(exc_info.value)
+        assert "status" in str(exc_info.value)
+
+    def test_counter_strict_labels_extra(self) -> None:
+        """Test Counter raises ValueError when extra labels provided in strict mode."""
+        counter = Counter("test_counter", ["operation"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            counter.inc(operation="store", extra="bad")  # Extra "extra" label
+        assert "extra labels" in str(exc_info.value)
+        assert "extra" in str(exc_info.value)
+
+    def test_counter_strict_labels_valid(self) -> None:
+        """Test Counter accepts valid labels in strict mode."""
+        counter = Counter("test_counter", ["operation", "status"], strict_labels=True)
+        counter.inc(operation="store", status="success")  # Should not raise
+        assert counter.get(operation="store", status="success") == 1
+
+    def test_histogram_strict_labels_missing(self) -> None:
+        """Test Histogram raises ValueError when labels are missing in strict mode."""
+        hist = Histogram("test_hist", ["operation", "handler"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            hist.observe(10.0, operation="store")  # Missing "handler"
+        assert "missing labels" in str(exc_info.value)
+        assert "handler" in str(exc_info.value)
+
+    def test_histogram_strict_labels_extra(self) -> None:
+        """Test Histogram raises ValueError when extra labels provided in strict mode."""
+        hist = Histogram("test_hist", ["operation"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            hist.observe(10.0, operation="store", extra="bad")
+        assert "extra labels" in str(exc_info.value)
+
+    def test_histogram_strict_labels_valid(self) -> None:
+        """Test Histogram accepts valid labels in strict mode."""
+        hist = Histogram("test_hist", ["operation", "handler"], strict_labels=True)
+        hist.observe(10.0, operation="store", handler="fs")  # Should not raise
+        snapshot = hist.get(operation="store", handler="fs")
+        assert snapshot["count"] == 1
+
+    def test_gauge_strict_labels_missing(self) -> None:
+        """Test Gauge raises ValueError when labels are missing in strict mode."""
+        gauge = Gauge("test_gauge", ["handler", "region"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            gauge.set(1.0, handler="fs")  # Missing "region"
+        assert "missing labels" in str(exc_info.value)
+        assert "region" in str(exc_info.value)
+
+    def test_gauge_strict_labels_extra(self) -> None:
+        """Test Gauge raises ValueError when extra labels provided in strict mode."""
+        gauge = Gauge("test_gauge", ["handler"], strict_labels=True)
+        with pytest.raises(ValueError) as exc_info:
+            gauge.set(1.0, handler="fs", extra="bad")
+        assert "extra labels" in str(exc_info.value)
+
+    def test_gauge_strict_labels_valid(self) -> None:
+        """Test Gauge accepts valid labels in strict mode."""
+        gauge = Gauge("test_gauge", ["handler", "region"], strict_labels=True)
+        gauge.set(1.0, handler="fs", region="us-east")  # Should not raise
+        assert gauge.get(handler="fs", region="us-east") == 1.0
+
+    def test_lenient_mode_ignores_missing(self) -> None:
+        """Test lenient mode (default) doesn't raise on missing labels."""
+        counter = Counter("test_counter", ["operation", "status"], strict_labels=False)
+        counter.inc(operation="store")  # Missing "status" - should NOT raise
+        # Missing status defaults to empty string
+        assert counter.get(operation="store", status="") == 1
+
+    def test_lenient_mode_ignores_extra(self) -> None:
+        """Test lenient mode (default) doesn't raise on extra labels."""
+        counter = Counter("test_counter", ["operation"], strict_labels=False)
+        counter.inc(
+            operation="store", extra="ignored"
+        )  # Extra label - should NOT raise
+        assert counter.get(operation="store") == 1
+
+
+class TestGetHandlerStatsFiltering:
+    """Tests for get_handler_stats() handler filtering to prevent false matches."""
+
+    def setup_method(self) -> None:
+        """Reset registry before each test."""
+        MetricsRegistry.reset()
+
+    def teardown_method(self) -> None:
+        """Reset registry after each test."""
+        MetricsRegistry.reset()
+
+    @pytest.mark.asyncio
+    async def test_handler_stats_no_cross_contamination(self) -> None:
+        """Test get_handler_stats() only returns metrics for the correct handler.
+
+        This verifies that label-based filtering prevents false matches where
+        a handler name might appear in other label positions.
+        """
+        # Create two wrappers with different handler names
+        wrapper_fs = HandlerObservabilityWrapper(handler_name="filesystem")
+        wrapper_pg = HandlerObservabilityWrapper(handler_name="postgresql")
+
+        # Record operations for both handlers
+        async with wrapper_fs.observe_operation(operation="store"):
+            pass
+        async with wrapper_fs.observe_operation(operation="retrieve"):
+            pass
+        async with wrapper_pg.observe_operation(operation="store"):
+            pass
+
+        # Get stats for filesystem handler
+        fs_stats = wrapper_fs.get_handler_stats()
+
+        # Verify filesystem stats only contain filesystem operations
+        # Should have 2 operations (store + retrieve success)
+        assert fs_stats["handler"] == "filesystem"
+        operation_counts = fs_stats["operation_counts"]
+        for key, count in operation_counts.items():
+            # Extract handler label from the key using labels_from_key
+            # The counter has label_names=["operation", "status", "handler"]
+            assert len(key) == 3, "Counter key should have 3 elements"
+            assert (
+                key[2] == "filesystem"
+            ), f"Expected handler='filesystem', got key={key}"
+
+        # Get stats for postgresql handler
+        pg_stats = wrapper_pg.get_handler_stats()
+        pg_operation_counts = pg_stats["operation_counts"]
+        for key, count in pg_operation_counts.items():
+            assert (
+                key[2] == "postgresql"
+            ), f"Expected handler='postgresql', got key={key}"
+
+    @pytest.mark.asyncio
+    async def test_handler_stats_histogram_filtering(self) -> None:
+        """Test histogram filtering in get_handler_stats() is correct."""
+        wrapper_a = HandlerObservabilityWrapper(handler_name="handler_a")
+        wrapper_b = HandlerObservabilityWrapper(handler_name="handler_b")
+
+        # Record latency for both handlers
+        async with wrapper_a.observe_operation(operation="store"):
+            pass
+        async with wrapper_b.observe_operation(operation="store"):
+            pass
+
+        stats_a = wrapper_a.get_handler_stats()
+        stats_b = wrapper_b.get_handler_stats()
+
+        # Histogram label_names are ["operation", "handler"]
+        for key in stats_a["storage_latency"].keys():
+            assert len(key) == 2, "Histogram key should have 2 elements"
+            assert key[1] == "handler_a", f"Expected handler='handler_a', got key={key}"
+
+        for key in stats_b["storage_latency"].keys():
+            assert key[1] == "handler_b", f"Expected handler='handler_b', got key={key}"
+
+    @pytest.mark.asyncio
+    async def test_handler_stats_with_similar_names(self) -> None:
+        """Test filtering works correctly with handler names that could match as substrings."""
+        # Names that could potentially cause false matches if filtering is broken
+        wrapper_store = HandlerObservabilityWrapper(
+            handler_name="store"
+        )  # Same as operation name
+        wrapper_success = HandlerObservabilityWrapper(
+            handler_name="success"
+        )  # Same as status value
+
+        async with wrapper_store.observe_operation(operation="store"):
+            pass
+        async with wrapper_success.observe_operation(operation="store"):
+            pass
+
+        # Get stats - should not have cross-contamination
+        store_stats = wrapper_store.get_handler_stats()
+        success_stats = wrapper_success.get_handler_stats()
+
+        # Each should only have their own operations
+        assert len(store_stats["operation_counts"]) == 1
+        assert len(success_stats["operation_counts"]) == 1
+
+        # Verify correct handler in keys
+        for key in store_stats["operation_counts"].keys():
+            assert key[2] == "store"
+        for key in success_stats["operation_counts"].keys():
+            assert key[2] == "success"
