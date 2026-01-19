@@ -6,38 +6,51 @@ This module provides:
 - Distributed tracing support
 - Enhanced logging with correlation context
 - Performance monitoring and metrics collection
+- In-process metrics: Counter, Histogram, Gauge
+- Handler observability wrapper for "one wrapper, one log line, no payload" pattern
 """
 
 from __future__ import annotations
 
-import asyncio
 import functools
-import time
 import re
+import threading
+import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar, Union
+from typing import (
+    AsyncGenerator,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 # Type variable for generic function types
-F = TypeVar('F', bound=Callable[..., object])
+F = TypeVar("F", bound=Callable[..., object])
 
 # Type alias for metadata values - supports common serializable types
 # This replaces Any with explicit types for type safety
 MetadataValue = Union[str, int, float, bool, None]
 
+import structlog
 from pydantic import BaseModel, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
-import structlog
-
-from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
-
+from .error_sanitizer import SanitizationLevel
+from .error_sanitizer import sanitize_error as _base_sanitize_error
 
 # === SECURITY VALIDATION FUNCTIONS ===
+
 
 def validate_correlation_id(correlation_id: str) -> bool:
     """
@@ -54,7 +67,7 @@ def validate_correlation_id(correlation_id: str) -> bool:
 
     # Allow UUIDs (with or without hyphens) and alphanumeric strings up to 64 chars
     # This prevents injection while allowing reasonable correlation ID formats
-    pattern = r'^[a-zA-Z0-9\-_]{1,64}$'
+    pattern = r"^[a-zA-Z0-9\-_]{1,64}$"
     return re.match(pattern, correlation_id) is not None
 
 
@@ -72,7 +85,7 @@ def sanitize_metadata_value(value: object) -> MetadataValue:
     """
     if isinstance(value, str):
         # Remove potential injection patterns and limit length
-        sanitized = re.sub(r'[<>"\'\\\n\r\t]', '', value)
+        sanitized = re.sub(r'[<>"\'\\\n\r\t]', "", value)
         return sanitized[:1000]  # Limit string length
     elif isinstance(value, bool):
         # Check bool before int since bool is a subclass of int
@@ -100,27 +113,403 @@ def _sanitize_error(error: Exception) -> str:
     Returns:
         Safe error message without sensitive information
     """
-    return _base_sanitize_error(error, context="observability", level=SanitizationLevel.STANDARD)
+    return _base_sanitize_error(
+        error, context="observability", level=SanitizationLevel.STANDARD
+    )
 
 
 # Context variables for correlation tracking
-correlation_id_var: ContextVar[Optional[str]] = ContextVar('correlation_id', default=None)
-request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
-operation_var: ContextVar[Optional[str]] = ContextVar('operation', default=None)
+correlation_id_var: ContextVar[Optional[str]] = ContextVar(
+    "correlation_id", default=None
+)
+request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
+operation_var: ContextVar[Optional[str]] = ContextVar("operation", default=None)
 
 logger = structlog.get_logger(__name__)
 
+
+# === IN-PROCESS METRICS ===
+# Minimal implementation for P1C observability - no external dependencies
+
+
+# Default histogram buckets for latency measurements (in milliseconds)
+DEFAULT_LATENCY_BUCKETS: Tuple[float, ...] = (
+    1.0,
+    5.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+    5000.0,
+    10000.0,
+)
+
+
+@dataclass
+class CounterValue:
+    """Thread-safe counter value with labels."""
+
+    value: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def inc(self, amount: int = 1) -> None:
+        """Increment the counter."""
+        with self._lock:
+            self.value += amount
+
+    def get(self) -> int:
+        """Get current counter value."""
+        with self._lock:
+            return self.value
+
+
+class Counter:
+    """In-process counter metric for tracking totals.
+
+    Thread-safe counter that tracks total operations by labels.
+
+    Example:
+        counter = Counter("memory_operation_total", ["operation", "status", "handler"])
+        counter.inc(operation="store", status="success", handler="filesystem")
+    """
+
+    def __init__(self, name: str, label_names: List[str]) -> None:
+        """Initialize counter with name and label names.
+
+        Args:
+            name: Metric name (e.g., "memory_operation_total")
+            label_names: List of label names (e.g., ["operation", "status", "handler"])
+        """
+        self.name = name
+        self.label_names = label_names
+        self._values: Dict[Tuple[str, ...], CounterValue] = defaultdict(CounterValue)
+        self._lock = threading.Lock()
+
+    def inc(self, amount: int = 1, **labels: str) -> None:
+        """Increment the counter with given labels.
+
+        Args:
+            amount: Amount to increment by (default 1)
+            **labels: Label key-value pairs
+        """
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                self._values[key] = CounterValue()
+        self._values[key].inc(amount)
+
+    def get(self, **labels: str) -> int:
+        """Get counter value for given labels."""
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                return 0
+            return self._values[key].get()
+
+    def get_all(self) -> Dict[Tuple[str, ...], int]:
+        """Get all counter values with their labels."""
+        with self._lock:
+            return {k: v.get() for k, v in self._values.items()}
+
+    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+        """Convert labels dict to hashable key tuple."""
+        return tuple(labels.get(name, "") for name in self.label_names)
+
+    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+        """Convert key tuple back to labels dict."""
+        return dict(zip(self.label_names, key))
+
+
+@dataclass
+class HistogramValue:
+    """Thread-safe histogram value with buckets."""
+
+    buckets: Tuple[float, ...]
+    bucket_counts: List[int] = field(default_factory=list)
+    sum_value: float = 0.0
+    count: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def __post_init__(self) -> None:
+        """Initialize bucket counts."""
+        if not self.bucket_counts:
+            self.bucket_counts = [0] * (len(self.buckets) + 1)  # +1 for +Inf
+
+    def observe(self, value: float) -> None:
+        """Record an observation."""
+        with self._lock:
+            self.sum_value += value
+            self.count += 1
+            for i, bucket in enumerate(self.buckets):
+                if value <= bucket:
+                    self.bucket_counts[i] += 1
+            # Always increment +Inf bucket
+            self.bucket_counts[-1] += 1
+
+    def get_snapshot(self) -> Dict[str, Union[float, int, List[int]]]:
+        """Get a snapshot of histogram values."""
+        with self._lock:
+            return {
+                "sum": self.sum_value,
+                "count": self.count,
+                "buckets": list(self.bucket_counts),
+                "bucket_bounds": list(self.buckets) + [float("inf")],
+            }
+
+
+class Histogram:
+    """In-process histogram metric for tracking distributions.
+
+    Thread-safe histogram that tracks value distributions with configurable buckets.
+
+    Example:
+        hist = Histogram("memory_storage_latency_ms", ["operation", "handler"])
+        hist.observe(45.2, operation="store", handler="filesystem")
+    """
+
+    def __init__(
+        self,
+        name: str,
+        label_names: List[str],
+        buckets: Tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
+    ) -> None:
+        """Initialize histogram with name, labels, and buckets.
+
+        Args:
+            name: Metric name (e.g., "memory_storage_latency_ms")
+            label_names: List of label names
+            buckets: Tuple of bucket boundaries (default: latency buckets)
+        """
+        self.name = name
+        self.label_names = label_names
+        self.buckets = buckets
+        self._values: Dict[Tuple[str, ...], HistogramValue] = {}
+        self._lock = threading.Lock()
+
+    def observe(self, value: float, **labels: str) -> None:
+        """Record an observation with given labels.
+
+        Args:
+            value: Value to observe
+            **labels: Label key-value pairs
+        """
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                self._values[key] = HistogramValue(buckets=self.buckets)
+        self._values[key].observe(value)
+
+    def get(self, **labels: str) -> Dict[str, Union[float, int, List[int]]]:
+        """Get histogram snapshot for given labels."""
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                return {"sum": 0.0, "count": 0, "buckets": [], "bucket_bounds": []}
+            return self._values[key].get_snapshot()
+
+    def get_all(self) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int]]]]:
+        """Get all histogram values with their labels."""
+        with self._lock:
+            return {k: v.get_snapshot() for k, v in self._values.items()}
+
+    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+        """Convert labels dict to hashable key tuple."""
+        return tuple(labels.get(name, "") for name in self.label_names)
+
+    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+        """Convert key tuple back to labels dict."""
+        return dict(zip(self.label_names, key))
+
+
+@dataclass
+class GaugeValue:
+    """Thread-safe gauge value."""
+
+    value: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def set(self, value: float) -> None:
+        """Set the gauge value."""
+        with self._lock:
+            self.value = value
+
+    def get(self) -> float:
+        """Get current gauge value."""
+        with self._lock:
+            return self.value
+
+
+class Gauge:
+    """In-process gauge metric for tracking current values.
+
+    Thread-safe gauge that tracks current state values.
+
+    Example:
+        gauge = Gauge("handler_health_status", ["handler"])
+        gauge.set(1.0, handler="filesystem")  # healthy
+        gauge.set(0.0, handler="filesystem")  # unhealthy
+    """
+
+    def __init__(self, name: str, label_names: List[str]) -> None:
+        """Initialize gauge with name and label names.
+
+        Args:
+            name: Metric name (e.g., "handler_health_status")
+            label_names: List of label names
+        """
+        self.name = name
+        self.label_names = label_names
+        self._values: Dict[Tuple[str, ...], GaugeValue] = defaultdict(GaugeValue)
+        self._lock = threading.Lock()
+
+    def set(self, value: float, **labels: str) -> None:
+        """Set the gauge value with given labels.
+
+        Args:
+            value: Value to set
+            **labels: Label key-value pairs
+        """
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                self._values[key] = GaugeValue()
+        self._values[key].set(value)
+
+    def get(self, **labels: str) -> float:
+        """Get gauge value for given labels."""
+        key = self._labels_to_key(labels)
+        with self._lock:
+            if key not in self._values:
+                return 0.0
+            return self._values[key].get()
+
+    def get_all(self) -> Dict[Tuple[str, ...], float]:
+        """Get all gauge values with their labels."""
+        with self._lock:
+            return {k: v.get() for k, v in self._values.items()}
+
+    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+        """Convert labels dict to hashable key tuple."""
+        return tuple(labels.get(name, "") for name in self.label_names)
+
+    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+        """Convert key tuple back to labels dict."""
+        return dict(zip(self.label_names, key))
+
+
+class MetricsRegistry:
+    """Registry for in-process metrics.
+
+    Provides a central place to access all metrics for the OmniMemory system.
+    This is a singleton-like registry that holds all metrics instances.
+
+    Example:
+        registry = MetricsRegistry()
+        registry.memory_operation_total.inc(operation="store", status="success")
+        registry.memory_storage_latency_ms.observe(45.2, operation="store")
+    """
+
+    _instance: Optional["MetricsRegistry"] = None
+    _lock = threading.Lock()
+
+    def __new__(cls) -> "MetricsRegistry":
+        """Singleton pattern for metrics registry."""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(self) -> None:
+        """Initialize metrics registry with all required metrics."""
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
+
+        # Counter: Total operations by type and status
+        self.memory_operation_total = Counter(
+            name="memory_operation_total",
+            label_names=["operation", "status", "handler"],
+        )
+
+        # Histogram: Storage operation latency
+        self.memory_storage_latency_ms = Histogram(
+            name="memory_storage_latency_ms",
+            label_names=["operation", "handler"],
+        )
+
+        # Histogram: Retrieval operation latency
+        self.memory_retrieval_latency_ms = Histogram(
+            name="memory_retrieval_latency_ms",
+            label_names=["operation", "handler"],
+        )
+
+        # Gauge: Handler health status (1=healthy, 0=unhealthy)
+        self.handler_health_status = Gauge(
+            name="handler_health_status",
+            label_names=["handler"],
+        )
+
+    def get_all_metrics(self) -> Dict[str, Dict[str, object]]:
+        """Get snapshot of all metrics for reporting."""
+        return {
+            "memory_operation_total": {
+                "type": "counter",
+                "values": {
+                    str(k): v for k, v in self.memory_operation_total.get_all().items()
+                },
+            },
+            "memory_storage_latency_ms": {
+                "type": "histogram",
+                "values": {
+                    str(k): v
+                    for k, v in self.memory_storage_latency_ms.get_all().items()
+                },
+            },
+            "memory_retrieval_latency_ms": {
+                "type": "histogram",
+                "values": {
+                    str(k): v
+                    for k, v in self.memory_retrieval_latency_ms.get_all().items()
+                },
+            },
+            "handler_health_status": {
+                "type": "gauge",
+                "values": {
+                    str(k): v for k, v in self.handler_health_status.get_all().items()
+                },
+            },
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the registry (primarily for testing)."""
+        with cls._lock:
+            cls._instance = None
+
+
+# Global metrics registry instance
+metrics_registry = MetricsRegistry()
+
+
 class TraceLevel(Enum):
     """Trace level enumeration for different types of operations."""
+
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
 
+
 class OperationType(Enum):
     """Operation type enumeration for categorizing operations."""
+
     MEMORY_STORE = "memory_store"
     MEMORY_RETRIEVE = "memory_retrieve"
     MEMORY_SEARCH = "memory_search"
@@ -130,9 +519,11 @@ class OperationType(Enum):
     CLEANUP = "cleanup"
     EXTERNAL_API = "external_api"
 
+
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for operations."""
+
     start_time: float
     end_time: Optional[float] = None
     duration: Optional[float] = None
@@ -142,8 +533,10 @@ class PerformanceMetrics:
     success: Optional[bool] = None
     error_type: Optional[str] = None
 
+
 class CorrelationContext(BaseModel):
     """Context information for correlation tracking."""
+
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     request_id: Optional[str] = Field(default=None)
     user_id: Optional[str] = Field(default=None)
@@ -152,6 +545,7 @@ class CorrelationContext(BaseModel):
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
     created_at: datetime = Field(default_factory=datetime.now)
+
 
 class ObservabilityManager:
     """
@@ -176,7 +570,7 @@ class ObservabilityManager:
         user_id: Optional[str] = None,
         operation: Optional[str] = None,
         trace_level: TraceLevel = TraceLevel.INFO,
-        **metadata
+        **metadata,
     ) -> AsyncGenerator[CorrelationContext, None]:
         """
         Async context manager for correlation tracking.
@@ -195,8 +589,7 @@ class ObservabilityManager:
 
         # Sanitize metadata values
         sanitized_metadata = {
-            key: sanitize_metadata_value(value)
-            for key, value in metadata.items()
+            key: sanitize_metadata_value(value) for key, value in metadata.items()
         }
 
         # Create context
@@ -207,7 +600,7 @@ class ObservabilityManager:
             operation=operation,
             parent_correlation_id=correlation_id_var.get(),
             trace_level=trace_level,
-            metadata=sanitized_metadata
+            metadata=sanitized_metadata,
         )
 
         # Set context variables
@@ -224,7 +617,7 @@ class ObservabilityManager:
                 user_id=context.user_id,
                 operation=context.operation,
                 trace_level=context.trace_level.value,
-                metadata=context.metadata
+                metadata=context.metadata,
             )
 
             yield context
@@ -234,7 +627,7 @@ class ObservabilityManager:
                 "correlation_context_error",
                 correlation_id=context.correlation_id,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
         finally:
@@ -247,7 +640,7 @@ class ObservabilityManager:
             self._logger.info(
                 "correlation_context_ended",
                 correlation_id=context.correlation_id,
-                operation=context.operation
+                operation=context.operation,
             )
 
     @asynccontextmanager
@@ -256,7 +649,7 @@ class ObservabilityManager:
         operation_name: str,
         operation_type: OperationType,
         trace_performance: bool = True,
-        **additional_context
+        **additional_context,
     ) -> AsyncGenerator[str, None]:
         """
         Async context manager for operation tracing.
@@ -273,12 +666,12 @@ class ObservabilityManager:
         # Initialize performance metrics if requested
         if trace_performance:
             import psutil
+
             process = psutil.Process()
             start_memory = process.memory_info().rss / 1024 / 1024  # MB
 
             metrics = PerformanceMetrics(
-                start_time=time.time(),
-                memory_usage_start=start_memory
+                start_time=time.time(), memory_usage_start=start_memory
             )
             self._active_traces[trace_id] = metrics
 
@@ -289,7 +682,7 @@ class ObservabilityManager:
                 correlation_id=correlation_id,
                 operation_name=operation_name,
                 operation_type=operation_type.value,
-                **additional_context
+                **additional_context,
             )
 
             yield trace_id
@@ -312,7 +705,7 @@ class ObservabilityManager:
                 operation_type=operation_type.value,
                 error=_sanitize_error(e),
                 error_type=type(e).__name__,
-                **additional_context
+                **additional_context,
             )
             raise
         finally:
@@ -324,6 +717,7 @@ class ObservabilityManager:
 
                 if metrics.memory_usage_start:
                     import psutil
+
                     process = psutil.Process()
                     end_memory = process.memory_info().rss / 1024 / 1024  # MB
                     metrics.memory_usage_end = end_memory
@@ -339,7 +733,7 @@ class ObservabilityManager:
                     memory_delta=metrics.memory_delta,
                     success=metrics.success,
                     error_type=metrics.error_type,
-                    **additional_context
+                    **additional_context,
                 )
 
                 # Clean up completed trace
@@ -351,31 +745,24 @@ class ObservabilityManager:
             "correlation_id": correlation_id_var.get(),
             "request_id": request_id_var.get(),
             "user_id": user_id_var.get(),
-            "operation": operation_var.get()
+            "operation": operation_var.get(),
         }
 
     def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
         """Get current performance metrics for active traces."""
         return self._active_traces.copy()
 
-    def log_with_context(
-        self,
-        level: str,
-        message: str,
-        **additional_fields
-    ):
+    def log_with_context(self, level: str, message: str, **additional_fields):
         """Log a message with current correlation context."""
         context = self.get_current_context()
 
         log_method = getattr(self._logger, level.lower(), self._logger.info)
-        log_method(
-            message,
-            **context,
-            **additional_fields
-        )
+        log_method(message, **context, **additional_fields)
+
 
 # Global observability manager instance
 observability_manager = ObservabilityManager()
+
 
 # Convenience functions for common patterns
 @asynccontextmanager
@@ -384,7 +771,7 @@ async def correlation_context(
     request_id: Optional[str] = None,
     user_id: Optional[str] = None,
     operation: Optional[str] = None,
-    **metadata
+    **metadata,
 ):
     """Convenience function for correlation context management."""
     async with observability_manager.correlation_context(
@@ -392,15 +779,14 @@ async def correlation_context(
         request_id=request_id,
         user_id=user_id,
         operation=operation,
-        **metadata
+        **metadata,
     ) as ctx:
         yield ctx
 
+
 @asynccontextmanager
 async def trace_operation(
-    operation_name: str,
-    operation_type: OperationType | str,
-    **context
+    operation_name: str, operation_type: OperationType | str, **context
 ):
     """Convenience function for operation tracing."""
     if isinstance(operation_type, str):
@@ -412,26 +798,29 @@ async def trace_operation(
             operation_type = OperationType.EXTERNAL_API
 
     async with observability_manager.trace_operation(
-        operation_name=operation_name,
-        operation_type=operation_type,
-        **context
+        operation_name=operation_name, operation_type=operation_type, **context
     ) as trace_id:
         yield trace_id
+
 
 def get_correlation_id() -> Optional[str]:
     """Get current correlation ID from context."""
     return correlation_id_var.get()
 
+
 def get_request_id() -> Optional[str]:
     """Get current request ID from context."""
     return request_id_var.get()
+
 
 def log_with_correlation(level: str, message: str, **fields):
     """Log a message with correlation context."""
     observability_manager.log_with_context(level, message, **fields)
 
+
 def inject_correlation_context(func: F) -> F:
     """Decorator to inject correlation context into function logs."""
+
     @functools.wraps(func)
     def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
@@ -439,29 +828,27 @@ def inject_correlation_context(func: F) -> F:
             f"function_called_{func.__name__}",
             **context,
             args_count=len(args),
-            kwargs_keys=list(kwargs.keys())
+            kwargs_keys=list(kwargs.keys()),
         )
         try:
             result = func(*args, **kwargs)
-            logger.info(
-                f"function_completed_{func.__name__}",
-                **context,
-                success=True
-            )
+            logger.info(f"function_completed_{func.__name__}", **context, success=True)
             return result
         except Exception as e:
             logger.error(
                 f"function_failed_{func.__name__}",
                 **context,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
+
     return wrapper  # type: ignore[return-value]
 
 
 def inject_correlation_context_async(func: F) -> F:
     """Async decorator to inject correlation context into function logs."""
+
     @functools.wraps(func)
     async def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
@@ -469,14 +856,12 @@ def inject_correlation_context_async(func: F) -> F:
             f"async_function_called_{func.__name__}",
             **context,
             args_count=len(args),
-            kwargs_keys=list(kwargs.keys())
+            kwargs_keys=list(kwargs.keys()),
         )
         try:
             result = await func(*args, **kwargs)
             logger.info(
-                f"async_function_completed_{func.__name__}",
-                **context,
-                success=True
+                f"async_function_completed_{func.__name__}", **context, success=True
             )
             return result
         except Exception as e:
@@ -484,7 +869,319 @@ def inject_correlation_context_async(func: F) -> F:
                 f"async_function_failed_{func.__name__}",
                 **context,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
+
     return wrapper  # type: ignore[return-value]
+
+
+# === HANDLER OBSERVABILITY WRAPPER ===
+# "One wrapper, one log line, no payload" pattern for P1C observability
+
+
+@dataclass
+class HandlerMetrics:
+    """Metrics captured during handler execution.
+
+    This dataclass holds all metrics collected during a single handler operation,
+    ready to be logged and recorded.
+    """
+
+    correlation_id: str
+    operation: str
+    handler: str
+    status: Literal["success", "failure"]
+    latency_ms: float
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+def _get_safe_content_metadata(
+    content: Optional[str],
+    field_name: str = "content",
+) -> Dict[str, Union[str, int, bool]]:
+    """Extract safe metadata from content without logging PII.
+
+    Instead of logging raw content, we log:
+    - Length of content
+    - Hash prefix (first 8 chars of SHA-256)
+    - Whether content exists
+
+    Args:
+        content: Raw content string (may contain PII)
+        field_name: Name prefix for the metadata fields
+
+    Returns:
+        Dict with safe metadata about the content
+    """
+    if content is None:
+        return {
+            f"{field_name}_exists": False,
+            f"{field_name}_len": 0,
+        }
+
+    import hashlib
+
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:8]
+    return {
+        f"{field_name}_exists": True,
+        f"{field_name}_len": len(content),
+        f"{field_name}_hash": content_hash,
+    }
+
+
+class HandlerObservabilityWrapper:
+    """Wrapper for handler operations providing observability.
+
+    Implements the "one wrapper, one log line, no payload" pattern:
+    - Wraps handler execution with timing
+    - Records metrics (latency histogram, operation counter, health gauge)
+    - Emits single structured log event per operation
+    - Ensures no PII in log output
+
+    Example usage:
+        ```python
+        wrapper = HandlerObservabilityWrapper(handler_name="filesystem")
+
+        async def store_memory(request: MemoryStoreRequest) -> MemoryStoreResponse:
+            async with wrapper.observe_operation(
+                operation="store",
+                correlation_id=str(request.correlation_id),
+            ) as ctx:
+                # ... perform actual storage operation ...
+                result = await do_storage(request)
+                return result
+        ```
+    """
+
+    def __init__(
+        self,
+        handler_name: str,
+        registry: Optional[MetricsRegistry] = None,
+    ) -> None:
+        """Initialize the wrapper.
+
+        Args:
+            handler_name: Name of the handler (e.g., "filesystem", "postgresql")
+            registry: Optional metrics registry (defaults to current singleton)
+        """
+        self.handler_name = handler_name
+        self._custom_registry = registry
+        self._logger = structlog.get_logger(f"omnimemory.handler.{handler_name}")
+
+        # Set initial health status to healthy
+        self.registry.handler_health_status.set(1.0, handler=handler_name)
+
+    @property
+    def registry(self) -> MetricsRegistry:
+        """Get the metrics registry (always returns current singleton if not custom)."""
+        if self._custom_registry is not None:
+            return self._custom_registry
+        return MetricsRegistry()
+
+    @asynccontextmanager
+    async def observe_operation(
+        self,
+        operation: str,
+        correlation_id: Optional[str] = None,
+    ) -> AsyncGenerator[Dict[str, str], None]:
+        """Context manager for observing handler operations.
+
+        Implements the core observability pattern:
+        1. Start timer
+        2. Execute operation in try/except
+        3. Record histogram for latency
+        4. Increment counter for operation/status
+        5. Update health gauge
+        6. Emit single structured log event
+
+        Args:
+            operation: Operation name (e.g., "store", "retrieve", "delete")
+            correlation_id: Request correlation ID (generated if not provided)
+
+        Yields:
+            Dict with context info (correlation_id, operation, handler)
+        """
+        # Generate correlation ID if not provided
+        if correlation_id is None:
+            correlation_id = str(uuid.uuid4())
+
+        # Validate correlation ID format
+        if not validate_correlation_id(correlation_id):
+            correlation_id = str(uuid.uuid4())
+
+        # Set correlation context
+        token = correlation_id_var.set(correlation_id)
+
+        # Context to yield
+        ctx = {
+            "correlation_id": correlation_id,
+            "operation": operation,
+            "handler": self.handler_name,
+        }
+
+        # Start timing
+        start_time = time.perf_counter()
+        status: Literal["success", "failure"] = "success"
+        error_type: Optional[str] = None
+        error_message: Optional[str] = None
+
+        try:
+            yield ctx
+
+        except Exception as e:
+            status = "failure"
+            error_type = type(e).__name__
+            error_message = _sanitize_error(e)
+            raise
+
+        finally:
+            # Calculate latency
+            end_time = time.perf_counter()
+            latency_ms = (end_time - start_time) * 1000
+
+            # Record metrics
+            self._record_metrics(
+                operation=operation,
+                status=status,
+                latency_ms=latency_ms,
+            )
+
+            # Emit single structured log event
+            self._emit_log_event(
+                HandlerMetrics(
+                    correlation_id=correlation_id,
+                    operation=operation,
+                    handler=self.handler_name,
+                    status=status,
+                    latency_ms=latency_ms,
+                    error_type=error_type,
+                    error_message=error_message,
+                )
+            )
+
+            # Reset correlation context
+            correlation_id_var.reset(token)
+
+    def _record_metrics(
+        self,
+        operation: str,
+        status: Literal["success", "failure"],
+        latency_ms: float,
+    ) -> None:
+        """Record all metrics for the operation.
+
+        Args:
+            operation: Operation name
+            status: Operation status (success/failure)
+            latency_ms: Operation latency in milliseconds
+        """
+        # Increment operation counter
+        self.registry.memory_operation_total.inc(
+            operation=operation,
+            status=status,
+            handler=self.handler_name,
+        )
+
+        # Record latency histogram
+        # Use appropriate histogram based on operation type
+        if operation in ("store", "update", "delete"):
+            self.registry.memory_storage_latency_ms.observe(
+                latency_ms,
+                operation=operation,
+                handler=self.handler_name,
+            )
+        elif operation in ("retrieve", "list", "search"):
+            self.registry.memory_retrieval_latency_ms.observe(
+                latency_ms,
+                operation=operation,
+                handler=self.handler_name,
+            )
+        else:
+            # Default to storage histogram for unknown operations
+            self.registry.memory_storage_latency_ms.observe(
+                latency_ms,
+                operation=operation,
+                handler=self.handler_name,
+            )
+
+        # Update health gauge based on status
+        # Simple policy: success = healthy (1.0), failure = unhealthy (0.0)
+        # In production, you might use a sliding window or circuit breaker
+        if status == "success":
+            self.registry.handler_health_status.set(1.0, handler=self.handler_name)
+        else:
+            self.registry.handler_health_status.set(0.0, handler=self.handler_name)
+
+    def _emit_log_event(self, metrics: HandlerMetrics) -> None:
+        """Emit a single structured log event for the operation.
+
+        This implements the "one log line" part of the pattern.
+        All relevant metrics and context are included in a single event.
+
+        Args:
+            metrics: Captured metrics for the operation
+        """
+        log_data: Dict[str, Union[str, float, None]] = {
+            "correlation_id": metrics.correlation_id,
+            "operation": metrics.operation,
+            "handler": metrics.handler,
+            "status": metrics.status,
+            "latency_ms": round(metrics.latency_ms, 2),
+        }
+
+        if metrics.error_type:
+            log_data["error_type"] = metrics.error_type
+        if metrics.error_message:
+            log_data["error_message"] = metrics.error_message
+
+        # Log at appropriate level based on status
+        if metrics.status == "success":
+            self._logger.info("omnimemory.handler.operation", **log_data)
+        else:
+            self._logger.error("omnimemory.handler.operation", **log_data)
+
+    def mark_healthy(self) -> None:
+        """Explicitly mark handler as healthy."""
+        self.registry.handler_health_status.set(1.0, handler=self.handler_name)
+
+    def mark_unhealthy(self) -> None:
+        """Explicitly mark handler as unhealthy."""
+        self.registry.handler_health_status.set(0.0, handler=self.handler_name)
+
+    def get_handler_stats(self) -> Dict[str, object]:
+        """Get statistics for this handler.
+
+        Returns:
+            Dict containing counter totals, histogram stats, and health status
+        """
+        # Get all counter values for this handler
+        all_counters = self.registry.memory_operation_total.get_all()
+        handler_counters = {
+            k: v
+            for k, v in all_counters.items()
+            if self.handler_name in k  # Filter by handler name in key tuple
+        }
+
+        # Get histogram stats for this handler
+        storage_histograms = self.registry.memory_storage_latency_ms.get_all()
+        retrieval_histograms = self.registry.memory_retrieval_latency_ms.get_all()
+
+        handler_storage = {
+            k: v for k, v in storage_histograms.items() if self.handler_name in k
+        }
+        handler_retrieval = {
+            k: v for k, v in retrieval_histograms.items() if self.handler_name in k
+        }
+
+        # Get health status
+        health = self.registry.handler_health_status.get(handler=self.handler_name)
+
+        return {
+            "handler": self.handler_name,
+            "health_status": health,
+            "operation_counts": handler_counters,
+            "storage_latency": handler_storage,
+            "retrieval_latency": handler_retrieval,
+        }
