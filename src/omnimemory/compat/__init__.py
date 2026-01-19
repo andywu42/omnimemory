@@ -16,9 +16,9 @@ Removal Criteria:
 - Remove the local stubs
 """
 
-from .node_result import NodeResult
-from .onex_error import OnexError, BaseOnexError
 from .model_onex_container import ModelOnexContainer, ModelONEXContainer
+from .node_result import NodeResult
+from .onex_error import BaseOnexError, OnexError
 
 __all__ = [
     "NodeResult",

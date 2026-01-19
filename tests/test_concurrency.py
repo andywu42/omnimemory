@@ -5,17 +5,18 @@ Tests for concurrency utilities following ONEX standards.
 from __future__ import annotations
 
 import asyncio
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
+import pytest
+
 from omnimemory.utils.concurrency import (
-    ConnectionPool,
     CircuitBreaker,
     CircuitBreakerState,
+    ConnectionPool,
     with_circuit_breaker,
+    with_retry,
     with_timeout,
-    with_retry
 )
 
 

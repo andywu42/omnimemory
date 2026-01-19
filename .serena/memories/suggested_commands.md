@@ -8,7 +8,7 @@ poetry run pre-commit install
 
 # Code quality and formatting
 poetry run black .               # Format code
-poetry run isort .               # Sort imports  
+poetry run isort .               # Sort imports
 poetry run mypy src/            # Type checking
 poetry run flake8 src/          # Linting
 

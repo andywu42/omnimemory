@@ -24,15 +24,16 @@ import asyncio
 import contextlib
 import random
 import time
-from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar
 
-from pydantic import BaseModel, Field
 import structlog
+from pydantic import BaseModel, Field
 
-from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
+from .error_sanitizer import SanitizationLevel
+from .error_sanitizer import sanitize_error as _base_sanitize_error
 
 logger = structlog.get_logger(__name__)
 
@@ -49,45 +50,67 @@ def _sanitize_error(error: Exception) -> str:
     Returns:
         Safe error message without sensitive information
     """
-    return _base_sanitize_error(error, context="resource_manager", level=SanitizationLevel.STANDARD)
+    return _base_sanitize_error(
+        error, context="resource_manager", level=SanitizationLevel.STANDARD
+    )
 
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class CircuitState(Enum):
     """Circuit breaker states following resilience patterns."""
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"          # Circuit is open, failing fast
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Circuit is open, failing fast
     HALF_OPEN = "half_open"  # Testing if service has recovered
+
 
 class CircuitBreakerConfig(BaseModel):
     """Configuration for circuit breaker behavior."""
-    failure_threshold: int = Field(default=5, description="Number of failures before opening circuit")
-    recovery_timeout: int = Field(default=60, description="Seconds to wait before trying half-open")
-    recovery_timeout_jitter: float = Field(default=0.1, description="Jitter factor (0.0-1.0) to prevent thundering herd")
-    success_threshold: int = Field(default=3, description="Successful calls needed to close circuit")
+
+    failure_threshold: int = Field(
+        default=5, description="Number of failures before opening circuit"
+    )
+    recovery_timeout: int = Field(
+        default=60, description="Seconds to wait before trying half-open"
+    )
+    recovery_timeout_jitter: float = Field(
+        default=0.1, description="Jitter factor (0.0-1.0) to prevent thundering herd"
+    )
+    success_threshold: int = Field(
+        default=3, description="Successful calls needed to close circuit"
+    )
     timeout: float = Field(default=30.0, description="Default timeout for operations")
+
 
 @dataclass
 class CircuitBreakerStats:
     """Statistics tracking for circuit breaker behavior."""
+
     failure_count: int = 0
     success_count: int = 0
     last_failure_time: Optional[datetime] = None
-    state_changed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    state_changed_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     total_calls: int = 0
     total_timeouts: int = 0
 
 
 class CircuitBreakerStatsResponse(BaseModel):
     """Typed response model for circuit breaker statistics."""
+
     state: str = Field(description="Current circuit breaker state")
     failure_count: int = Field(description="Number of failures recorded")
     success_count: int = Field(description="Number of successful calls")
     total_calls: int = Field(description="Total number of calls attempted")
     total_timeouts: int = Field(description="Total number of timeout failures")
-    last_failure_time: Optional[str] = Field(description="ISO timestamp of last failure")
+    last_failure_time: Optional[str] = Field(
+        description="ISO timestamp of last failure"
+    )
     state_changed_at: str = Field(description="ISO timestamp when state last changed")
+
 
 class CircuitBreakerError(Exception):
     """Exception raised when circuit breaker is open."""
@@ -96,6 +119,7 @@ class CircuitBreakerError(Exception):
         self.service_name = service_name
         self.state = state
         super().__init__(f"Circuit breaker for {service_name} is {state.value}")
+
 
 class AsyncCircuitBreaker:
     """
@@ -124,8 +148,7 @@ class AsyncCircuitBreaker:
         try:
             # Apply timeout to the operation
             result = await asyncio.wait_for(
-                func(*args, **kwargs),
-                timeout=self.config.timeout
+                func(*args, **kwargs), timeout=self.config.timeout
             )
             await self._on_success()
             return result
@@ -162,7 +185,7 @@ class AsyncCircuitBreaker:
             "circuit_breaker_state_change",
             name=self.name,
             new_state="half_open",
-            reason="recovery_timeout_reached"
+            reason="recovery_timeout_reached",
         )
 
     async def _on_success(self):
@@ -184,8 +207,10 @@ class AsyncCircuitBreaker:
             self.stats.failure_count += 1
             self.stats.last_failure_time = datetime.now(timezone.utc)
 
-            if (self.state == CircuitState.CLOSED and
-                self.stats.failure_count >= self.config.failure_threshold):
+            if (
+                self.state == CircuitState.CLOSED
+                and self.stats.failure_count >= self.config.failure_threshold
+            ):
                 await self._transition_to_open()
             elif self.state == CircuitState.HALF_OPEN:
                 await self._transition_to_open()
@@ -200,7 +225,7 @@ class AsyncCircuitBreaker:
             "circuit_breaker_state_change",
             name=self.name,
             new_state="closed",
-            reason="success_threshold_reached"
+            reason="success_threshold_reached",
         )
 
     async def _transition_to_open(self):
@@ -213,8 +238,9 @@ class AsyncCircuitBreaker:
             name=self.name,
             new_state="open",
             reason="failure_threshold_reached",
-            failure_count=self.stats.failure_count
+            failure_count=self.stats.failure_count,
         )
+
 
 class AsyncResourceManager:
     """
@@ -232,7 +258,9 @@ class AsyncResourceManager:
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
 
-    def get_circuit_breaker(self, name: str, config: Optional[CircuitBreakerConfig] = None) -> AsyncCircuitBreaker:
+    def get_circuit_breaker(
+        self, name: str, config: Optional[CircuitBreakerConfig] = None
+    ) -> AsyncCircuitBreaker:
         """Get or create a circuit breaker for a service."""
         if name not in self._circuit_breakers:
             self._circuit_breakers[name] = AsyncCircuitBreaker(name, config)
@@ -259,7 +287,7 @@ class AsyncResourceManager:
         circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
         semaphore_limit: Optional[int] = None,
         *args,
-        **kwargs
+        **kwargs,
     ) -> AsyncGenerator[Any, None]:
         """
         Async context manager for comprehensive resource management.
@@ -272,8 +300,14 @@ class AsyncResourceManager:
             semaphore_limit: Semaphore limit for rate limiting
             *args, **kwargs: Arguments passed to acquire_func
         """
-        circuit_breaker = self.get_circuit_breaker(resource_name, circuit_breaker_config)
-        semaphore = self.get_semaphore(resource_name, semaphore_limit) if semaphore_limit else None
+        circuit_breaker = self.get_circuit_breaker(
+            resource_name, circuit_breaker_config
+        )
+        semaphore = (
+            self.get_semaphore(resource_name, semaphore_limit)
+            if semaphore_limit
+            else None
+        )
 
         resource = None
         try:
@@ -287,7 +321,7 @@ class AsyncResourceManager:
             logger.debug(
                 "resource_acquired",
                 resource_name=resource_name,
-                circuit_state=circuit_breaker.state.value
+                circuit_state=circuit_breaker.state.value,
             )
 
             yield resource
@@ -297,7 +331,7 @@ class AsyncResourceManager:
                 "resource_management_error",
                 resource_name=resource_name,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
         finally:
@@ -309,15 +343,12 @@ class AsyncResourceManager:
                     else:
                         release_func(resource)
 
-                    logger.debug(
-                        "resource_released",
-                        resource_name=resource_name
-                    )
+                    logger.debug("resource_released", resource_name=resource_name)
                 except Exception as e:
                     logger.error(
                         "resource_cleanup_error",
                         resource_name=resource_name,
-                        error=_sanitize_error(e)
+                        error=_sanitize_error(e),
                     )
 
             # Release semaphore if acquired
@@ -334,13 +365,19 @@ class AsyncResourceManager:
                 success_count=cb.stats.success_count,
                 total_calls=cb.stats.total_calls,
                 total_timeouts=cb.stats.total_timeouts,
-                last_failure_time=cb.stats.last_failure_time.isoformat() if cb.stats.last_failure_time else None,
-                state_changed_at=cb.stats.state_changed_at.isoformat()
+                last_failure_time=(
+                    cb.stats.last_failure_time.isoformat()
+                    if cb.stats.last_failure_time
+                    else None
+                ),
+                state_changed_at=cb.stats.state_changed_at.isoformat(),
             )
         return stats
 
+
 # Global resource manager instance
 resource_manager = AsyncResourceManager()
+
 
 # Convenience functions for common patterns
 async def with_circuit_breaker(
@@ -348,11 +385,12 @@ async def with_circuit_breaker(
     func: Callable[..., Any],
     config: Optional[CircuitBreakerConfig] = None,
     *args,
-    **kwargs
+    **kwargs,
 ) -> Any:
     """Execute a function with circuit breaker protection."""
     circuit_breaker = resource_manager.get_circuit_breaker(service_name, config)
     return await circuit_breaker.call(func, *args, **kwargs)
+
 
 @contextlib.asynccontextmanager
 async def with_semaphore(name: str, limit: int):
@@ -360,6 +398,7 @@ async def with_semaphore(name: str, limit: int):
     semaphore = resource_manager.get_semaphore(name, limit)
     async with semaphore:
         yield
+
 
 @contextlib.asynccontextmanager
 async def with_timeout(timeout: float):
@@ -378,6 +417,7 @@ async def with_timeout(timeout: float):
 
 class ResourceType(Enum):
     """Types of resources that can be managed."""
+
     DATABASE = "database"
     MEMORY = "memory"
     CACHE = "cache"
@@ -388,6 +428,7 @@ class ResourceType(Enum):
 
 class ResourceStatus(Enum):
     """Status of a resource handle."""
+
     ACTIVE = "active"
     RELEASED = "released"
     EXPIRED = "expired"
@@ -396,11 +437,13 @@ class ResourceStatus(Enum):
 
 class ResourceAllocationError(Exception):
     """Exception raised when resource allocation fails."""
+
     pass
 
 
 class ResourceTimeoutError(Exception):
     """Exception raised when resource acquisition times out."""
+
     pass
 
 
@@ -411,6 +454,7 @@ class ResourceHandle:
 
     Provides resource lifecycle management and context tracking.
     """
+
     resource_id: Any
     resource: Any
     resource_type: ResourceType
@@ -429,7 +473,7 @@ class ResourceHandle:
         if self.status != ResourceStatus.ACTIVE:
             return False
 
-        if hasattr(self.resource, 'is_healthy'):
+        if hasattr(self.resource, "is_healthy"):
             return self.resource.is_healthy()
 
         return True
@@ -529,7 +573,7 @@ class ResourcePool:
                 logger.error(
                     "resource_creation_failed",
                     resource_type=self.resource_type.value,
-                    error=_sanitize_error(e)
+                    error=_sanitize_error(e),
                 )
                 return None
         return None
@@ -561,7 +605,7 @@ class ResourcePool:
                         resource_id=resource_id,
                         resource=resource,
                         resource_type=self.resource_type,
-                        ttl=self._ttl
+                        ttl=self._ttl,
                     )
                     self.active_resources[resource_id] = handle
                     return handle
@@ -576,7 +620,7 @@ class ResourcePool:
                             resource_id=resource_id,
                             resource=resource,
                             resource_type=self.resource_type,
-                            ttl=self._ttl
+                            ttl=self._ttl,
                         )
                         self.active_resources[resource_id] = handle
                         return handle
@@ -598,8 +642,7 @@ class ResourcePool:
                 )
             try:
                 await asyncio.wait_for(
-                    self._available_event.wait(),
-                    timeout=timeout - elapsed
+                    self._available_event.wait(), timeout=timeout - elapsed
                 )
             except asyncio.TimeoutError as e:
                 raise ResourceTimeoutError(
@@ -647,13 +690,11 @@ class ResourceManager:
             "total_operations": 0,
             "total_acquisitions": 0,
             "total_releases": 0,
-            "total_errors": 0
+            "total_errors": 0,
         }
 
     async def register_pool(
-        self,
-        resource_type: ResourceType,
-        config: Dict[str, Any]
+        self, resource_type: ResourceType, config: Dict[str, Any]
     ) -> None:
         """
         Register a resource pool.
@@ -669,13 +710,11 @@ class ResourceManager:
             "resource_pool_registered",
             resource_type=resource_type.value,
             min_size=config.get("min_size", 1),
-            max_size=config.get("max_size", 10)
+            max_size=config.get("max_size", 10),
         )
 
     async def acquire(
-        self,
-        resource_type: ResourceType,
-        timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: Optional[float] = None
     ) -> ResourceHandle:
         """
         Acquire a resource of the specified type.
@@ -723,9 +762,7 @@ class ResourceManager:
 
     @contextlib.asynccontextmanager
     async def acquire_context(
-        self,
-        resource_type: ResourceType,
-        timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: Optional[float] = None
     ) -> AsyncGenerator[ResourceHandle, None]:
         """
         Context manager for resource acquisition.
@@ -762,7 +799,7 @@ class ResourceManager:
             "total_created": pool.current_size,
             "active_resources": len(pool.active_resources),
             "available_resources": len(pool.available_resources),
-            "health_check_failures": 0
+            "health_check_failures": 0,
         }
 
     def get_pool_stats(self, resource_type: ResourceType) -> Dict[str, Any]:
@@ -785,7 +822,7 @@ class ResourceManager:
             "min_size": pool.min_size,
             "max_size": pool.max_size,
             "active_count": len(pool.active_resources),
-            "available_count": len(pool.available_resources)
+            "available_count": len(pool.available_resources),
         }
 
     def get_metrics(self) -> Dict[str, Any]:
@@ -800,18 +837,13 @@ class ResourceManager:
             "total_resources": sum(
                 p.current_size for p in self.resource_pools.values()
             ),
-            "resource_types": [
-                rt.value for rt in self.resource_pools.keys()
-            ],
+            "resource_types": [rt.value for rt in self.resource_pools.keys()],
             "total_operations": self._metrics["total_operations"],
             "total_acquisitions": self._metrics["total_acquisitions"],
-            "total_releases": self._metrics["total_releases"]
+            "total_releases": self._metrics["total_releases"],
         }
 
-    async def _check_resource_expiration(
-        self,
-        resource_type: ResourceType
-    ) -> None:
+    async def _check_resource_expiration(self, resource_type: ResourceType) -> None:
         """
         Check and handle expired resources in a pool.
 

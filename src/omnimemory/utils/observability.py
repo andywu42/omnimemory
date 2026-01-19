@@ -8,6 +8,44 @@ This module provides:
 - Performance monitoring and metrics collection
 - In-process metrics: Counter, Histogram, Gauge
 - Handler observability wrapper for "one wrapper, one log line, no payload" pattern
+
+Structured Log Schema (for downstream ingestion - ELK, Datadog, etc.):
+------------------------------------------------------------------------
+All handler operation log events follow this consistent schema:
+
+Required fields:
+    - correlation_id (str): Unique request correlation identifier
+    - operation (str): Operation name (e.g., "store", "retrieve", "delete")
+    - handler (str): Handler name (e.g., "filesystem", "postgresql")
+    - status (str): Operation status, one of "success" or "failure"
+    - latency_ms (float): Operation latency in milliseconds
+    - timestamp (str): ISO8601 timestamp when the event was logged
+
+Optional fields (only present on failure):
+    - error_type (str): Exception class name (e.g., "ValueError", "IOError")
+    - error_message (str): Sanitized error message (PII-safe)
+
+Example log event (success):
+    {
+        "correlation_id": "abc123-def456",
+        "operation": "store",
+        "handler": "filesystem",
+        "status": "success",
+        "latency_ms": 45.23,
+        "timestamp": "2025-01-19T12:34:56.789Z"
+    }
+
+Example log event (failure):
+    {
+        "correlation_id": "abc123-def456",
+        "operation": "store",
+        "handler": "filesystem",
+        "status": "failure",
+        "latency_ms": 102.5,
+        "timestamp": "2025-01-19T12:34:56.789Z",
+        "error_type": "IOError",
+        "error_message": "Permission denied"
+    }
 """
 
 from __future__ import annotations
@@ -17,7 +55,7 @@ import re
 import threading
 import time
 import uuid
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -46,6 +84,15 @@ import structlog
 from pydantic import BaseModel, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
+
+# Optional psutil import for memory tracking - gracefully degrade if unavailable
+_PSUTIL_AVAILABLE = False
+try:
+    import psutil
+
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
 from .error_sanitizer import SanitizationLevel
 from .error_sanitizer import sanitize_error as _base_sanitize_error
 
@@ -149,6 +196,10 @@ DEFAULT_LATENCY_BUCKETS: Tuple[float, ...] = (
     10000.0,
 )
 
+# Default maximum number of unique label combinations per metric
+# This prevents unbounded memory growth from high-cardinality labels
+DEFAULT_MAX_METRIC_ENTRIES: int = 10000
+
 
 @dataclass
 class CounterValue:
@@ -172,23 +223,75 @@ class Counter:
     """In-process counter metric for tracking totals.
 
     Thread-safe counter that tracks total operations by labels.
+    Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
     Example:
         counter = Counter("memory_operation_total", ["operation", "status", "handler"])
         counter.inc(operation="store", status="success", handler="filesystem")
+
+        # With strict label validation:
+        counter = Counter("ops", ["operation", "status"], strict_labels=True)
+        counter.inc(operation="store", status="ok")  # OK
+        counter.inc(operation="store")  # Raises ValueError (missing "status")
+        counter.inc(operation="store", status="ok", extra="bad")  # Raises ValueError
     """
 
-    def __init__(self, name: str, label_names: List[str]) -> None:
+    def __init__(
+        self,
+        name: str,
+        label_names: List[str],
+        max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
+        strict_labels: bool = False,
+    ) -> None:
         """Initialize counter with name and label names.
 
         Args:
             name: Metric name (e.g., "memory_operation_total")
             label_names: List of label names (e.g., ["operation", "status", "handler"])
+            max_entries: Maximum number of unique label combinations (default 10000).
+                         Oldest entries are evicted when limit is exceeded.
+            strict_labels: If True, validate that all required labels are provided
+                          and no extra labels are passed. Raises ValueError on mismatch.
+                          Default is False for backwards compatibility.
         """
         self.name = name
         self.label_names = label_names
-        self._values: Dict[Tuple[str, ...], CounterValue] = defaultdict(CounterValue)
+        self.max_entries = max_entries
+        self.strict_labels = strict_labels
+        self._label_names_set = frozenset(label_names)
+        # Use OrderedDict for LRU eviction (oldest entries evicted first)
+        self._values: "OrderedDict[Tuple[str, ...], CounterValue]" = OrderedDict()
         self._lock = threading.Lock()
+
+    def _validate_labels(self, labels: Dict[str, str]) -> None:
+        """Validate labels against expected label names.
+
+        Args:
+            labels: Label key-value pairs to validate
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
+        """
+        if not self.strict_labels:
+            return
+
+        provided = set(labels.keys())
+        expected = self._label_names_set
+
+        missing = expected - provided
+        extra = provided - expected
+
+        errors = []
+        if missing:
+            errors.append(f"missing labels: {sorted(missing)}")
+        if extra:
+            errors.append(f"extra labels: {sorted(extra)}")
+
+        if errors:
+            raise ValueError(
+                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
+                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+            )
 
     def inc(self, amount: int = 1, **labels: str) -> None:
         """Increment the counter with given labels.
@@ -196,11 +299,21 @@ class Counter:
         Args:
             amount: Amount to increment by (default 1)
             **labels: Label key-value pairs
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
         """
+        self._validate_labels(labels)
         key = self._labels_to_key(labels)
         with self._lock:
             if key not in self._values:
+                # Evict oldest entries if at capacity
+                while len(self._values) >= self.max_entries:
+                    self._values.popitem(last=False)  # Remove oldest (FIFO)
                 self._values[key] = CounterValue()
+            else:
+                # Move to end to mark as recently used
+                self._values.move_to_end(key)
         self._values[key].inc(amount)
 
     def get(self, **labels: str) -> int:
@@ -209,6 +322,8 @@ class Counter:
         with self._lock:
             if key not in self._values:
                 return 0
+            # Move to end to mark as recently used
+            self._values.move_to_end(key)
             return self._values[key].get()
 
     def get_all(self) -> Dict[Tuple[str, ...], int]:
@@ -266,10 +381,16 @@ class Histogram:
     """In-process histogram metric for tracking distributions.
 
     Thread-safe histogram that tracks value distributions with configurable buckets.
+    Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
     Example:
         hist = Histogram("memory_storage_latency_ms", ["operation", "handler"])
         hist.observe(45.2, operation="store", handler="filesystem")
+
+        # With strict label validation:
+        hist = Histogram("latency", ["operation", "handler"], strict_labels=True)
+        hist.observe(45.2, operation="store", handler="fs")  # OK
+        hist.observe(45.2, operation="store")  # Raises ValueError (missing "handler")
     """
 
     def __init__(
@@ -277,6 +398,8 @@ class Histogram:
         name: str,
         label_names: List[str],
         buckets: Tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
+        max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
+        strict_labels: bool = False,
     ) -> None:
         """Initialize histogram with name, labels, and buckets.
 
@@ -284,12 +407,73 @@ class Histogram:
             name: Metric name (e.g., "memory_storage_latency_ms")
             label_names: List of label names
             buckets: Tuple of bucket boundaries (default: latency buckets)
+            max_entries: Maximum number of unique label combinations (default 10000).
+                         Oldest entries are evicted when limit is exceeded.
+            strict_labels: If True, validate that all required labels are provided
+                          and no extra labels are passed. Raises ValueError on mismatch.
+                          Default is False for backwards compatibility.
+
+        Raises:
+            ValueError: If buckets tuple is empty, contains non-positive values,
+                       or is not in strictly ascending order.
         """
+        # Validate buckets
+        if not buckets:
+            raise ValueError("Histogram buckets tuple must not be empty")
+
+        for i, bucket in enumerate(buckets):
+            if bucket <= 0:
+                raise ValueError(
+                    f"Histogram bucket values must be positive (> 0), "
+                    f"got {bucket} at index {i}"
+                )
+
+        for i in range(1, len(buckets)):
+            if buckets[i] <= buckets[i - 1]:
+                raise ValueError(
+                    f"Histogram buckets must be in strictly ascending order, "
+                    f"but bucket[{i}]={buckets[i]} <= bucket[{i-1}]={buckets[i-1]}"
+                )
+
         self.name = name
         self.label_names = label_names
         self.buckets = buckets
-        self._values: Dict[Tuple[str, ...], HistogramValue] = {}
+        self.max_entries = max_entries
+        self.strict_labels = strict_labels
+        self._label_names_set = frozenset(label_names)
+        # Use OrderedDict for LRU eviction (oldest entries evicted first)
+        self._values: "OrderedDict[Tuple[str, ...], HistogramValue]" = OrderedDict()
         self._lock = threading.Lock()
+
+    def _validate_labels(self, labels: Dict[str, str]) -> None:
+        """Validate labels against expected label names.
+
+        Args:
+            labels: Label key-value pairs to validate
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
+        """
+        if not self.strict_labels:
+            return
+
+        provided = set(labels.keys())
+        expected = self._label_names_set
+
+        missing = expected - provided
+        extra = provided - expected
+
+        errors = []
+        if missing:
+            errors.append(f"missing labels: {sorted(missing)}")
+        if extra:
+            errors.append(f"extra labels: {sorted(extra)}")
+
+        if errors:
+            raise ValueError(
+                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
+                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+            )
 
     def observe(self, value: float, **labels: str) -> None:
         """Record an observation with given labels.
@@ -297,11 +481,21 @@ class Histogram:
         Args:
             value: Value to observe
             **labels: Label key-value pairs
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
         """
+        self._validate_labels(labels)
         key = self._labels_to_key(labels)
         with self._lock:
             if key not in self._values:
+                # Evict oldest entries if at capacity
+                while len(self._values) >= self.max_entries:
+                    self._values.popitem(last=False)  # Remove oldest (FIFO)
                 self._values[key] = HistogramValue(buckets=self.buckets)
+            else:
+                # Move to end to mark as recently used
+                self._values.move_to_end(key)
         self._values[key].observe(value)
 
     def get(self, **labels: str) -> Dict[str, Union[float, int, List[int]]]:
@@ -310,6 +504,8 @@ class Histogram:
         with self._lock:
             if key not in self._values:
                 return {"sum": 0.0, "count": 0, "buckets": [], "bucket_bounds": []}
+            # Move to end to mark as recently used
+            self._values.move_to_end(key)
             return self._values[key].get_snapshot()
 
     def get_all(self) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int]]]]:
@@ -348,24 +544,75 @@ class Gauge:
     """In-process gauge metric for tracking current values.
 
     Thread-safe gauge that tracks current state values.
+    Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
     Example:
         gauge = Gauge("handler_health_status", ["handler"])
         gauge.set(1.0, handler="filesystem")  # healthy
         gauge.set(0.0, handler="filesystem")  # unhealthy
+
+        # With strict label validation:
+        gauge = Gauge("health", ["handler", "region"], strict_labels=True)
+        gauge.set(1.0, handler="fs", region="us-east")  # OK
+        gauge.set(1.0, handler="fs")  # Raises ValueError (missing "region")
     """
 
-    def __init__(self, name: str, label_names: List[str]) -> None:
+    def __init__(
+        self,
+        name: str,
+        label_names: List[str],
+        max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
+        strict_labels: bool = False,
+    ) -> None:
         """Initialize gauge with name and label names.
 
         Args:
             name: Metric name (e.g., "handler_health_status")
             label_names: List of label names
+            max_entries: Maximum number of unique label combinations (default 10000).
+                         Oldest entries are evicted when limit is exceeded.
+            strict_labels: If True, validate that all required labels are provided
+                          and no extra labels are passed. Raises ValueError on mismatch.
+                          Default is False for backwards compatibility.
         """
         self.name = name
         self.label_names = label_names
-        self._values: Dict[Tuple[str, ...], GaugeValue] = defaultdict(GaugeValue)
+        self.max_entries = max_entries
+        self.strict_labels = strict_labels
+        self._label_names_set = frozenset(label_names)
+        # Use OrderedDict for LRU eviction (oldest entries evicted first)
+        self._values: "OrderedDict[Tuple[str, ...], GaugeValue]" = OrderedDict()
         self._lock = threading.Lock()
+
+    def _validate_labels(self, labels: Dict[str, str]) -> None:
+        """Validate labels against expected label names.
+
+        Args:
+            labels: Label key-value pairs to validate
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
+        """
+        if not self.strict_labels:
+            return
+
+        provided = set(labels.keys())
+        expected = self._label_names_set
+
+        missing = expected - provided
+        extra = provided - expected
+
+        errors = []
+        if missing:
+            errors.append(f"missing labels: {sorted(missing)}")
+        if extra:
+            errors.append(f"extra labels: {sorted(extra)}")
+
+        if errors:
+            raise ValueError(
+                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
+                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+            )
 
     def set(self, value: float, **labels: str) -> None:
         """Set the gauge value with given labels.
@@ -373,11 +620,21 @@ class Gauge:
         Args:
             value: Value to set
             **labels: Label key-value pairs
+
+        Raises:
+            ValueError: If strict_labels is True and labels don't match expected names
         """
+        self._validate_labels(labels)
         key = self._labels_to_key(labels)
         with self._lock:
             if key not in self._values:
+                # Evict oldest entries if at capacity
+                while len(self._values) >= self.max_entries:
+                    self._values.popitem(last=False)  # Remove oldest (FIFO)
                 self._values[key] = GaugeValue()
+            else:
+                # Move to end to mark as recently used
+                self._values.move_to_end(key)
         self._values[key].set(value)
 
     def get(self, **labels: str) -> float:
@@ -386,6 +643,8 @@ class Gauge:
         with self._lock:
             if key not in self._values:
                 return 0.0
+            # Move to end to mark as recently used
+            self._values.move_to_end(key)
             return self._values[key].get()
 
     def get_all(self) -> Dict[Tuple[str, ...], float]:
@@ -408,6 +667,10 @@ class MetricsRegistry:
     Provides a central place to access all metrics for the OmniMemory system.
     This is a singleton-like registry that holds all metrics instances.
 
+    Thread-safety: Uses double-checked locking pattern to ensure safe initialization
+    across multiple threads. The _initialized flag is checked inside the lock to
+    prevent race conditions during first access.
+
     Example:
         registry = MetricsRegistry()
         registry.memory_operation_total.inc(operation="store", status="success")
@@ -418,19 +681,42 @@ class MetricsRegistry:
     _lock = threading.Lock()
 
     def __new__(cls) -> "MetricsRegistry":
-        """Singleton pattern for metrics registry."""
+        """Singleton pattern for metrics registry with double-checked locking.
+
+        Thread-safety is achieved by:
+        1. Quick check outside lock (fast path for already-initialized case)
+        2. Lock acquisition for creation
+        3. Re-check inside lock (handles race between check and lock acquisition)
+        4. Full initialization inside lock (prevents concurrent initialization)
+        """
+        # Fast path: instance already exists and is initialized
+        if cls._instance is not None and getattr(cls._instance, "_initialized", False):
+            return cls._instance
+
+        # Slow path: need to create or initialize
         with cls._lock:
+            # Double-check after acquiring lock
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance._initialized = False
+
+            # Initialize inside the lock to prevent concurrent initialization
+            if not cls._instance._initialized:
+                cls._instance._do_initialize()
+
             return cls._instance
 
     def __init__(self) -> None:
-        """Initialize metrics registry with all required metrics."""
-        if getattr(self, "_initialized", False):
-            return
-        self._initialized = True
+        """No-op init - all initialization done in __new__ under lock."""
+        # Initialization is done in __new__ to ensure thread safety
+        pass
 
+    def _do_initialize(self) -> None:
+        """Perform actual initialization (called under lock from __new__).
+
+        This method is only called once, under the class lock, ensuring
+        thread-safe initialization of all metrics.
+        """
         # Counter: Total operations by type and status
         self.memory_operation_total = Counter(
             name="memory_operation_total",
@@ -454,6 +740,9 @@ class MetricsRegistry:
             name="handler_health_status",
             label_names=["handler"],
         )
+
+        # Mark as initialized AFTER all metrics are created
+        self._initialized = True
 
     def get_all_metrics(self) -> Dict[str, Dict[str, object]]:
         """Get snapshot of all metrics for reporting."""
@@ -488,9 +777,56 @@ class MetricsRegistry:
 
     @classmethod
     def reset(cls) -> None:
-        """Reset the registry (primarily for testing)."""
+        """Reset the registry by clearing all metrics data (primarily for testing).
+
+        WARNING: This method should only be used in tests. Using it in production
+        code may lead to inconsistent state if other code holds references to
+        metric objects.
+
+        This method clears all data from the existing instance rather than
+        setting _instance to None, which prevents inconsistent state when
+        other code holds references to the old instance.
+        """
+        # Warn if called outside tests (check for common test indicators)
+        import sys
+        import warnings
+
+        in_test = any(
+            "pytest" in module or "unittest" in module or "test" in module.lower()
+            for module in sys.modules
+        )
+        if not in_test:
+            warnings.warn(
+                "MetricsRegistry.reset() called outside of tests. "
+                "This may lead to inconsistent metrics state.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         with cls._lock:
+            if cls._instance is not None and cls._instance._initialized:
+                # Clear all metrics data from the existing instance
+                # This preserves references while resetting state
+                cls._instance._clear_all_metrics()
+
+            # Also reset the instance for fresh initialization on next access
             cls._instance = None
+
+    def _clear_all_metrics(self) -> None:
+        """Clear all data from metrics (called by reset under lock)."""
+        # Clear counter values
+        with self.memory_operation_total._lock:
+            self.memory_operation_total._values.clear()
+
+        # Clear histogram values
+        with self.memory_storage_latency_ms._lock:
+            self.memory_storage_latency_ms._values.clear()
+        with self.memory_retrieval_latency_ms._lock:
+            self.memory_retrieval_latency_ms._values.clear()
+
+        # Clear gauge values
+        with self.handler_health_status._lock:
+            self.handler_health_status._values.clear()
 
 
 # Global metrics registry instance
@@ -664,11 +1000,16 @@ class ObservabilityManager:
         correlation_id = correlation_id_var.get()
 
         # Initialize performance metrics if requested
+        start_memory: Optional[float] = None
         if trace_performance:
-            import psutil
-
-            process = psutil.Process()
-            start_memory = process.memory_info().rss / 1024 / 1024  # MB
+            # Only track memory if psutil is available
+            if _PSUTIL_AVAILABLE and psutil is not None:
+                try:
+                    process = psutil.Process()
+                    start_memory = process.memory_info().rss / 1024 / 1024  # MB
+                except (psutil.Error, OSError):
+                    # Gracefully handle psutil errors (e.g., permission issues)
+                    start_memory = None
 
             metrics = PerformanceMetrics(
                 start_time=time.time(), memory_usage_start=start_memory
@@ -715,13 +1056,19 @@ class ObservabilityManager:
                 metrics.end_time = time.time()
                 metrics.duration = metrics.end_time - metrics.start_time
 
-                if metrics.memory_usage_start:
-                    import psutil
-
-                    process = psutil.Process()
-                    end_memory = process.memory_info().rss / 1024 / 1024  # MB
-                    metrics.memory_usage_end = end_memory
-                    metrics.memory_delta = end_memory - metrics.memory_usage_start
+                if metrics.memory_usage_start is not None:
+                    # Only track memory delta if psutil is available
+                    if _PSUTIL_AVAILABLE and psutil is not None:
+                        try:
+                            process = psutil.Process()
+                            end_memory = process.memory_info().rss / 1024 / 1024  # MB
+                            metrics.memory_usage_end = end_memory
+                            metrics.memory_delta = (
+                                end_memory - metrics.memory_usage_start
+                            )
+                        except (psutil.Error, OSError):
+                            # Gracefully handle psutil errors
+                            pass
 
                 self._logger.info(
                     "operation_completed",
@@ -955,6 +1302,9 @@ class HandlerObservabilityWrapper:
         ```
     """
 
+    # Pattern for valid handler names: alphanumeric, underscore, hyphen, max 64 chars
+    _HANDLER_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
     def __init__(
         self,
         handler_name: str,
@@ -963,9 +1313,31 @@ class HandlerObservabilityWrapper:
         """Initialize the wrapper.
 
         Args:
-            handler_name: Name of the handler (e.g., "filesystem", "postgresql")
+            handler_name: Name of the handler (e.g., "filesystem", "postgresql").
+                         Must be a non-empty string containing only alphanumeric
+                         characters, underscores, and hyphens (max 64 characters).
             registry: Optional metrics registry (defaults to current singleton)
+
+        Raises:
+            ValueError: If handler_name is not a valid string or doesn't match
+                       the required pattern.
         """
+        # Validate handler_name is a non-empty string
+        if not isinstance(handler_name, str):
+            raise ValueError(
+                f"handler_name must be a string, got {type(handler_name).__name__}"
+            )
+
+        if not handler_name:
+            raise ValueError("handler_name must be a non-empty string")
+
+        # Validate handler_name matches safe pattern
+        if not self._HANDLER_NAME_PATTERN.match(handler_name):
+            raise ValueError(
+                f"handler_name must contain only alphanumeric characters, "
+                f"underscores, and hyphens (max 64 characters), got: {handler_name!r}"
+            )
+
         self.handler_name = handler_name
         self._custom_registry = registry
         self._logger = structlog.get_logger(f"omnimemory.handler.{handler_name}")
@@ -1120,15 +1492,32 @@ class HandlerObservabilityWrapper:
         This implements the "one log line" part of the pattern.
         All relevant metrics and context are included in a single event.
 
+        Log Schema (consistent with module-level documentation):
+            Required fields:
+                - correlation_id (str): Unique request correlation identifier
+                - operation (str): Operation name (e.g., "store", "retrieve")
+                - handler (str): Handler name (e.g., "filesystem", "postgresql")
+                - status (str): "success" or "failure"
+                - latency_ms (float): Operation latency in milliseconds
+                - timestamp (str): ISO8601 timestamp (e.g., "2025-01-19T12:34:56.789Z")
+
+            Optional fields (only on failure):
+                - error_type (str): Exception class name
+                - error_message (str): Sanitized error message (PII-safe)
+
         Args:
             metrics: Captured metrics for the operation
         """
+        # Generate ISO8601 timestamp for explicit time tracking
+        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
         log_data: Dict[str, Union[str, float, None]] = {
             "correlation_id": metrics.correlation_id,
             "operation": metrics.operation,
             "handler": metrics.handler,
             "status": metrics.status,
             "latency_ms": round(metrics.latency_ms, 2),
+            "timestamp": timestamp,
         }
 
         if metrics.error_type:
@@ -1157,22 +1546,28 @@ class HandlerObservabilityWrapper:
             Dict containing counter totals, histogram stats, and health status
         """
         # Get all counter values for this handler
+        # Counter label_names are ["operation", "status", "handler"], so handler is at index 2
         all_counters = self.registry.memory_operation_total.get_all()
         handler_counters = {
             k: v
             for k, v in all_counters.items()
-            if self.handler_name in k  # Filter by handler name in key tuple
+            if len(k) > 2 and k[2] == self.handler_name  # Exact match at position 2
         }
 
         # Get histogram stats for this handler
+        # Histogram label_names are ["operation", "handler"], so handler is at index 1
         storage_histograms = self.registry.memory_storage_latency_ms.get_all()
         retrieval_histograms = self.registry.memory_retrieval_latency_ms.get_all()
 
         handler_storage = {
-            k: v for k, v in storage_histograms.items() if self.handler_name in k
+            k: v
+            for k, v in storage_histograms.items()
+            if len(k) > 1 and k[1] == self.handler_name  # Exact match at position 1
         }
         handler_retrieval = {
-            k: v for k, v in retrieval_histograms.items() if self.handler_name in k
+            k: v
+            for k, v in retrieval_histograms.items()
+            if len(k) > 1 and k[1] == self.handler_name  # Exact match at position 1
         }
 
         # Get health status

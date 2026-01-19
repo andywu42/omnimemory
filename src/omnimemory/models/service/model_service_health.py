@@ -4,9 +4,8 @@ Service health model following ONEX standards.
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field
-
 from omnibase_core.enums import EnumHealthStatus
+from pydantic import BaseModel, Field
 
 
 class ModelServiceHealth(BaseModel):

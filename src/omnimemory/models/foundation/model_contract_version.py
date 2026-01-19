@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from .model_semver import ModelSemVer
 
-
 # Default contract version for omnimemory models
 DEFAULT_CONTRACT_VERSION = "1.0.0"
 

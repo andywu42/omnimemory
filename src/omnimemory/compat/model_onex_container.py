@@ -13,9 +13,9 @@ Technical Debt Notes:
 from __future__ import annotations
 
 import inspect
-from typing import Type, TypeVar, Dict, Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional, Type, TypeVar
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ModelOnexContainer:
@@ -94,8 +94,8 @@ class ModelOnexContainer:
             params = sig.parameters
 
             # Check for 'container' parameter
-            if 'container' in params:
-                param = params['container']
+            if "container" in params:
+                param = params["container"]
                 # Only inject if it's a positional/keyword parameter (not *args/**kwargs)
                 if param.kind in (
                     inspect.Parameter.POSITIONAL_OR_KEYWORD,
