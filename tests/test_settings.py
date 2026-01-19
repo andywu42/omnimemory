@@ -16,7 +16,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from omnimemory.models.config import ModelMemoryServiceConfig
+from omnimemory.models.config import (
+    ModelFilesystemConfig,
+    ModelMemoryServiceConfig,
+    ModelPostgresConfig,
+    ModelQdrantConfig,
+)
 from omnimemory.settings import (
     FilesystemSettings,
     PostgresSettings,
@@ -74,8 +79,6 @@ class TestFilesystemSettings:
         settings = FilesystemSettings()
         config = settings.to_config()
 
-        from omnimemory.models.config import ModelFilesystemConfig
-
         assert isinstance(config, ModelFilesystemConfig)
         assert config.base_path == tmp_path
 
@@ -119,8 +122,6 @@ class TestPostgresSettings:
         settings = PostgresSettings()
         config = settings.to_config()
 
-        from omnimemory.models.config import ModelPostgresConfig
-
         assert isinstance(config, ModelPostgresConfig)
 
 
@@ -154,8 +155,6 @@ class TestQdrantSettings:
 
         settings = QdrantSettings()
         config = settings.to_config()
-
-        from omnimemory.models.config import ModelQdrantConfig
 
         assert isinstance(config, ModelQdrantConfig)
 

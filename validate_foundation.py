@@ -15,7 +15,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-# Add src to Python path
+# Add src to Python path for development imports when running as a standalone script.
+# This is required because the package may not be installed in editable mode.
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 

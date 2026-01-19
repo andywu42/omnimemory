@@ -25,8 +25,8 @@ class TestHealthManager:
         assert hm is not None
         assert isinstance(hm.circuit_breakers, dict)
 
-    def test_register_health_check(self) -> None:
-        """Test registering health checks."""
+    def test_register_health_check_adds_to_registry(self) -> None:
+        """Test registering a health check adds it to the health_checks registry."""
         hm = HealthManager()
 
         async def mock_health_check() -> dict[str, str]:
@@ -34,6 +34,8 @@ class TestHealthManager:
 
         hm.register_health_check("database", mock_health_check)
         assert "database" in hm.health_checks
+        # Verify the registered function is the one we provided
+        assert hm.health_checks["database"] is mock_health_check
 
     @pytest.mark.asyncio
     async def test_check_resource_health_success(self) -> None:

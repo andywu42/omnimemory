@@ -4,7 +4,7 @@ Memory service configuration model composing all backend configs.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from omnimemory.models.config.model_filesystem_config import ModelFilesystemConfig
 from omnimemory.models.config.model_postgres_config import ModelPostgresConfig
@@ -21,6 +21,8 @@ class ModelMemoryServiceConfig(BaseModel):
     Phase 1 requires only filesystem. Postgres and Qdrant are optional
     and can be enabled as needed for persistent and vector storage.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Required backend (Phase 1)
     filesystem: ModelFilesystemConfig = Field(

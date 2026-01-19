@@ -5,13 +5,15 @@ Processing metrics model for operation timing and performance tracking.
 from datetime import datetime
 from typing import Dict
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from ..foundation.model_typed_collections import ModelMetadata
 
 
 class ModelProcessingMetrics(BaseModel):
     """Processing metrics for tracking operation timing and performance."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Core timing metrics
     processing_time_ms: float = Field(

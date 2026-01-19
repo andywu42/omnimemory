@@ -9,7 +9,7 @@ that integrate with NodeResult for consistent error handling across the system.
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Use local compatibility stub until omnibase_core provides OnexError
 try:
@@ -105,6 +105,8 @@ class OmniMemoryErrorCode(str, Enum):
 
 class ErrorCategoryInfo(BaseModel):
     """Information about an error category."""
+
+    model_config = ConfigDict(extra="forbid")
 
     prefix: str = Field(description="Error code prefix")
     description: str = Field(description="Category description")
@@ -609,10 +611,17 @@ def create_error_summary(
         Dictionary containing error summary statistics
     """
     if not errors:
-        return {"total_errors": 0}
+        return {
+            "total_errors": 0,
+            "recoverable_errors": 0,
+            "non_recoverable_errors": 0,
+            "error_counts_by_code": {},
+            "error_counts_by_category": {},
+            "recovery_rate": 0.0,
+        }
 
-    error_counts = {}
-    category_counts = {}
+    error_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
     recoverable_count = 0
 
     for error in errors:

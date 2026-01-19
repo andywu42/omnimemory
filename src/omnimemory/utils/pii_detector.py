@@ -15,10 +15,11 @@ __all__ = [
 ]
 
 import re
+import time
 from enum import Enum
-from typing import Dict, List, Optional, Set
+from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PIIType(str, Enum):
@@ -57,6 +58,8 @@ class PIIType(str, Enum):
 class PIIMatch(BaseModel):
     """A detected PII match in content."""
 
+    model_config = ConfigDict(extra="forbid")
+
     pii_type: PIIType = Field(description="Type of PII detected")
     value: str = Field(description="The detected PII value (may be masked)")
     start_index: int = Field(description="Start position in the content")
@@ -68,12 +71,14 @@ class PIIMatch(BaseModel):
 class PIIDetectionResult(BaseModel):
     """Result of PII detection scan."""
 
+    model_config = ConfigDict(extra="forbid")
+
     has_pii: bool = Field(description="Whether any PII was detected")
     matches: List[PIIMatch] = Field(
         default_factory=list, description="List of PII matches found"
     )
     sanitized_content: str = Field(description="Content with PII masked/removed")
-    pii_types_detected: Set[PIIType] = Field(
+    pii_types_detected: set[PIIType] = Field(
         default_factory=set, description="Types of PII found"
     )
     scan_duration_ms: float = Field(
@@ -83,6 +88,8 @@ class PIIDetectionResult(BaseModel):
 
 class PIIDetectorConfig(BaseModel):
     """Configuration for PII detection with extracted magic numbers."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Confidence thresholds
     high_confidence: float = Field(
@@ -124,6 +131,8 @@ class PIIDetectorConfig(BaseModel):
 class PIIPatternConfig(BaseModel):
     """Strongly typed PII pattern configuration replacing Dict[str, Any]."""
 
+    model_config = ConfigDict(extra="forbid")
+
     pattern: str = Field(description="Regex pattern for PII detection")
     confidence: float = Field(
         ge=0.0, le=1.0, description="Base confidence score for matches"
@@ -134,7 +143,7 @@ class PIIPatternConfig(BaseModel):
 class PIIDetector:
     """Advanced PII detection with configurable patterns and sensitivity levels."""
 
-    def __init__(self, config: Optional[PIIDetectorConfig] = None):
+    def __init__(self, config: PIIDetectorConfig | None = None):
         """Initialize PII detector with configurable settings."""
         self.config = config or PIIDetectorConfig()
         self._patterns = self._initialize_patterns()
@@ -173,7 +182,7 @@ class PIIDetector:
         )
         return pattern_parts
 
-    def _initialize_patterns(self) -> Dict[PIIType, List[PIIPatternConfig]]:
+    def _initialize_patterns(self) -> dict[PIIType, list[PIIPatternConfig]]:
         """Initialize regex patterns for different PII types using configuration.
 
         Note: The following PIIType values do NOT have patterns implemented:
@@ -282,7 +291,7 @@ class PIIDetector:
             ],
         }
 
-    def _load_common_names(self) -> Set[str]:
+    def _load_common_names(self) -> set[str]:
         """Load common first and last names for person name detection.
 
         TODO: This name database is loaded but not actively used for detection.
@@ -326,8 +335,6 @@ class PIIDetector:
         Returns:
             PIIDetectionResult with all detected PII and sanitized content
         """
-        import time
-
         start_time = time.time()
 
         # Check content length against configuration limit
@@ -337,8 +344,8 @@ class PIIDetector:
                 f"allowed {self.config.max_text_length}"
             )
 
-        matches: List[PIIMatch] = []
-        pii_types_detected: Set[PIIType] = set()
+        matches: list[PIIMatch] = []
+        pii_types_detected: set[PIIType] = set()
         sanitized_content = content
 
         # Adjust confidence thresholds based on sensitivity using configuration
@@ -397,7 +404,7 @@ class PIIDetector:
             scan_duration_ms=scan_duration_ms,
         )
 
-    def _deduplicate_matches(self, matches: List[PIIMatch]) -> List[PIIMatch]:
+    def _deduplicate_matches(self, matches: list[PIIMatch]) -> list[PIIMatch]:
         """Remove overlapping/duplicate matches, keep highest confidence."""
         if not matches:
             return matches
@@ -405,7 +412,7 @@ class PIIDetector:
         # Sort by start position and confidence
         matches.sort(key=lambda x: (x.start_index, -x.confidence))
 
-        deduplicated: List[PIIMatch] = []
+        deduplicated: list[PIIMatch] = []
         for match in matches:
             # Check if this match overlaps with any existing match
             overlap = False
@@ -422,7 +429,7 @@ class PIIDetector:
 
         return deduplicated
 
-    def _sanitize_content(self, content: str, matches: List[PIIMatch]) -> str:
+    def _sanitize_content(self, content: str, matches: list[PIIMatch]) -> str:
         """Replace PII in content with masked values."""
         # Sort matches by start position in reverse order for proper replacement
         sorted_matches = sorted(matches, key=lambda x: x.start_index, reverse=True)

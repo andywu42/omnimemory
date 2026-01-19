@@ -63,8 +63,8 @@ class AuditEvent(BaseModel):
 
     # Event details
     message: str = Field(description="Human-readable event description")
-    details: AuditEventDetails = Field(
-        default_factory=AuditEventDetails, description="Additional event details"
+    details: AuditEventDetails | None = Field(
+        default=None, description="Additional event details"
     )
 
     # Security context
@@ -185,8 +185,8 @@ class AuditLogger:
             exc_info=None,
         )
 
-        # Attach audit event data
-        record.audit_event = event.model_dump()
+        # Attach audit event data (mode="json" ensures datetime serialization)
+        record.audit_event = event.model_dump(mode="json")
 
         # Log the event
         self.logger.handle(record)
@@ -228,7 +228,7 @@ class AuditLogger:
                 f"Memory {operation_type} "
                 f"{'succeeded' if success else 'failed'} for ID: {memory_id}"
             ),
-            details=details or {},
+            details=details,
             duration_ms=duration_ms,
             user_context=user_context,
         )
@@ -237,13 +237,24 @@ class AuditLogger:
 
     def log_pii_detection(
         self,
-        pii_types: list,
+        pii_types: list[str],
         content_length: int,
         sanitized: bool = False,
         details: AuditEventDetails | None = None,
     ) -> None:
         """Log PII detection event."""
         severity = AuditSeverity.HIGH if pii_types else AuditSeverity.LOW
+
+        # Build AuditEventDetails if not provided, including PII-specific info
+        if details is None:
+            details = AuditEventDetails(
+                operation_type="pii_scan",
+                request_parameters={
+                    "pii_types_detected": ",".join(pii_types),
+                    "content_length": str(content_length),
+                    "sanitized": str(sanitized),
+                },
+            )
 
         event = AuditEvent(
             event_id=self._generate_event_id(),
@@ -260,12 +271,7 @@ class AuditLogger:
                 f"PII detection scan found {len(pii_types)} PII types "
                 f"in {content_length} chars"
             ),
-            details={
-                "pii_types_detected": pii_types,
-                "content_length": content_length,
-                "sanitized": sanitized,
-                **(details or {}),
-            },
+            details=details,
             pii_detected=bool(pii_types),
             sanitized=sanitized,
         )
@@ -281,6 +287,17 @@ class AuditLogger:
         details: AuditEventDetails | None = None,
     ) -> None:
         """Log security violation event."""
+        # Build default AuditEventDetails if not provided
+        if details is None:
+            details = AuditEventDetails(
+                operation_type="security_violation",
+                request_parameters={
+                    "violation_type": violation_type,
+                },
+                error_details=description,
+                ip_address=source_ip,
+            )
+
         event = AuditEvent(
             event_id=self._generate_event_id(),
             timestamp=datetime.now(timezone.utc),
@@ -289,7 +306,7 @@ class AuditLogger:
             operation="security_check",
             component="security_monitor",
             message=f"Security violation: {violation_type} - {description}",
-            details=details or {},
+            details=details,
             source_ip=source_ip,
             user_context=user_context,
         )
@@ -305,6 +322,24 @@ class AuditLogger:
         details: AuditEventDetails | None = None,
     ) -> None:
         """Log configuration change event."""
+        # Redact sensitive values
+        redacted_old = (
+            "***REDACTED***"
+            if old_value and "secret" in config_key.lower()
+            else old_value
+        )
+        redacted_new = "***REDACTED***" if "secret" in config_key.lower() else new_value
+
+        # Build default AuditEventDetails if not provided
+        if details is None:
+            details = AuditEventDetails(
+                operation_type="config_change",
+                resource_id=config_key,
+                resource_type="configuration",
+                old_value=redacted_old,
+                new_value=redacted_new,
+            )
+
         event = AuditEvent(
             event_id=self._generate_event_id(),
             timestamp=datetime.now(timezone.utc),
@@ -313,18 +348,7 @@ class AuditLogger:
             operation="config_update",
             component="config_manager",
             message=f"Configuration changed: {config_key}",
-            details={
-                "config_key": config_key,
-                "old_value": (
-                    "***REDACTED***"
-                    if old_value and "secret" in config_key.lower()
-                    else old_value
-                ),
-                "new_value": (
-                    "***REDACTED***" if "secret" in config_key.lower() else new_value
-                ),
-                **(details or {}),
-            },
+            details=details,
             user_context=user_context,
         )
 

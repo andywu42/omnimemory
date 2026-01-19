@@ -233,23 +233,39 @@ class TestModelPostgresConfig:
             )
         assert "ssl_mode" in str(exc_info.value)
 
-    def test_schema_name_validation(self) -> None:
-        """Test schema_name validates as identifier."""
-        # Valid
-        config = ModelPostgresConfig(
-            dsn="postgresql://user@localhost/db",
-            password=SecretStr("secret"),
-            schema_name="my_schema",
-        )
-        assert config.schema_name == "my_schema"
-
-        # Invalid (not a valid identifier)
-        with pytest.raises(ValidationError):
-            ModelPostgresConfig(
+    def test_schema_name_validation_accepts_valid_identifiers(self) -> None:
+        """Test schema_name accepts valid PostgreSQL identifiers."""
+        valid_names = [
+            "my_schema",
+            "_private_schema",
+            "Schema123",
+            "a",
+            "schema_with_numbers_123",
+        ]
+        for name in valid_names:
+            config = ModelPostgresConfig(
                 dsn="postgresql://user@localhost/db",
                 password=SecretStr("secret"),
-                schema_name="invalid-schema",  # hyphens not allowed
+                schema_name=name,
             )
+            assert config.schema_name == name
+
+    def test_schema_name_validation_rejects_invalid_identifiers(self) -> None:
+        """Test schema_name rejects invalid PostgreSQL identifiers."""
+        invalid_names = [
+            "invalid-schema",  # hyphens not allowed
+            "123_starts_with_number",  # cannot start with digit
+            "has spaces",  # spaces not allowed
+            "has.dot",  # dots not allowed
+            "",  # empty not allowed
+        ]
+        for name in invalid_names:
+            with pytest.raises(ValidationError):
+                ModelPostgresConfig(
+                    dsn="postgresql://user@localhost/db",
+                    password=SecretStr("secret"),
+                    schema_name=name,
+                )
 
 
 class TestModelQdrantConfig:

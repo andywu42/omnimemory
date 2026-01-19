@@ -8,28 +8,41 @@ This module provides models for tracking migration progress across the system:
 - Batch processing support
 """
 
+import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, PrivateAttr, computed_field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 
 from omnimemory.enums import FileProcessingStatus, MigrationPriority, MigrationStatus
 
 from .model_progress_summary import ProgressSummaryResponse
 from .model_typed_collections import ModelConfiguration, ModelMetadata
 
+# === PRE-COMPILED REGEX PATTERNS ===
+# These patterns are compiled once at module load time for optimal performance.
+
+# Pattern to match "ErrorType('message')" or "ErrorType(message)" format
+_ERROR_REPR_PATTERN = re.compile(r"^([A-Z][a-zA-Z0-9_]*)\s*\(")
+
+# Pattern to match exception-like words (Error, Exception, etc.) anywhere in message
+_EXCEPTION_TYPE_PATTERN = re.compile(
+    r"\b([A-Z][a-zA-Z0-9_]*(?:Error|Exception|Warning|Interrupt|Exit|Failure))\b"
+)
+
 
 class BatchProcessingMetrics(BaseModel):
     """Metrics for batch processing operations."""
+
+    model_config = ConfigDict(extra="forbid")
 
     batch_id: str = Field(description="Unique batch identifier")
     batch_size: int = Field(description="Number of items in batch")
     processed_count: int = Field(default=0, description="Number of items processed")
     failed_count: int = Field(default=0, description="Number of items failed")
-    start_time: Optional[datetime] = Field(default=None, description="Batch start time")
-    end_time: Optional[datetime] = Field(default=None, description="Batch end time")
-    error_messages: List[str] = Field(
+    start_time: datetime | None = Field(default=None, description="Batch start time")
+    end_time: datetime | None = Field(default=None, description="Batch end time")
+    error_messages: list[str] = Field(
         default_factory=list, description="Error messages"
     )
 
@@ -43,7 +56,7 @@ class BatchProcessingMetrics(BaseModel):
 
     @computed_field
     @property
-    def duration(self) -> Optional[timedelta]:
+    def duration(self) -> timedelta | None:
         """Calculate batch processing duration."""
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
@@ -53,27 +66,27 @@ class BatchProcessingMetrics(BaseModel):
 class FileProcessingInfo(BaseModel):
     """Information about individual file processing."""
 
+    model_config = ConfigDict(extra="forbid")
+
     file_path: str = Field(description="Path to the file being processed")
-    file_size: Optional[int] = Field(default=None, description="File size in bytes")
+    file_size: int | None = Field(default=None, description="File size in bytes")
     status: FileProcessingStatus = Field(default=FileProcessingStatus.PENDING)
-    start_time: Optional[datetime] = Field(
+    start_time: datetime | None = Field(
         default=None, description="Processing start time"
     )
-    end_time: Optional[datetime] = Field(
-        default=None, description="Processing end time"
-    )
-    error_message: Optional[str] = Field(
+    end_time: datetime | None = Field(default=None, description="Processing end time")
+    error_message: str | None = Field(
         default=None, description="Error message if failed"
     )
     retry_count: int = Field(default=0, description="Number of retry attempts")
-    batch_id: Optional[str] = Field(default=None, description="Associated batch ID")
+    batch_id: str | None = Field(default=None, description="Associated batch ID")
     metadata: ModelMetadata = Field(
         default_factory=ModelMetadata, description="Additional file metadata"
     )
 
     @computed_field
     @property
-    def processing_duration(self) -> Optional[timedelta]:
+    def processing_duration(self) -> timedelta | None:
         """Calculate file processing duration."""
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
@@ -83,12 +96,14 @@ class FileProcessingInfo(BaseModel):
 class MigrationProgressMetrics(BaseModel):
     """Comprehensive metrics for migration progress tracking."""
 
+    model_config = ConfigDict(extra="forbid")
+
     total_files: int = Field(description="Total number of files to process")
     processed_files: int = Field(default=0, description="Number of files processed")
     failed_files: int = Field(default=0, description="Number of files failed")
     skipped_files: int = Field(default=0, description="Number of files skipped")
 
-    total_size_bytes: Optional[int] = Field(
+    total_size_bytes: int | None = Field(
         default=None, description="Total size of all files"
     )
     processed_size_bytes: int = Field(default=0, description="Size of processed files")
@@ -101,7 +116,7 @@ class MigrationProgressMetrics(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Last update time",
     )
-    estimated_completion: Optional[datetime] = Field(
+    estimated_completion: datetime | None = Field(
         default=None, description="Estimated completion time"
     )
 
@@ -112,18 +127,18 @@ class MigrationProgressMetrics(BaseModel):
         default=0.0, description="Processing rate in bytes per second"
     )
 
-    current_batch: Optional[str] = Field(
+    current_batch: str | None = Field(
         default=None, description="Current batch being processed"
     )
-    batch_metrics: List[BatchProcessingMetrics] = Field(
+    batch_metrics: list[BatchProcessingMetrics] = Field(
         default_factory=list, description="Batch processing metrics"
     )
 
     # Performance optimization: Cache expensive calculations
     # (using PrivateAttr for underscore names)
-    _cached_completion_percentage: Optional[float] = PrivateAttr(default=None)
-    _cached_success_rate: Optional[float] = PrivateAttr(default=None)
-    _cache_invalidated_at: Optional[datetime] = PrivateAttr(default=None)
+    _cached_completion_percentage: float | None = PrivateAttr(default=None)
+    _cached_success_rate: float | None = PrivateAttr(default=None)
+    _cache_invalidated_at: datetime | None = PrivateAttr(default=None)
     _cache_ttl_seconds: int = PrivateAttr(default=60)
 
     @computed_field
@@ -181,7 +196,7 @@ class MigrationProgressMetrics(BaseModel):
             self.files_per_second = self.processed_files / elapsed_seconds
             self.bytes_per_second = self.processed_size_bytes / elapsed_seconds
 
-    def estimate_completion_time(self) -> Optional[datetime]:
+    def estimate_completion_time(self) -> datetime | None:
         """Estimate completion time based on current processing rate."""
         if self.files_per_second <= 0 or self.remaining_files <= 0:
             return None
@@ -220,6 +235,8 @@ class MigrationProgressTracker(BaseModel):
     - Error tracking and recovery
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     migration_id: UUID = Field(
         default_factory=uuid4, description="Unique migration identifier"
     )
@@ -232,11 +249,11 @@ class MigrationProgressTracker(BaseModel):
     )
 
     metrics: MigrationProgressMetrics = Field(description="Progress metrics")
-    files: List[FileProcessingInfo] = Field(
+    files: list[FileProcessingInfo] = Field(
         default_factory=list, description="File processing information"
     )
 
-    error_summary: Dict[str, int] = Field(
+    error_summary: dict[str, int] = Field(
         default_factory=dict, description="Error count by type"
     )
     recovery_attempts: int = Field(default=0, description="Number of recovery attempts")
@@ -258,7 +275,7 @@ class MigrationProgressTracker(BaseModel):
     )
 
     def add_file(
-        self, file_path: str, file_size: Optional[int] = None, **metadata
+        self, file_path: str, file_size: int | None = None, **metadata
     ) -> FileProcessingInfo:
         """Add a file to be tracked for processing."""
         from .model_typed_collections import ModelKeyValuePair
@@ -285,7 +302,7 @@ class MigrationProgressTracker(BaseModel):
         return file_info
 
     def start_file_processing(
-        self, file_path: str, batch_id: Optional[str] = None
+        self, file_path: str, batch_id: str | None = None
     ) -> bool:
         """Mark a file as started processing."""
         file_info = self._find_file(file_path)
@@ -298,7 +315,7 @@ class MigrationProgressTracker(BaseModel):
         return False
 
     def complete_file_processing(
-        self, file_path: str, success: bool = True, error_message: Optional[str] = None
+        self, file_path: str, success: bool = True, error_message: str | None = None
     ):
         """Mark a file as completed processing."""
         file_info = self._find_file(file_path)
@@ -315,36 +332,9 @@ class MigrationProgressTracker(BaseModel):
                 file_info.error_message = error_message
                 self.metrics.failed_files += 1
 
-                # Track error types - extract from message format "ErrorType: message"
+                # Track error types - extract from various error message formats
                 if error_message:
-                    # Try to extract error type from "ErrorType: message" format
-                    error_type = "UnknownError"
-                    if ": " in error_message:
-                        potential_type = error_message.split(": ", 1)[0]
-                        # Validate it looks like an actual error class name:
-                        # - PascalCase (starts uppercase, contains lowercase)
-                        # - Alphanumeric (may contain underscores)
-                        # - Reasonable length (5+ chars to exclude "HTTP", "GET")
-                        # - Common endings: Error, Exception, Warning, Interrupt, Exit
-                        is_pascal_case = (
-                            potential_type
-                            and potential_type[0].isupper()
-                            and any(c.islower() for c in potential_type)
-                        )
-                        is_valid_identifier = (
-                            potential_type.replace("_", "").isalnum()
-                            if potential_type
-                            else False
-                        )
-                        is_reasonable_length = (
-                            len(potential_type) >= 5 if potential_type else False
-                        )
-                        if (
-                            is_pascal_case
-                            and is_valid_identifier
-                            and is_reasonable_length
-                        ):
-                            error_type = potential_type
+                    error_type = self._extract_error_type(error_message)
                     self.error_summary[error_type] = (
                         self.error_summary.get(error_type, 0) + 1
                     )
@@ -417,11 +407,11 @@ class MigrationProgressTracker(BaseModel):
             },
         )
 
-    def _find_file(self, file_path: str) -> Optional[FileProcessingInfo]:
+    def _find_file(self, file_path: str) -> FileProcessingInfo | None:
         """Find file info by path."""
         return next((f for f in self.files if f.file_path == file_path), None)
 
-    def _find_batch(self, batch_id: str) -> Optional[BatchProcessingMetrics]:
+    def _find_batch(self, batch_id: str) -> BatchProcessingMetrics | None:
         """Find batch metrics by ID."""
         return next(
             (b for b in self.metrics.batch_metrics if b.batch_id == batch_id), None
@@ -440,7 +430,131 @@ class MigrationProgressTracker(BaseModel):
         """Update the last modified timestamp."""
         self.updated_at = datetime.now(timezone.utc)
 
-    def retry_failed_files(self, max_retries: int = 3) -> List[FileProcessingInfo]:
+    def _extract_error_type(self, error_message: str) -> str:
+        """
+        Extract the error type from an error message.
+
+        Handles multiple formats:
+        - "ErrorType: message" (standard format)
+        - "ErrorType('message')" or "ErrorType(message)" (repr format)
+        - Messages containing exception class names anywhere
+
+        Returns the extracted error type or "UnknownError" if extraction fails.
+        """
+        if not error_message or not error_message.strip():
+            return "UnknownError"
+
+        error_message = error_message.strip()
+
+        def _is_valid_error_type(candidate: str) -> bool:
+            """Validate that a candidate looks like an exception class name."""
+            if not candidate or len(candidate) < 3:
+                return False
+            # Must start with uppercase
+            if not candidate[0].isupper():
+                return False
+            # Must contain at least one lowercase letter (PascalCase)
+            if not any(c.islower() for c in candidate):
+                return False
+            # Must be alphanumeric (with underscores allowed)
+            if not candidate.replace("_", "").isalnum():
+                return False
+            # Should end with common exception suffixes or be a known type
+            common_suffixes = (
+                "Error",
+                "Exception",
+                "Warning",
+                "Interrupt",
+                "Exit",
+                "Failure",
+            )
+            known_types = (
+                "KeyboardInterrupt",
+                "SystemExit",
+                "StopIteration",
+                "GeneratorExit",
+            )
+            return candidate.endswith(common_suffixes) or candidate in known_types
+
+        # Pattern 1: "ErrorType: message" format (most common)
+        if ": " in error_message:
+            potential_type = error_message.split(": ", 1)[0].strip()
+            # Handle multi-part prefixes like "module.ErrorType"
+            if "." in potential_type:
+                potential_type = potential_type.rsplit(".", 1)[-1]
+            if _is_valid_error_type(potential_type):
+                return potential_type
+
+        # Pattern 2: "ErrorType('message')" or "ErrorType(message)" (repr format)
+        repr_match = _ERROR_REPR_PATTERN.match(error_message)
+        if repr_match:
+            potential_type = repr_match.group(1)
+            if _is_valid_error_type(potential_type):
+                return potential_type
+
+        # Pattern 3: Search for exception-like words anywhere in the message
+        # Look for words ending in Error, Exception, etc.
+        matches = _EXCEPTION_TYPE_PATTERN.findall(error_message)
+        for match in matches:
+            if _is_valid_error_type(match):
+                return match
+
+        # Pattern 4: Check for known built-in exception types without suffix
+        known_builtins = (
+            "KeyboardInterrupt",
+            "SystemExit",
+            "StopIteration",
+            "GeneratorExit",
+            "AssertionError",
+            "AttributeError",
+            "EOFError",
+            "FloatingPointError",
+            "ImportError",
+            "IndexError",
+            "KeyError",
+            "MemoryError",
+            "NameError",
+            "NotImplementedError",
+            "OSError",
+            "OverflowError",
+            "RecursionError",
+            "ReferenceError",
+            "RuntimeError",
+            "SyntaxError",
+            "IndentationError",
+            "TabError",
+            "TypeError",
+            "UnboundLocalError",
+            "UnicodeError",
+            "UnicodeEncodeError",
+            "UnicodeDecodeError",
+            "UnicodeTranslateError",
+            "ValueError",
+            "ZeroDivisionError",
+            "BlockingIOError",
+            "BrokenPipeError",
+            "ChildProcessError",
+            "ConnectionError",
+            "ConnectionAbortedError",
+            "ConnectionRefusedError",
+            "ConnectionResetError",
+            "FileExistsError",
+            "FileNotFoundError",
+            "InterruptedError",
+            "IsADirectoryError",
+            "NotADirectoryError",
+            "PermissionError",
+            "ProcessLookupError",
+            "TimeoutError",
+            "ModuleNotFoundError",
+        )
+        for builtin in known_builtins:
+            if builtin in error_message:
+                return builtin
+
+        return "UnknownError"
+
+    def retry_failed_files(self, max_retries: int = 3) -> list[FileProcessingInfo]:
         """Get list of failed files that can be retried."""
         retryable_files = []
         for file_info in self.files:

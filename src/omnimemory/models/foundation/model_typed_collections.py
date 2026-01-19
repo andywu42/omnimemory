@@ -13,7 +13,7 @@ All models follow ONEX standards with:
 
 from __future__ import annotations
 
-from typing import Iterator, List, Optional
+from typing import Iterator, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -76,13 +76,13 @@ class ModelOptionalStringList(BaseModel):
         str_strip_whitespace=True, validate_assignment=True, extra="forbid"
     )
 
-    values: Optional[List[str]] = Field(
+    values: List[str] | None = Field(
         default=None, description="Optional list of string values, None if not set"
     )
 
     @field_validator("values")
     @classmethod
-    def validate_optional_strings(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_optional_strings(cls, v: List[str] | None) -> List[str] | None:
         """Validate optional string values."""
         if v is None:
             return None
@@ -186,7 +186,7 @@ class ModelMetadata(BaseModel):
         default_factory=list, description="List of key-value pairs for metadata storage"
     )
 
-    def get_value(self, key: str) -> Optional[str]:
+    def get_value(self, key: str) -> str | None:
         """Get metadata value by key."""
         for pair in self.pairs:
             if pair.key == key:
@@ -257,7 +257,7 @@ class ModelStructuredData(BaseModel):
         default="1.0", description="Schema version for compatibility tracking"
     )
 
-    def get_field_value(self, name: str) -> Optional[str]:
+    def get_field_value(self, name: str) -> str | None:
         """Get field value by name."""
         for field in self.fields:
             if field.name == name:
@@ -292,7 +292,7 @@ class ModelConfigurationOption(BaseModel):
 
     key: str = Field(description="Configuration option key")
     value: str = Field(description="Configuration option value")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None, description="Option description for documentation"
     )
     is_sensitive: bool = Field(
@@ -317,7 +317,7 @@ class ModelConfiguration(BaseModel):
         default_factory=list, description="List of configuration options with metadata"
     )
 
-    def get_option(self, key: str) -> Optional[str]:
+    def get_option(self, key: str) -> str | None:
         """Get configuration option value by key."""
         for option in self.options:
             if option.key == key:
@@ -328,7 +328,7 @@ class ModelConfiguration(BaseModel):
         self,
         key: str,
         value: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         is_sensitive: bool = False,
     ) -> None:
         """Set configuration option with metadata."""
@@ -368,7 +368,7 @@ class ModelEventData(BaseModel):
         description="Event severity level (debug, info, warning, error, critical)",
     )
     message: str = Field(description="Human-readable event message")
-    correlation_id: Optional[str] = Field(
+    correlation_id: str | None = Field(
         default=None, description="Correlation ID for tracking related events"
     )
 
@@ -406,7 +406,7 @@ class ModelEventCollection(BaseModel):
         source: str,
         message: str,
         severity: str = "info",
-        correlation_id: Optional[str] = None,
+        correlation_id: str | None = None,
     ) -> None:
         """Add a new event to the collection."""
         event = ModelEventData(
@@ -443,7 +443,7 @@ class ModelResultItem(BaseModel):
         description="Status of this specific item (success, failure, pending)"
     )
     message: str = Field(description="Human-readable message about this item")
-    data: Optional[ModelStructuredData] = Field(
+    data: ModelStructuredData | None = Field(
         default=None, description="Structured data associated with this item"
     )
 
@@ -472,7 +472,7 @@ class ModelResultCollection(BaseModel):
         id: str,
         status: str,
         message: str,
-        data: Optional[ModelStructuredData] = None,
+        data: ModelStructuredData | None = None,
     ) -> None:
         """Add a new result to the collection."""
         result = ModelResultItem(id=id, status=status, message=message, data=data)

@@ -4,7 +4,7 @@ Qdrant vector storage configuration model following ONEX standards.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, HttpUrl, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator
 
 
 class ModelQdrantConfig(BaseModel):
@@ -13,6 +13,8 @@ class ModelQdrantConfig(BaseModel):
     This config defines connection parameters for Qdrant-based
     vector memory storage. Optional for Phase 1.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Connection configuration
     url: HttpUrl = Field(

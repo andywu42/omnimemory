@@ -4,7 +4,16 @@ PostgreSQL storage configuration model following ONEX standards.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, PostgresDsn, SecretStr, field_validator
+import re
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PostgresDsn,
+    SecretStr,
+    field_validator,
+)
 
 
 class ModelPostgresConfig(BaseModel):
@@ -13,6 +22,8 @@ class ModelPostgresConfig(BaseModel):
     This config defines connection parameters for PostgreSQL-based
     persistent memory storage. Optional for Phase 1.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Connection configuration
     dsn: PostgresDsn = Field(
@@ -92,9 +103,24 @@ class ModelPostgresConfig(BaseModel):
     @field_validator("schema_name")
     @classmethod
     def validate_schema_name(cls, v: str) -> str:
-        """Validate schema name is a valid PostgreSQL identifier."""
-        if not v.isidentifier():
-            raise ValueError("schema_name must be a valid identifier")
+        """Validate schema name is a valid PostgreSQL identifier.
+
+        PostgreSQL schema names must:
+        - Start with a letter or underscore
+        - Contain only letters, digits, and underscores
+        - Be at most 63 characters
+
+        Note: PostgreSQL supports more characters with quoting, but we
+        enforce this subset for safer unquoted usage.
+        """
+        if not v:
+            raise ValueError("schema_name cannot be empty")
         if len(v) > 63:
             raise ValueError("schema_name cannot exceed 63 characters")
+        # PostgreSQL identifier rules: start with letter/underscore
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                "schema_name must start with a letter or underscore and contain "
+                "only letters, digits, and underscores"
+            )
         return v

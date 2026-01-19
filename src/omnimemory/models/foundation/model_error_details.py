@@ -7,7 +7,7 @@ Uses the standard ONEX error patterns from omnibase_core when available.
 from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Import standard ONEX error types from omnibase_core
 try:
@@ -28,6 +28,8 @@ except ImportError:
 
 class ModelErrorDetails(BaseModel):
     """Error details model following ONEX standards with omnibase_core integration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Error identification
     error_id: UUID = Field(

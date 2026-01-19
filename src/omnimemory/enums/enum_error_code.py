@@ -6,6 +6,14 @@ All general error codes are imported from omnibase_core.core.errors.core_errors
 when available.
 """
 
+import re
+
+# === PRE-COMPILED REGEX PATTERNS ===
+# These patterns are compiled once at module load time for optimal performance.
+
+# Pattern to extract error code number from OmniMemory error codes
+_ERROR_CODE_NUMBER_PATTERN = re.compile(r"ONEX_OMNIMEMORY_(\d+)_")
+
 try:
     from omnibase_core.core.errors.core_errors import OnexErrorCode
 except ImportError:
@@ -69,9 +77,7 @@ class OmniMemoryErrorCode(OnexErrorCode):
 
     def get_number(self) -> int:
         """Get the numeric identifier for this error code."""
-        import re
-
-        match = re.search(r"ONEX_OMNIMEMORY_(\d+)_", self.value)
+        match = _ERROR_CODE_NUMBER_PATTERN.search(self.value)
         return int(match.group(1)) if match else 0
 
     def get_description(self) -> str:

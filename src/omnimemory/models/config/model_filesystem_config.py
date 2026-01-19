@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModelFilesystemConfig(BaseModel):
@@ -15,6 +15,8 @@ class ModelFilesystemConfig(BaseModel):
     This config defines how OmniMemory stores and retrieves memory files
     from the local filesystem. It is the required storage backend for Phase 1.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Path configuration
     base_path: Path = Field(

@@ -5,11 +5,28 @@ Semantic version model following ONEX standards.
 import re
 from typing import Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# === PRE-COMPILED REGEX PATTERNS ===
+# These patterns are compiled once at module load time for optimal performance.
+
+# Pattern for validating pre-release and build metadata identifiers
+_SEMVER_IDENTIFIER_PATTERN = re.compile(r"^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$")
+
+# Pattern for parsing semantic version strings
+_SEMVER_PARSE_PATTERN = re.compile(
+    r"^(?P<major>0|[1-9]\d*)\."
+    r"(?P<minor>0|[1-9]\d*)\."
+    r"(?P<patch>0|[1-9]\d*)"
+    r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+(?P<buildmetadata>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
 
 
 class ModelSemVer(BaseModel):
     """Semantic version model following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     major: int = Field(
         ge=0,
@@ -38,7 +55,7 @@ class ModelSemVer(BaseModel):
         """Validate pre-release identifier format."""
         if v is None:
             return v
-        if not re.match(r"^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$", v):
+        if not _SEMVER_IDENTIFIER_PATTERN.match(v):
             raise ValueError("Invalid pre-release identifier format")
         return v
 
@@ -48,7 +65,7 @@ class ModelSemVer(BaseModel):
         """Validate build metadata identifier format."""
         if v is None:
             return v
-        if not re.match(r"^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$", v):
+        if not _SEMVER_IDENTIFIER_PATTERN.match(v):
             raise ValueError("Invalid build metadata identifier format")
         return v
 
@@ -109,16 +126,7 @@ class ModelSemVer(BaseModel):
     @classmethod
     def from_string(cls, version_string: str) -> Self:
         """Create ModelSemVer from string representation."""
-        # Regular expression to match semantic version
-        pattern = (
-            r"^(?P<major>0|[1-9]\d*)\."
-            r"(?P<minor>0|[1-9]\d*)\."
-            r"(?P<patch>0|[1-9]\d*)"
-            r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-            r"(?:\+(?P<buildmetadata>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
-        )
-
-        match = re.match(pattern, version_string.strip())
+        match = _SEMVER_PARSE_PATTERN.match(version_string.strip())
         if not match:
             raise ValueError(f"Invalid semantic version format: {version_string}")
 

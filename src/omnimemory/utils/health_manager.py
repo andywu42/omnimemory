@@ -15,7 +15,7 @@ import os
 import time
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Awaitable, Callable, Dict, List, Optional, Union
+from typing import Awaitable, Callable
 
 import psutil
 import structlog
@@ -39,7 +39,11 @@ from .resource_manager import AsyncCircuitBreaker, CircuitBreakerConfig
 
 
 class RateLimiter:
-    """Simple rate limiter for API endpoints."""
+    """Simple rate limiter for API endpoints with automatic cleanup."""
+
+    # Configuration for cleanup
+    _MAX_IDENTIFIERS = 10000  # Maximum identifiers before forced cleanup
+    _CLEANUP_INTERVAL_SECONDS = 300  # Cleanup every 5 minutes
 
     def __init__(self, max_requests: int = 100, window_seconds: int = 60):
         """
@@ -51,8 +55,9 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._requests: Dict[str, List[float]] = {}
+        self._requests: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
+        self._last_cleanup_time: float = time.time()
 
     async def is_allowed(self, identifier: str) -> bool:
         """
@@ -66,6 +71,9 @@ class RateLimiter:
         """
         async with self._lock:
             current_time = time.time()
+
+            # Periodic cleanup of stale identifiers to prevent memory growth
+            await self._cleanup_stale_identifiers_locked(current_time)
 
             # Initialize or get existing requests list
             if identifier not in self._requests:
@@ -86,6 +94,47 @@ class RateLimiter:
             # Add current request
             self._requests[identifier].append(current_time)
             return True
+
+    async def _cleanup_stale_identifiers_locked(self, current_time: float) -> None:
+        """
+        Clean up stale identifiers to prevent memory growth.
+
+        Must be called while holding _lock. Removes identifiers with no
+        requests in the current window.
+        """
+        # Check if cleanup is needed (time-based or count-based)
+        time_since_cleanup = current_time - self._last_cleanup_time
+        should_cleanup = (
+            time_since_cleanup >= self._CLEANUP_INTERVAL_SECONDS
+            or len(self._requests) > self._MAX_IDENTIFIERS
+        )
+
+        if not should_cleanup:
+            return
+
+        cutoff_time = current_time - self.window_seconds
+        identifiers_to_remove = []
+
+        for identifier, timestamps in self._requests.items():
+            # Filter timestamps and check if any remain
+            active_timestamps = [t for t in timestamps if t > cutoff_time]
+            if not active_timestamps:
+                identifiers_to_remove.append(identifier)
+            else:
+                self._requests[identifier] = active_timestamps
+
+        # Remove stale identifiers
+        for identifier in identifiers_to_remove:
+            del self._requests[identifier]
+
+        self._last_cleanup_time = current_time
+
+        if identifiers_to_remove:
+            logger.debug(
+                "rate_limiter_cleanup",
+                removed_identifiers=len(identifiers_to_remove),
+                remaining_identifiers=len(self._requests),
+            )
 
 
 def _sanitize_error(error: Exception) -> str:
@@ -165,24 +214,28 @@ class DependencyType(Enum):
 class HealthCheckConfig(BaseModel):
     """Configuration for individual health checks."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(description="Dependency name")
     dependency_type: DependencyType = Field(description="Type of dependency")
     timeout: float = Field(default=5.0, description="Health check timeout in seconds")
     critical: bool = Field(
         default=True, description="Whether failure affects overall health"
     )
-    circuit_breaker_config: Optional[CircuitBreakerConfig] = Field(default=None)
+    circuit_breaker_config: CircuitBreakerConfig | None = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
 
 class HealthCheckResult(BaseModel):
     """Result of an individual health check."""
 
+    model_config = ConfigDict(extra="forbid")
+
     config: HealthCheckConfig = Field(description="Health check configuration")
     status: HealthStatus = Field(description="Health status")
     latency_ms: float = Field(description="Check latency in milliseconds")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    error_message: Optional[str] = Field(default=None)
+    error_message: str | None = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
     def to_dependency_status(self) -> ModelDependencyStatus:
@@ -208,10 +261,10 @@ class HealthCheckManager:
     """
 
     def __init__(self):
-        self._health_checks: Dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
-        self._configs: Dict[str, HealthCheckConfig] = {}
-        self._circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
-        self._last_results: Dict[str, HealthCheckResult] = {}
+        self._health_checks: dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
+        self._configs: dict[str, HealthCheckConfig] = {}
+        self._circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
+        self._last_results: dict[str, HealthCheckResult] = {}
         self._results_lock = asyncio.Lock()  # Prevent race conditions on metric updates
         self._rate_limiter = RateLimiter(
             max_requests=30, window_seconds=60
@@ -348,7 +401,7 @@ class HealthCheckManager:
 
                     return result
 
-    async def check_all_dependencies(self) -> List[HealthCheckResult]:
+    async def check_all_dependencies(self) -> list[HealthCheckResult]:
         """
         Perform health checks for all registered dependencies.
 
@@ -356,7 +409,7 @@ class HealthCheckManager:
         individual dependency failures don't crash the overall health check.
 
         Returns:
-            List[HealthCheckResult]: Results for all dependencies
+            list[HealthCheckResult]: Results for all dependencies
         """
         if not self._health_checks:
             return []
@@ -430,8 +483,12 @@ class HealthCheckManager:
             memory = psutil.virtual_memory()
             memory_mb = memory.used / 1024 / 1024
 
-            # Get disk usage for root partition
-            disk = psutil.disk_usage("/")
+            # Get disk usage using platform-agnostic path
+            # Uses home directory which exists on all platforms (Windows, Linux, macOS)
+            from pathlib import Path
+
+            disk_path = str(Path.home())
+            disk = psutil.disk_usage(disk_path)
             disk_percent = disk.percent
 
             # Get network stats (simplified)
@@ -465,13 +522,13 @@ class HealthCheckManager:
             )
 
     def calculate_overall_status(
-        self, results: List[HealthCheckResult]
+        self, results: list[HealthCheckResult]
     ) -> HealthStatus:
         """
         Calculate overall system health based on dependency results.
 
         Args:
-            results: List of health check results
+            results: list of health check results
 
         Returns:
             HealthStatus: Overall system health status
@@ -679,39 +736,123 @@ async def create_redis_health_check(
 
 
 async def create_pinecone_health_check(
-    api_key: str, environment: str
+    api_key: str | None = None, environment: str | None = None
 ) -> Callable[[], Awaitable[HealthCheckResult]]:
-    """Create a Pinecone health check function."""
+    """Create a Pinecone health check function.
+
+    Args:
+        api_key: Pinecone API key. If None, check is skipped with UNKNOWN status.
+        environment: Pinecone environment/region.
+
+    Returns:
+        Async function that performs the Pinecone health check.
+    """
 
     async def check_pinecone() -> HealthCheckResult:
         config = HealthCheckConfig(
             name="pinecone", dependency_type=DependencyType.VECTOR_DB
         )
 
+        # If Pinecone is not configured, return UNKNOWN status
+        if not api_key:
+            return HealthCheckResult(
+                config=config,
+                status=HealthStatus.UNKNOWN,
+                latency_ms=0.0,
+                error_message="Pinecone not configured (no API key provided)",
+                metadata=HealthCheckMetadata(
+                    extra={"configured": "false", "reason": "missing_api_key"}
+                ),
+            )
+
         try:
-            # Simple connection test - this would need to be adapted
-            # based on Pinecone client
-            # For now, return healthy as a placeholder
+            # Import Pinecone client
+            try:
+                from pinecone import Pinecone
+            except ImportError:
+                return HealthCheckResult(
+                    config=config,
+                    status=HealthStatus.UNKNOWN,
+                    latency_ms=0.0,
+                    error_message="Pinecone client not installed",
+                    metadata=HealthCheckMetadata(
+                        extra={"configured": "false", "reason": "package_not_installed"}
+                    ),
+                )
+
+            # Initialize Pinecone client and attempt to list indexes
+            # This validates both API key and connectivity
+            start_time = time.time()
+
+            # Run the synchronous Pinecone call in a thread pool with timeout
+            loop = asyncio.get_event_loop()
+
+            async def _check_with_timeout() -> list[str]:
+                def _sync_check() -> list[str]:
+                    pc = Pinecone(api_key=api_key)
+                    # List indexes validates API key and connectivity
+                    indexes = pc.list_indexes()
+                    return [idx.name for idx in indexes]
+
+                return await loop.run_in_executor(None, _sync_check)
+
+            # Apply timeout (5 seconds default for health checks)
+            index_names = await asyncio.wait_for(_check_with_timeout(), timeout=5.0)
+
+            latency_ms = (time.time() - start_time) * 1000
+
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.HEALTHY,
-                latency_ms=0.0,
-                metadata={"environment": environment},
+                latency_ms=latency_ms,
+                metadata=HealthCheckMetadata(
+                    extra={
+                        "environment": environment or "default",
+                        "index_count": str(len(index_names)),
+                        "indexes": ",".join(index_names[:5]),  # First 5 indexes
+                    }
+                ),
             )
-        except Exception as e:
+
+        except asyncio.TimeoutError:
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
-                latency_ms=0.0,
-                error_message=_sanitize_error(e),
+                latency_ms=5000.0,  # Timeout value
+                error_message="Pinecone health check timed out after 5s",
             )
+        except Exception as e:
+            error_msg = _sanitize_error(e)
+            # Check for common Pinecone errors
+            error_str = str(e).lower()
+            if "unauthorized" in error_str or "invalid api key" in error_str:
+                return HealthCheckResult(
+                    config=config,
+                    status=HealthStatus.UNHEALTHY,
+                    latency_ms=0.0,
+                    error_message="Pinecone authentication failed (invalid API key)",
+                )
+            elif "connection" in error_str or "network" in error_str:
+                return HealthCheckResult(
+                    config=config,
+                    status=HealthStatus.DEGRADED,
+                    latency_ms=0.0,
+                    error_message=f"Pinecone connection issue: {error_msg}",
+                )
+            else:
+                return HealthCheckResult(
+                    config=config,
+                    status=HealthStatus.UNHEALTHY,
+                    latency_ms=0.0,
+                    error_message=error_msg,
+                )
 
     return check_pinecone
 
 
-# Type alias for health check result values - replaces Dict[str, Any]
-HealthCheckResultValue = Union[str, int, float, bool, None]
-HealthCheckResultDict = Dict[str, HealthCheckResultValue]
+# Type alias for health check result values - replaces dict[str, Any]
+HealthCheckResultValue = str | int | float | bool | None
+HealthCheckResultDict = dict[str, HealthCheckResultValue]
 
 
 # === TEST-COMPATIBLE INTERFACES ===
@@ -724,41 +865,43 @@ class HealthCheckDetails(BaseModel):
     Includes rate-limit and circuit state tracking.
     """
 
-    message: Optional[str] = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    message: str | None = Field(
         default=None, description="Human-readable status message"
     )
-    error: Optional[str] = Field(default=None, description="Error message if unhealthy")
-    version: Optional[str] = Field(default=None, description="Service version")
-    connection_url: Optional[str] = Field(default=None, description="Connection URL")
-    last_check: Optional[str] = Field(default=None, description="Last check timestamp")
-    latency_ms: Optional[float] = Field(
+    error: str | None = Field(default=None, description="Error message if unhealthy")
+    version: str | None = Field(default=None, description="Service version")
+    connection_url: str | None = Field(default=None, description="Connection URL")
+    last_check: str | None = Field(default=None, description="Last check timestamp")
+    latency_ms: float | None = Field(
         default=None, description="Latency in milliseconds"
     )
     # Rate limiting state
     rate_limit_active: bool = Field(
         default=False, description="Whether rate limiting is currently active"
     )
-    rate_limit_remaining: Optional[int] = Field(
+    rate_limit_remaining: int | None = Field(
         default=None, description="Remaining requests in current window"
     )
-    rate_limit_reset_time: Optional[float] = Field(
+    rate_limit_reset_time: float | None = Field(
         default=None, description="Time when rate limit resets (epoch)"
     )
     # Circuit breaker state
     circuit_open: bool = Field(
         default=False, description="Whether circuit breaker is open"
     )
-    circuit_state: Optional[str] = Field(
+    circuit_state: str | None = Field(
         default=None, description="Current circuit breaker state"
     )
-    circuit_failure_count: Optional[int] = Field(
+    circuit_failure_count: int | None = Field(
         default=None, description="Number of failures recorded"
     )
     # Result details
-    result_type: Optional[str] = Field(
+    result_type: str | None = Field(
         default=None, description="Type of result (success/error/timeout)"
     )
-    extra: Dict[str, str] = Field(
+    extra: dict[str, str] = Field(
         default_factory=dict, description="Additional string details"
     )
 
@@ -802,6 +945,10 @@ class HealthManager:
     - Circuit breaker integration
     - Rate limiting for health checks
     - System-wide health aggregation
+
+    Thread Safety:
+        This class is thread-safe. All read accessors and mutations
+        are protected by _state_lock for concurrent access.
     """
 
     def __init__(
@@ -818,15 +965,19 @@ class HealthManager:
             rate_limit_window: Time window for rate limiting in seconds
             max_checks_per_window: Maximum health checks per window
         """
+        import threading
+
         self.default_timeout = default_timeout
         self.rate_limit_window = rate_limit_window
         self.max_checks_per_window = max_checks_per_window
 
-        self.health_checks: Dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
-        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
-        self._check_counts: Dict[str, List[float]] = {}
+        self.health_checks: dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
+        self._check_counts: dict[str, list[float]] = {}
+        self._state_lock = threading.RLock()  # Reentrant lock for thread-safe access
         self._rate_limiter = RateLimiter(
-            max_requests=max_checks_per_window, window_seconds=int(rate_limit_window)
+            max_requests=max_checks_per_window,
+            window_seconds=int(round(rate_limit_window)),
         )
 
     def register_health_check(
@@ -838,13 +989,17 @@ class HealthManager:
         Args:
             name: Name of the resource to check
             check_func: Async function that performs the health check
+
+        Thread Safety:
+            This method is thread-safe, protected by _state_lock.
         """
-        self.health_checks[name] = check_func
-        self._check_counts[name] = []
+        with self._state_lock:
+            self.health_checks[name] = check_func
+            self._check_counts[name] = []
         logger.info("health_check_registered", resource_name=name)
 
     async def check_resource_health(
-        self, name: str, correlation_id: Optional[str] = None
+        self, name: str, correlation_id: str | None = None
     ) -> ResourceHealthCheck:
         """
         Check health of a specific resource.
@@ -887,20 +1042,15 @@ class HealthManager:
             # Import here to avoid circular dependency
             from .concurrency import CircuitBreakerState
 
-            if hasattr(cb, "state") and cb.state == CircuitBreakerState.OPEN:
-                failure_count = getattr(cb, "failure_count", None)
+            if cb.state == CircuitBreakerState.OPEN:
                 return ResourceHealthCheck(
                     status=HealthStatus.CIRCUIT_OPEN,
                     response_time=0.0,
                     details=HealthCheckDetails(
                         message="Circuit breaker is open",
                         circuit_open=True,
-                        circuit_state=(
-                            cb.state.value
-                            if hasattr(cb.state, "value")
-                            else str(cb.state)
-                        ),
-                        circuit_failure_count=failure_count,
+                        circuit_state=cb.state.value,
+                        circuit_failure_count=cb.failure_count,
                         result_type="circuit_open",
                     ),
                     correlation_id=correlation_id,
@@ -998,16 +1148,16 @@ class HealthManager:
             )
 
     async def check_multiple_resources(
-        self, names: List[str]
-    ) -> Dict[str, ResourceHealthCheck]:
+        self, names: list[str]
+    ) -> dict[str, ResourceHealthCheck]:
         """
         Check health of multiple resources in parallel.
 
         Args:
-            names: List of resource names to check
+            names: list of resource names to check
 
         Returns:
-            Dict mapping resource names to health check results
+            dict mapping resource names to health check results
         """
         tasks = [self.check_resource_health(name) for name in names]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1052,9 +1202,9 @@ class HealthManager:
 
         if all(s == HealthStatus.HEALTHY for s in statuses):
             overall_status = HealthStatus.HEALTHY
-        elif any(s == HealthStatus.UNHEALTHY for s in statuses):
-            overall_status = HealthStatus.DEGRADED
         else:
+            # Any non-healthy status (UNHEALTHY, DEGRADED, UNKNOWN, etc.)
+            # results in degraded system health
             overall_status = HealthStatus.DEGRADED
 
         return SystemHealth(
@@ -1067,23 +1217,27 @@ class HealthManager:
 
         Returns:
             ModelCircuitBreakerStatsCollection: Circuit breaker statistics
+
+        Thread Safety:
+            This method is thread-safe, protected by _state_lock.
         """
-        stats = {}
-        for name, cb in self.circuit_breakers.items():
-            state = getattr(cb, "state", None)
-            state_value = state.value if hasattr(state, "value") else str(state)
+        with self._state_lock:
+            stats = {}
+            for name, cb in self.circuit_breakers.items():
+                # CircuitBreaker.state is an enum, get its string value
+                state_value = cb.state.value
 
-            stats[name] = ModelCircuitBreakerStats(
-                state=state_value,
-                failure_count=getattr(cb, "failure_count", 0),
-                success_count=getattr(cb, "success_count", 0),
-                total_calls=getattr(cb, "total_calls", 0),
-                total_timeouts=getattr(cb, "total_timeouts", 0),
-                last_failure_time=getattr(cb, "last_failure_time", None),
-                state_changed_at=getattr(cb, "state_changed_at", None),
-            )
+                stats[name] = ModelCircuitBreakerStats(
+                    state=state_value,
+                    failure_count=cb.failure_count,
+                    success_count=cb.success_count,
+                    total_calls=cb.total_calls,
+                    total_timeouts=cb.total_timeouts,
+                    last_failure_time=cb.last_failure_time,
+                    state_changed_at=cb.state_changed_at,
+                )
 
-        return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
+            return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
 
     def get_rate_limited_health_response(self) -> ModelRateLimitedHealthCheckResponse:
         """
@@ -1091,21 +1245,25 @@ class HealthManager:
 
         Returns:
             ModelRateLimitedHealthCheckResponse: Rate limited response
+
+        Thread Safety:
+            This method is thread-safe, protected by _state_lock.
         """
-        return ModelRateLimitedHealthCheckResponse(
-            status="rate_limited",
-            message="Health check rate limited",
-            details={
-                "retry_after": self.rate_limit_window,
-                "current_window_requests": sum(
-                    len(counts) for counts in self._check_counts.values()
-                ),
-            },
-            health_check=None,
-            rate_limited=True,
-            rate_limit_reset_time=None,
-            remaining_requests=0,
-        )
+        with self._state_lock:
+            return ModelRateLimitedHealthCheckResponse(
+                status="rate_limited",
+                message="Health check rate limited",
+                details={
+                    "retry_after": self.rate_limit_window,
+                    "current_window_requests": sum(
+                        len(counts) for counts in self._check_counts.values()
+                    ),
+                },
+                health_check=None,
+                rate_limited=True,
+                rate_limit_reset_time=None,
+                remaining_requests=0,
+            )
 
     def _sanitize_error(self, error: Exception) -> str:
         """
@@ -1124,8 +1282,13 @@ class HealthManager:
         return _sanitize_error(error)
 
     async def cleanup(self) -> None:
-        """Clean up all health manager resources."""
-        self.health_checks.clear()
-        self.circuit_breakers.clear()
-        self._check_counts.clear()
+        """Clean up all health manager resources.
+
+        Thread Safety:
+            This method is thread-safe, protected by _state_lock.
+        """
+        with self._state_lock:
+            self.health_checks.clear()
+            self.circuit_breakers.clear()
+            self._check_counts.clear()
         logger.info("health_manager_cleanup_completed")

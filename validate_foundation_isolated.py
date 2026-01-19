@@ -18,8 +18,13 @@ from uuid import uuid4
 import yaml
 from pydantic import BaseModel, Field
 
-# Add src and protocols to Python path once at module level
+# Project root path for file lookups
 _BASE_PATH = Path(__file__).parent
+
+# Add src to Python path for development imports when running as a standalone script.
+# This is needed because the package may not be installed in editable mode.
+# The protocols directory is added to allow direct imports like 'import base_protocols'
+# without the full package path for isolated testing.
 sys.path.insert(0, str(_BASE_PATH / "src"))
 sys.path.insert(0, str(_BASE_PATH / "src" / "omnimemory" / "protocols"))
 

@@ -3,22 +3,21 @@ Memory data models following ONEX standards.
 """
 
 from datetime import datetime, timezone
-from typing import Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...enums.enum_data_type import EnumDataType
 
 # Type alias for JSON-compatible primitive values
-JsonPrimitive = Union[str, int, float, bool, None]
+JsonPrimitive = str | int | float | bool | None
 
 # Type alias for JSON-compatible nested values (one level of nesting)
 # Using 'object' for nested collections provides flexibility while avoiding
 # recursive type issues with Pydantic V2
-JsonNestedValue = Union[str, int, float, bool, list[object], dict[str, object], None]
+JsonNestedValue = str | int | float | bool | list[object] | dict[str, object] | None
 
-# Type alias for memory data values - explicit Union instead of Any
+# Type alias for memory data values - explicit union instead of Any
 # Supports common serializable types used in memory systems:
 # - Primitive types: str, int, float, bool
 # - Binary data: bytes (use with encoding="base64" metadata)
@@ -28,20 +27,22 @@ JsonNestedValue = Union[str, int, float, bool, list[object], dict[str, object], 
 # Note: For deeply nested JSON structures, the list[object] and dict[str, object]
 # types accept any JSON-serializable content. This is a deliberate design choice
 # to avoid recursive type definitions that cause Pydantic V2 compatibility issues.
-MemoryDataValueType = Union[
-    str,
-    int,
-    float,
-    bool,
-    bytes,  # Binary data support - use with encoding metadata
-    list[JsonNestedValue],  # JSON arrays with nested values
-    dict[str, JsonNestedValue],  # JSON objects with nested values
-    None,
-]
+MemoryDataValueType = (
+    str
+    | int
+    | float
+    | bool
+    | bytes  # Binary data support - use with encoding metadata
+    | list[JsonNestedValue]  # JSON arrays with nested values
+    | dict[str, JsonNestedValue]  # JSON objects with nested values
+    | None
+)
 
 
 class ModelMemoryDataValue(BaseModel):
     """Individual memory data value following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     value: MemoryDataValueType = Field(
         default=None,
@@ -96,6 +97,8 @@ class ModelMemoryDataValue(BaseModel):
 
 class ModelMemoryDataContent(BaseModel):
     """Memory data content following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     content_id: UUID = Field(
         description="Unique identifier for this data content",
@@ -180,6 +183,8 @@ class ModelMemoryDataContent(BaseModel):
 class ModelMemoryRequestData(BaseModel):
     """Memory request data following ONEX standards."""
 
+    model_config = ConfigDict(extra="forbid")
+
     request_data_id: UUID = Field(
         description="Unique identifier for this request data",
     )
@@ -259,6 +264,8 @@ class ModelMemoryRequestData(BaseModel):
 
 class ModelMemoryResponseData(BaseModel):
     """Memory response data following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     response_data_id: UUID = Field(
         description="Unique identifier for this response data",

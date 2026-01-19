@@ -6,15 +6,16 @@ in progress reporting, ensuring type safety and validation.
 """
 
 from datetime import datetime
-from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from omnimemory.enums import EnumPriorityLevel, MigrationStatus
 
 
 class ProgressSummaryResponse(BaseModel):
     """Strongly typed progress summary response."""
+
+    model_config = ConfigDict(extra="forbid")
 
     migration_id: str = Field(description="Unique identifier for the migration")
 
@@ -32,7 +33,7 @@ class ProgressSummaryResponse(BaseModel):
 
     elapsed_time: str = Field(description="Time elapsed since migration started")
 
-    estimated_completion: Optional[datetime] = Field(
+    estimated_completion: datetime | None = Field(
         default=None, description="Estimated completion time"
     )
 
@@ -44,13 +45,13 @@ class ProgressSummaryResponse(BaseModel):
 
     failed_items: int = Field(description="Number of failed items")
 
-    current_batch_id: Optional[str] = Field(
+    current_batch_id: str | None = Field(
         default=None, description="Current batch being processed"
     )
 
     active_workers: int = Field(description="Number of active worker processes")
 
-    recent_errors: List[str] = Field(
+    recent_errors: list[str] = Field(
         default_factory=list, description="Recent error messages"
     )
 

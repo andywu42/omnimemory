@@ -7,6 +7,7 @@ without omnibase_core dependencies.
 """
 
 import sys
+import tomllib
 import traceback
 from pathlib import Path
 from typing import Any
@@ -206,8 +207,6 @@ def validate_pyproject_configuration() -> dict[str, Any]:
     print("🔍 Testing pyproject.toml configuration...")
 
     try:
-        import tomllib
-
         pyproject_path = Path(__file__).parent / "pyproject.toml"
         if not pyproject_path.exists():
             return {"success": False, "error": "pyproject.toml not found"}

@@ -18,6 +18,7 @@ issues with external dependencies like omnibase_core.
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import re
 import time
@@ -1510,8 +1511,6 @@ class TestVectorSearchPerformance:
         for 10-100x speedup. Test uses reduced vector count (100) to validate
         algorithmic efficiency while staying within target.
         """
-        import math
-
         # Typical embedding dimensions
         dimensions = [384, 768]  # Common embedding sizes (skip 1536 for pure Python)
         num_vectors = 100  # Reduced for pure Python (prod uses numpy with 1000+)
@@ -1554,8 +1553,6 @@ class TestVectorSearchPerformance:
         """
         Benchmark: Vector preprocessing (normalization, quantization) performance.
         """
-        import math
-
         dimensions = 768  # Common BERT embedding size
         num_vectors = 100
 

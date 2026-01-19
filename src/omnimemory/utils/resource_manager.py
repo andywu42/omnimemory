@@ -27,10 +27,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar
+from typing import Any, AsyncGenerator, Callable, TypeVar
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .error_sanitizer import SanitizationLevel
 from .error_sanitizer import sanitize_error as _base_sanitize_error
@@ -69,6 +69,8 @@ class CircuitState(Enum):
 class CircuitBreakerConfig(BaseModel):
     """Configuration for circuit breaker behavior."""
 
+    model_config = ConfigDict(extra="forbid")
+
     failure_threshold: int = Field(
         default=5, description="Number of failures before opening circuit"
     )
@@ -90,7 +92,7 @@ class CircuitBreakerStats:
 
     failure_count: int = 0
     success_count: int = 0
-    last_failure_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
     state_changed_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -101,14 +103,14 @@ class CircuitBreakerStats:
 class CircuitBreakerStatsResponse(BaseModel):
     """Typed response model for circuit breaker statistics."""
 
+    model_config = ConfigDict(extra="forbid")
+
     state: str = Field(description="Current circuit breaker state")
     failure_count: int = Field(description="Number of failures recorded")
     success_count: int = Field(description="Number of successful calls")
     total_calls: int = Field(description="Total number of calls attempted")
     total_timeouts: int = Field(description="Total number of timeout failures")
-    last_failure_time: Optional[str] = Field(
-        description="ISO timestamp of last failure"
-    )
+    last_failure_time: str | None = Field(description="ISO timestamp of last failure")
     state_changed_at: str = Field(description="ISO timestamp when state last changed")
 
 
@@ -129,7 +131,7 @@ class AsyncCircuitBreaker:
     gracefully and provide fast failure when services are known to be down.
     """
 
-    def __init__(self, name: str, config: Optional[CircuitBreakerConfig] = None):
+    def __init__(self, name: str, config: CircuitBreakerConfig | None = None):
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.state = CircuitState.CLOSED
@@ -254,12 +256,12 @@ class AsyncResourceManager:
     """
 
     def __init__(self):
-        self._circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
-        self._semaphores: Dict[str, asyncio.Semaphore] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
+        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def get_circuit_breaker(
-        self, name: str, config: Optional[CircuitBreakerConfig] = None
+        self, name: str, config: CircuitBreakerConfig | None = None
     ) -> AsyncCircuitBreaker:
         """Get or create a circuit breaker for a service."""
         if name not in self._circuit_breakers:
@@ -283,9 +285,9 @@ class AsyncResourceManager:
         self,
         resource_name: str,
         acquire_func: Callable[..., Any],
-        release_func: Optional[Callable[[Any], None]] = None,
-        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
-        semaphore_limit: Optional[int] = None,
+        release_func: Callable[[Any], None] | None = None,
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
+        semaphore_limit: int | None = None,
         *args,
         **kwargs,
     ) -> AsyncGenerator[Any, None]:
@@ -355,7 +357,7 @@ class AsyncResourceManager:
             if semaphore:
                 semaphore.release()
 
-    def get_circuit_breaker_stats(self) -> Dict[str, CircuitBreakerStatsResponse]:
+    def get_circuit_breaker_stats(self) -> dict[str, CircuitBreakerStatsResponse]:
         """Get typed statistics for all circuit breakers."""
         stats = {}
         for name, cb in self._circuit_breakers.items():
@@ -383,7 +385,7 @@ resource_manager = AsyncResourceManager()
 async def with_circuit_breaker(
     service_name: str,
     func: Callable[..., Any],
-    config: Optional[CircuitBreakerConfig] = None,
+    config: CircuitBreakerConfig | None = None,
     *args,
     **kwargs,
 ) -> Any:
@@ -460,8 +462,8 @@ class ResourceHandle:
     resource_type: ResourceType
     status: ResourceStatus = ResourceStatus.ACTIVE
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    ttl: Optional[float] = None
-    _context: Dict[str, Any] = field(default_factory=dict)
+    ttl: float | None = None
+    _context: dict[str, Any] = field(default_factory=dict)
 
     def is_healthy(self) -> bool:
         """
@@ -501,7 +503,7 @@ class ResourceHandle:
         """
         self._context[key] = value
 
-    def get_context(self, key: str) -> Optional[Any]:
+    def get_context(self, key: str) -> Any | None:
         """
         Get context data from the handle.
 
@@ -525,7 +527,7 @@ class ResourcePool:
     Manages resource creation, pooling, and lifecycle.
     """
 
-    def __init__(self, resource_type: ResourceType, config: Dict[str, Any]):
+    def __init__(self, resource_type: ResourceType, config: dict[str, Any]):
         """
         Initialize resource pool.
 
@@ -543,8 +545,8 @@ class ResourcePool:
         self._scale_increment = config.get("scale_increment", 1)
         self._health_check_interval = config.get("health_check_interval", 60.0)
 
-        self.available_resources: List[Any] = []
-        self.active_resources: Dict[Any, ResourceHandle] = {}
+        self.available_resources: list[Any] = []
+        self.active_resources: dict[Any, ResourceHandle] = {}
         self.current_size = 0
 
         self._lock = asyncio.Lock()
@@ -564,7 +566,7 @@ class ResourcePool:
             if self.available_resources:
                 self._available_event.set()
 
-    def _create_resource(self) -> Optional[Any]:
+    def _create_resource(self) -> Any | None:
         """Create a new resource."""
         if self._factory:
             try:
@@ -578,7 +580,7 @@ class ResourcePool:
                 return None
         return None
 
-    async def acquire(self, timeout: Optional[float] = None) -> ResourceHandle:
+    async def acquire(self, timeout: float | None = None) -> ResourceHandle:
         """
         Acquire a resource from the pool.
 
@@ -685,7 +687,7 @@ class ResourceManager:
 
     def __init__(self):
         """Initialize resource manager."""
-        self.resource_pools: Dict[ResourceType, ResourcePool] = {}
+        self.resource_pools: dict[ResourceType, ResourcePool] = {}
         self._metrics = {
             "total_operations": 0,
             "total_acquisitions": 0,
@@ -694,7 +696,7 @@ class ResourceManager:
         }
 
     async def register_pool(
-        self, resource_type: ResourceType, config: Dict[str, Any]
+        self, resource_type: ResourceType, config: dict[str, Any]
     ) -> None:
         """
         Register a resource pool.
@@ -714,7 +716,7 @@ class ResourceManager:
         )
 
     async def acquire(
-        self, resource_type: ResourceType, timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: float | None = None
     ) -> ResourceHandle:
         """
         Acquire a resource of the specified type.
@@ -762,7 +764,7 @@ class ResourceManager:
 
     @contextlib.asynccontextmanager
     async def acquire_context(
-        self, resource_type: ResourceType, timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: float | None = None
     ) -> AsyncGenerator[ResourceHandle, None]:
         """
         Context manager for resource acquisition.
@@ -780,7 +782,7 @@ class ResourceManager:
         finally:
             await self.release(handle)
 
-    def get_pool_health(self, resource_type: ResourceType) -> Dict[str, Any]:
+    def get_pool_health(self, resource_type: ResourceType) -> dict[str, Any]:
         """
         Get health status of a resource pool.
 
@@ -802,7 +804,7 @@ class ResourceManager:
             "health_check_failures": 0,
         }
 
-    def get_pool_stats(self, resource_type: ResourceType) -> Dict[str, Any]:
+    def get_pool_stats(self, resource_type: ResourceType) -> dict[str, Any]:
         """
         Get statistics for a resource pool.
 
@@ -825,7 +827,7 @@ class ResourceManager:
             "available_count": len(pool.available_resources),
         }
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """
         Get resource manager metrics.
 

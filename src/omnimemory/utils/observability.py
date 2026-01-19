@@ -19,10 +19,11 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar, Union
+from typing import AsyncGenerator, Callable, TypeVar
 
+import psutil
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
 from .error_sanitizer import SanitizationLevel
@@ -33,7 +34,16 @@ F = TypeVar("F", bound=Callable[..., object])
 
 # Type alias for metadata values - supports common serializable types
 # This replaces Any with explicit types for type safety
-MetadataValue = Union[str, int, float, bool, None]
+MetadataValue = str | int | float | bool | None
+
+# === PRE-COMPILED REGEX PATTERNS ===
+# These patterns are compiled once at module load time for optimal performance.
+
+# Pattern for validating correlation IDs (alphanum/hyphens/underscores, max 64)
+_CORRELATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-_]{1,64}$")
+
+# Pattern for sanitizing metadata values (removes injection-prone characters)
+_METADATA_SANITIZE_PATTERN = re.compile(r'[<>"\'\\\n\r\t]')
 
 # === SECURITY VALIDATION FUNCTIONS ===
 
@@ -53,8 +63,7 @@ def validate_correlation_id(correlation_id: str) -> bool:
 
     # Allow UUIDs (with or without hyphens) and alphanumeric strings up to 64 chars
     # This prevents injection while allowing reasonable correlation ID formats
-    pattern = r"^[a-zA-Z0-9\-_]{1,64}$"
-    return re.match(pattern, correlation_id) is not None
+    return _CORRELATION_ID_PATTERN.match(correlation_id) is not None
 
 
 def sanitize_metadata_value(value: object) -> MetadataValue:
@@ -71,7 +80,7 @@ def sanitize_metadata_value(value: object) -> MetadataValue:
     """
     if isinstance(value, str):
         # Remove potential injection patterns and limit length
-        sanitized = re.sub(r'[<>"\'\\\n\r\t]', "", value)
+        sanitized = _METADATA_SANITIZE_PATTERN.sub("", value)
         return sanitized[:1000]  # Limit string length
     elif isinstance(value, bool):
         # Check bool before int since bool is a subclass of int
@@ -105,12 +114,10 @@ def _sanitize_error(error: Exception) -> str:
 
 
 # Context variables for correlation tracking
-correlation_id_var: ContextVar[Optional[str]] = ContextVar(
-    "correlation_id", default=None
-)
-request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
-operation_var: ContextVar[Optional[str]] = ContextVar("operation", default=None)
+correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+operation_var: ContextVar[str | None] = ContextVar("operation", default=None)
 
 logger = structlog.get_logger(__name__)
 
@@ -143,23 +150,25 @@ class PerformanceMetrics:
     """Performance metrics for operations."""
 
     start_time: float
-    end_time: Optional[float] = None
-    duration: Optional[float] = None
-    memory_usage_start: Optional[float] = None
-    memory_usage_end: Optional[float] = None
-    memory_delta: Optional[float] = None
-    success: Optional[bool] = None
-    error_type: Optional[str] = None
+    end_time: float | None = None
+    duration: float | None = None
+    memory_usage_start: float | None = None
+    memory_usage_end: float | None = None
+    memory_delta: float | None = None
+    success: bool | None = None
+    error_type: str | None = None
 
 
 class CorrelationContext(BaseModel):
     """Context information for correlation tracking."""
 
+    model_config = ConfigDict(extra="forbid")
+
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    request_id: Optional[str] = Field(default=None)
-    user_id: Optional[str] = Field(default=None)
-    operation: Optional[str] = Field(default=None)
-    parent_correlation_id: Optional[str] = Field(default=None)
+    request_id: str | None = Field(default=None)
+    user_id: str | None = Field(default=None)
+    operation: str | None = Field(default=None)
+    parent_correlation_id: str | None = Field(default=None)
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -177,16 +186,16 @@ class ObservabilityManager:
     """
 
     def __init__(self):
-        self._active_traces: Dict[str, PerformanceMetrics] = {}
+        self._active_traces: dict[str, PerformanceMetrics] = {}
         self._logger = structlog.get_logger(__name__)
 
     @asynccontextmanager
     async def correlation_context(
         self,
-        correlation_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        operation: Optional[str] = None,
+        correlation_id: str | None = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        operation: str | None = None,
         trace_level: TraceLevel = TraceLevel.INFO,
         **metadata,
     ) -> AsyncGenerator[CorrelationContext, None]:
@@ -283,8 +292,6 @@ class ObservabilityManager:
 
         # Initialize performance metrics if requested
         if trace_performance:
-            import psutil
-
             process = psutil.Process()
             start_memory = process.memory_info().rss / 1024 / 1024  # MB
 
@@ -334,8 +341,6 @@ class ObservabilityManager:
                 metrics.duration = metrics.end_time - metrics.start_time
 
                 if metrics.memory_usage_start:
-                    import psutil
-
                     process = psutil.Process()
                     end_memory = process.memory_info().rss / 1024 / 1024  # MB
                     metrics.memory_usage_end = end_memory
@@ -357,7 +362,7 @@ class ObservabilityManager:
                 # Clean up completed trace
                 del self._active_traces[trace_id]
 
-    def get_current_context(self) -> Dict[str, Optional[str]]:
+    def get_current_context(self) -> dict[str, str | None]:
         """Get current correlation context."""
         return {
             "correlation_id": correlation_id_var.get(),
@@ -366,7 +371,7 @@ class ObservabilityManager:
             "operation": operation_var.get(),
         }
 
-    def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
+    def get_performance_metrics(self) -> dict[str, PerformanceMetrics]:
         """Get current performance metrics for active traces."""
         return self._active_traces.copy()
 
@@ -385,10 +390,10 @@ observability_manager = ObservabilityManager()
 # Convenience functions for common patterns
 @asynccontextmanager
 async def correlation_context(
-    correlation_id: Optional[str] = None,
-    request_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    operation: Optional[str] = None,
+    correlation_id: str | None = None,
+    request_id: str | None = None,
+    user_id: str | None = None,
+    operation: str | None = None,
     **metadata,
 ):
     """Convenience function for correlation context management."""
@@ -421,12 +426,12 @@ async def trace_operation(
         yield trace_id
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get current correlation ID from context."""
     return correlation_id_var.get()
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     """Get current request ID from context."""
     return request_id_var.get()
 
