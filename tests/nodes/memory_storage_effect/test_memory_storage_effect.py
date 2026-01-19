@@ -1462,3 +1462,338 @@ class TestSecurityValidation:
 
         assert response.status == "error"
         assert "size" in response.error_message.lower()
+
+
+# =============================================================================
+# Performance Benchmark Tests
+# =============================================================================
+
+
+class TestPerformanceBenchmarks:
+    """Performance benchmark tests for memory storage operations.
+
+    These tests verify that all CRUD operations complete within acceptable
+    time thresholds as specified in the contract.yaml SLA.
+
+    Contract Reference:
+        contract.yaml line 128 specifies:
+            performance:
+                max_response_time_ms: 100
+
+    CI Configuration:
+        Tests use a CI-safe threshold of 500ms to account for variable
+        CI environment performance. For local strict benchmarks, the
+        contract SLA of 100ms should be enforced.
+
+    Note:
+        These tests are marked with @pytest.mark.benchmark for optional
+        filtering. Run with `pytest -m benchmark` to run only benchmarks,
+        or `pytest -m "not benchmark"` to exclude them.
+    """
+
+    # CI-safe threshold in seconds (500ms)
+    # Contract SLA is 100ms (see contract.yaml line 128)
+    CI_THRESHOLD_SECONDS: float = 0.5
+    CONTRACT_SLA_SECONDS: float = 0.1  # 100ms from contract.yaml
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_store_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Benchmark: verify store operation completes within threshold.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: A valid memory snapshot
+        When: Executing a store operation
+        Then: Operation completes within CI threshold (500ms)
+
+        Note:
+            CI uses 500ms threshold for stability. Local strict benchmarks
+            should verify against the 100ms contract SLA.
+        """
+        import time
+
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+
+        start_time = time.perf_counter()
+        response = await adapter.execute(request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operation succeeded
+        assert response.status == "success", (
+            f"Store operation failed: {response.error_message}"
+        )
+
+        # Verify performance threshold (CI-safe: 500ms)
+        # Contract SLA is 100ms - see contract.yaml line 128
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Store operation took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS}s)"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_retrieve_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Benchmark: verify retrieve operation completes within threshold.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: A previously stored memory snapshot
+        When: Executing a retrieve operation
+        Then: Operation completes within CI threshold (500ms)
+
+        Note:
+            CI uses 500ms threshold for stability. Local strict benchmarks
+            should verify against the 100ms contract SLA.
+        """
+        import time
+
+        # Setup: store the snapshot first
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id=str(sample_snapshot.snapshot_id),
+        )
+
+        start_time = time.perf_counter()
+        response = await adapter.execute(request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operation succeeded
+        assert response.status == "success", (
+            f"Retrieve operation failed: {response.error_message}"
+        )
+        assert response.snapshot is not None, "Expected snapshot in response"
+
+        # Verify performance threshold (CI-safe: 500ms)
+        # Contract SLA is 100ms - see contract.yaml line 128
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Retrieve operation took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS}s)"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_delete_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Benchmark: verify delete operation completes within threshold.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: A previously stored memory snapshot
+        When: Executing a delete operation
+        Then: Operation completes within CI threshold (500ms)
+
+        Note:
+            CI uses 500ms threshold for stability. Local strict benchmarks
+            should verify against the 100ms contract SLA.
+        """
+        import time
+
+        # Setup: store the snapshot first
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        request = ModelMemoryStorageRequest(
+            operation="delete",
+            snapshot_id=str(sample_snapshot.snapshot_id),
+        )
+
+        start_time = time.perf_counter()
+        response = await adapter.execute(request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operation succeeded
+        assert response.status == "success", (
+            f"Delete operation failed: {response.error_message}"
+        )
+
+        # Verify performance threshold (CI-safe: 500ms)
+        # Contract SLA is 100ms - see contract.yaml line 128
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Delete operation took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS}s)"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_list_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Benchmark: verify list operation completes within threshold.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: Multiple stored memory snapshots (10 snapshots)
+        When: Executing a list operation
+        Then: Operation completes within CI threshold (500ms)
+
+        Note:
+            CI uses 500ms threshold for stability. Local strict benchmarks
+            should verify against the 100ms contract SLA.
+        """
+        import time
+
+        # Setup: store multiple snapshots
+        snapshots = [create_unique_snapshot() for _ in range(10)]
+        for snapshot in snapshots:
+            await adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=snapshot)
+            )
+
+        request = ModelMemoryStorageRequest(operation="list")
+
+        start_time = time.perf_counter()
+        response = await adapter.execute(request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operation succeeded
+        assert response.status == "success", (
+            f"List operation failed: {response.error_message}"
+        )
+        assert response.snapshot_ids is not None
+        assert len(response.snapshot_ids) == 10
+
+        # Verify performance threshold (CI-safe: 500ms)
+        # Contract SLA is 100ms - see contract.yaml line 128
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"List operation took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS}s)"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_update_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Benchmark: verify update operation completes within threshold.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: A previously stored memory snapshot
+        When: Executing an update operation with modified data
+        Then: Operation completes within CI threshold (500ms)
+
+        Note:
+            CI uses 500ms threshold for stability. Local strict benchmarks
+            should verify against the 100ms contract SLA.
+        """
+        import time
+
+        # Setup: store the snapshot first
+        await adapter.execute(
+            ModelMemoryStorageRequest(operation="store", snapshot=sample_snapshot)
+        )
+
+        # Create updated version
+        updated_snapshot = sample_snapshot.model_copy(
+            update={"version": 2, "tags": ("updated", "benchmark")}
+        )
+
+        request = ModelMemoryStorageRequest(
+            operation="update",
+            snapshot=updated_snapshot,
+        )
+
+        start_time = time.perf_counter()
+        response = await adapter.execute(request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operation succeeded
+        assert response.status == "success", (
+            f"Update operation failed: {response.error_message}"
+        )
+
+        # Verify performance threshold (CI-safe: 500ms)
+        # Contract SLA is 100ms - see contract.yaml line 128
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Update operation took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS}s)"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.benchmark
+    async def test_round_trip_performance(
+        self,
+        adapter: HandlerFileSystemAdapter,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Benchmark: verify complete store-retrieve round-trip performance.
+
+        Contract Reference:
+            performance.max_response_time_ms: 100 (contract.yaml line 128)
+
+        Given: A valid memory snapshot
+        When: Executing store followed by retrieve operations
+        Then: Combined operations complete within 2x CI threshold (1000ms)
+
+        Note:
+            This test verifies the full round-trip performance, which is
+            useful for measuring realistic usage patterns. The threshold
+            is 2x the single operation threshold.
+        """
+        import time
+
+        store_request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+
+        retrieve_request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id=str(sample_snapshot.snapshot_id),
+        )
+
+        start_time = time.perf_counter()
+        store_response = await adapter.execute(store_request)
+        retrieve_response = await adapter.execute(retrieve_request)
+        elapsed_time = time.perf_counter() - start_time
+
+        # Verify operations succeeded
+        assert store_response.status == "success", (
+            f"Store operation failed: {store_response.error_message}"
+        )
+        assert retrieve_response.status == "success", (
+            f"Retrieve operation failed: {retrieve_response.error_message}"
+        )
+        assert retrieve_response.snapshot is not None
+
+        # Verify performance threshold (2x CI threshold for round-trip)
+        # Contract SLA is 100ms per operation - see contract.yaml line 128
+        round_trip_threshold = self.CI_THRESHOLD_SECONDS * 2
+        assert elapsed_time < round_trip_threshold, (
+            f"Round-trip took {elapsed_time:.3f}s, "
+            f"exceeds threshold of {round_trip_threshold}s "
+            f"(contract SLA: {self.CONTRACT_SLA_SECONDS * 2}s for 2 ops)"
+        )
