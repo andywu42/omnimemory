@@ -271,12 +271,29 @@ class TestBootstrapFailure:
     async def test_bootstrap_error_has_cause(
         self, tmp_path: Path, reset_bootstrap: None
     ) -> None:
-        """Test BootstrapError includes cause when available."""
-        # Create a directory we can't write to (if running as root, skip)
+        """Test BootstrapError includes cause when available.
+
+        This test verifies that when an underlying OSError occurs during
+        bootstrap (e.g., permission denied), the BootstrapError properly
+        captures and exposes that cause.
+        """
+        read_only_dir = tmp_path / "readonly"
+        read_only_dir.mkdir()
+        read_only_dir.chmod(0o444)  # Read-only
+
         try:
-            read_only_dir = tmp_path / "readonly"
-            read_only_dir.mkdir()
-            read_only_dir.chmod(0o444)  # Read-only
+            # Check if we can actually write (e.g., running as root)
+            test_file = read_only_dir / ".test_write"
+            try:
+                test_file.touch()
+                test_file.unlink()
+                # If we get here, permissions don't work (e.g., running as root)
+                pytest.skip(
+                    "Cannot test read-only directory (possibly running as root)"
+                )
+            except OSError:
+                # Good - directory is actually read-only
+                pass
 
             config = ModelMemoryServiceConfig(
                 filesystem=ModelFilesystemConfig(
@@ -289,12 +306,19 @@ class TestBootstrapFailure:
                 await bootstrap(config)
 
             error = exc_info.value
-            assert hasattr(error, "cause")
-            # cause may be an OSError
+            # Verify the cause attribute exists and is properly set
+            assert hasattr(error, "cause"), "BootstrapError must have cause attribute"
+            assert (
+                error.cause is not None
+            ), "cause should be set when underlying error exists"
+            assert isinstance(
+                error.cause, OSError
+            ), f"cause should be OSError, got {type(error.cause)}"
+            assert error.config_block == "filesystem"
         finally:
             # Restore permissions for cleanup
-            if (tmp_path / "readonly").exists():
-                (tmp_path / "readonly").chmod(0o755)
+            if read_only_dir.exists():
+                read_only_dir.chmod(0o755)
 
 
 class TestBootstrapIdempotency:

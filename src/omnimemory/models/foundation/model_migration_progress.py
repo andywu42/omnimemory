@@ -9,7 +9,6 @@ This module provides models for tracking migration progress across the system:
 """
 
 from datetime import datetime, timedelta, timezone
-from functools import cached_property
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -124,7 +123,8 @@ class MigrationProgressMetrics(BaseModel):
         default_factory=list, description="Batch processing metrics"
     )
 
-    # Performance optimization: Cache expensive calculations (using PrivateAttr for underscore names)
+    # Performance optimization: Cache expensive calculations
+    # (using PrivateAttr for underscore names)
     _cached_completion_percentage: Optional[float] = PrivateAttr(default=None)
     _cached_success_rate: Optional[float] = PrivateAttr(default=None)
     _cache_invalidated_at: Optional[datetime] = PrivateAttr(default=None)
@@ -319,9 +319,23 @@ class MigrationProgressTracker(BaseModel):
                 file_info.error_message = error_message
                 self.metrics.failed_files += 1
 
-                # Track error types
+                # Track error types - extract from message format "ErrorType: message"
                 if error_message:
-                    error_type = type(Exception(error_message)).__name__
+                    # Try to extract error type from "ErrorType: message" format
+                    if ": " in error_message:
+                        potential_type = error_message.split(": ", 1)[0]
+                        # Validate it looks like an error class name
+                        # (PascalCase, ends with Error/Exception)
+                        if (
+                            potential_type
+                            and potential_type[0].isupper()
+                            and potential_type.replace("_", "").isalnum()
+                        ):
+                            error_type = potential_type
+                        else:
+                            error_type = "UnknownError"
+                    else:
+                        error_type = "UnknownError"
                     self.error_summary[error_type] = (
                         self.error_summary.get(error_type, 0) + 1
                     )
@@ -383,7 +397,7 @@ class MigrationProgressTracker(BaseModel):
                     _error_sanitizer.sanitize_error_message(
                         str(e), level=SanitizationLevel.STRICT
                     )
-                    for e in self.error_summary[-5:]
+                    for e in list(self.error_summary.keys())[-5:]
                 ]
                 if self.error_summary
                 else []

@@ -79,6 +79,19 @@ class TestFilesystemSettings:
         assert isinstance(config, ModelFilesystemConfig)
         assert config.base_path == tmp_path
 
+    def test_allowed_extensions_json_array(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test allowed_extensions supports JSON array format."""
+        _clear_omnimemory_env_vars(monkeypatch)
+        monkeypatch.setenv("OMNIMEMORY__FILESYSTEM__BASE_PATH", str(tmp_path))
+        monkeypatch.setenv(
+            "OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS", '[".py", ".yaml", ".toml"]'
+        )
+
+        settings = FilesystemSettings()
+        assert settings.allowed_extensions == [".py", ".yaml", ".toml"]
+
 
 class TestPostgresSettings:
     """Tests for postgres settings loading."""

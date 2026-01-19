@@ -7,19 +7,15 @@ including memory access, configuration changes, and PII detection events.
 
 import json
 import logging
-import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..models.foundation.model_audit_metadata import (
     AuditEventDetails,
-    PerformanceAuditDetails,
     ResourceUsageMetadata,
-    SecurityAuditDetails,
 )
 
 
@@ -60,10 +56,10 @@ class AuditEvent(BaseModel):
     # Context information
     operation: str = Field(description="Operation being performed")
     component: str = Field(description="Component generating the event")
-    user_context: Optional[str] = Field(
+    user_context: str | None = Field(
         default=None, description="User context if available"
     )
-    session_id: Optional[str] = Field(default=None, description="Session identifier")
+    session_id: str | None = Field(default=None, description="Session identifier")
 
     # Event details
     message: str = Field(description="Human-readable event description")
@@ -72,26 +68,23 @@ class AuditEvent(BaseModel):
     )
 
     # Security context
-    source_ip: Optional[str] = Field(default=None, description="Source IP address")
-    user_agent: Optional[str] = Field(default=None, description="User agent string")
+    source_ip: str | None = Field(default=None, description="Source IP address")
+    user_agent: str | None = Field(default=None, description="User agent string")
 
     # Performance data
-    duration_ms: Optional[float] = Field(default=None, description="Operation duration")
-    resource_usage: Optional[ResourceUsageMetadata] = Field(
+    duration_ms: float | None = Field(default=None, description="Operation duration")
+    resource_usage: ResourceUsageMetadata | None = Field(
         default=None, description="Resource usage metrics"
     )
 
     # Compliance tracking
-    data_classification: Optional[str] = Field(
+    data_classification: str | None = Field(
         default=None, description="Data classification level"
     )
     pii_detected: bool = Field(default=False, description="Whether PII was detected")
     sanitized: bool = Field(default=False, description="Whether data was sanitized")
 
-    class Config:
-        """Pydantic config for audit events."""
-
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict()
 
 
 class AuditLogger:
@@ -99,7 +92,7 @@ class AuditLogger:
 
     def __init__(
         self,
-        log_file: Optional[Path] = None,
+        log_file: Path | None = None,
         console_output: bool = True,
         json_format: bool = True,
     ):
@@ -213,9 +206,9 @@ class AuditLogger:
         operation_type: str,
         memory_id: str,
         success: bool,
-        duration_ms: Optional[float] = None,
-        details: Optional[AuditEventDetails] = None,
-        user_context: Optional[str] = None,
+        duration_ms: float | None = None,
+        details: AuditEventDetails | None = None,
+        user_context: str | None = None,
     ) -> None:
         """Log a memory operation event."""
         event_type_map = {
@@ -231,7 +224,10 @@ class AuditLogger:
             severity=AuditSeverity.LOW if success else AuditSeverity.HIGH,
             operation=f"memory_{operation_type}",
             component="memory_manager",
-            message=f"Memory {operation_type} {'succeeded' if success else 'failed'} for ID: {memory_id}",
+            message=(
+                f"Memory {operation_type} "
+                f"{'succeeded' if success else 'failed'} for ID: {memory_id}"
+            ),
             details=details or {},
             duration_ms=duration_ms,
             user_context=user_context,
@@ -244,7 +240,7 @@ class AuditLogger:
         pii_types: list,
         content_length: int,
         sanitized: bool = False,
-        details: Optional[AuditEventDetails] = None,
+        details: AuditEventDetails | None = None,
     ) -> None:
         """Log PII detection event."""
         severity = AuditSeverity.HIGH if pii_types else AuditSeverity.LOW
@@ -260,7 +256,10 @@ class AuditLogger:
             severity=severity,
             operation="pii_scan",
             component="pii_detector",
-            message=f"PII detection scan found {len(pii_types)} PII types in {content_length} chars",
+            message=(
+                f"PII detection scan found {len(pii_types)} PII types "
+                f"in {content_length} chars"
+            ),
             details={
                 "pii_types_detected": pii_types,
                 "content_length": content_length,
@@ -277,9 +276,9 @@ class AuditLogger:
         self,
         violation_type: str,
         description: str,
-        source_ip: Optional[str] = None,
-        user_context: Optional[str] = None,
-        details: Optional[AuditEventDetails] = None,
+        source_ip: str | None = None,
+        user_context: str | None = None,
+        details: AuditEventDetails | None = None,
     ) -> None:
         """Log security violation event."""
         event = AuditEvent(
@@ -300,10 +299,10 @@ class AuditLogger:
     def log_config_change(
         self,
         config_key: str,
-        old_value: Optional[str],
+        old_value: str | None,
         new_value: str,
-        user_context: Optional[str] = None,
-        details: Optional[AuditEventDetails] = None,
+        user_context: str | None = None,
+        details: AuditEventDetails | None = None,
     ) -> None:
         """Log configuration change event."""
         event = AuditEvent(
@@ -339,7 +338,7 @@ class AuditLogger:
 
 
 # Global audit logger instance
-_audit_logger: Optional[AuditLogger] = None
+_audit_logger: AuditLogger | None = None
 
 
 def get_audit_logger() -> AuditLogger:
@@ -355,7 +354,7 @@ def get_audit_logger() -> AuditLogger:
 
 
 def configure_audit_logger(
-    log_file: Optional[Path] = None,
+    log_file: Path | None = None,
     console_output: bool = True,
     json_format: bool = True,
 ) -> None:

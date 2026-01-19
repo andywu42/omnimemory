@@ -5,24 +5,25 @@ This module provides strongly typed replacements for Dict[str, Any] patterns
 in health management, ensuring type safety and validation.
 """
 
-from datetime import datetime
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthCheckMetadata(BaseModel):
     """Strongly typed metadata for health check operations."""
 
-    connection_url: Optional[str] = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    connection_url: str | None = Field(
         default=None, description="Connection URL for dependency checks"
     )
 
-    database_version: Optional[str] = Field(
+    database_version: str | None = Field(
         default=None, description="Version information for database dependencies"
     )
 
-    pool_stats: Optional[Dict[str, int]] = Field(
+    pool_stats: dict[str, int] | None = Field(
         default=None, description="Connection pool statistics"
     )
 
@@ -30,21 +31,23 @@ class HealthCheckMetadata(BaseModel):
 
     error_count: int = Field(default=0, description="Number of errors encountered")
 
-    last_success_timestamp: Optional[datetime] = Field(
+    last_success_timestamp: datetime | None = Field(
         default=None, description="Timestamp of last successful check"
     )
 
-    circuit_breaker_state: Optional[str] = Field(
+    circuit_breaker_state: str | None = Field(
         default=None, description="Current circuit breaker state"
     )
 
-    performance_metrics: Optional[Dict[str, float]] = Field(
+    performance_metrics: dict[str, float] | None = Field(
         default=None, description="Performance metrics (latency, throughput)"
     )
 
 
 class AggregateHealthMetadata(BaseModel):
     """Strongly typed metadata for aggregate health status."""
+
+    model_config = ConfigDict(extra="forbid")
 
     total_dependencies: int = Field(description="Total number of dependencies checked")
 
@@ -54,7 +57,7 @@ class AggregateHealthMetadata(BaseModel):
 
     unhealthy_dependencies: int = Field(description="Number of unhealthy dependencies")
 
-    critical_failures: List[str] = Field(
+    critical_failures: list[str] = Field(
         default_factory=list,
         description="Names of critical dependencies that are failing",
     )
@@ -64,11 +67,11 @@ class AggregateHealthMetadata(BaseModel):
     )
 
     last_update_timestamp: datetime = Field(
-        default_factory=datetime.now,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this aggregate was last calculated",
     )
 
-    trends: Optional[Dict[str, List[float]]] = Field(
+    trends: dict[str, list[float]] | None = Field(
         default=None, description="Historical trend data for key metrics"
     )
 
@@ -76,13 +79,15 @@ class AggregateHealthMetadata(BaseModel):
 class ConfigurationChangeMetadata(BaseModel):
     """Strongly typed metadata for configuration changes."""
 
-    changed_keys: List[str] = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    changed_keys: list[str] = Field(
         description="List of configuration keys that were modified"
     )
 
     change_source: str = Field(description="Source of the configuration change")
 
-    validation_results: Dict[str, bool] = Field(
+    validation_results: dict[str, bool] = Field(
         description="Validation results for each changed configuration"
     )
 

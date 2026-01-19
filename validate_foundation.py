@@ -13,13 +13,13 @@ Validates that the foundational ONEX implementation is working correctly:
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 
-def validate_protocol_imports() -> Dict[str, Any]:
+def validate_protocol_imports() -> dict[str, Any]:
     """Validate that all protocol imports work correctly."""
     print("🔍 Testing protocol imports...")
 
@@ -41,8 +41,26 @@ def validate_protocol_imports() -> Dict[str, Any]:
             ProtocolWorkflowCoordinator,
         )
 
+        # Use imports to validate they exist (satisfies flake8 F401)
+        protocols = (
+            ProtocolAgentCoordinator,
+            ProtocolIntelligenceProcessor,
+            ProtocolMemoryAggregator,
+            ProtocolMemoryBase,
+            ProtocolMemoryConsolidator,
+            ProtocolMemoryOperations,
+            ProtocolMemoryOptimizer,
+            ProtocolMemoryOrchestrator,
+            ProtocolMemoryPersistence,
+            ProtocolMemoryRetrieval,
+            ProtocolMemoryStorage,
+            ProtocolPatternRecognition,
+            ProtocolSemanticAnalyzer,
+            ProtocolWorkflowCoordinator,
+        )
+
         print("✅ All protocol imports successful")
-        return {"success": True, "protocols_count": 14}
+        return {"success": True, "protocols_count": len(protocols)}
 
     except Exception as e:
         print(f"❌ Protocol import failed: {str(e)}")
@@ -50,7 +68,7 @@ def validate_protocol_imports() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_data_models() -> Dict[str, Any]:
+def validate_data_models() -> dict[str, Any]:
     """Validate data model imports and basic functionality."""
     print("🔍 Testing data model imports...")
 
@@ -70,6 +88,17 @@ def validate_data_models() -> Dict[str, Any]:
             UserContext,
         )
 
+        # Use imports to validate they exist (satisfies flake8 F401)
+        data_models = (
+            BaseMemoryRequest,
+            BaseMemoryResponse,
+            MemoryStoreRequest,
+            MemoryStoreResponse,
+            SearchFilters,
+            SearchResult,
+            StoragePreferences,
+        )
+
         # Test basic model creation
         user_context = UserContext(user_id="test-user", session_id="test-session")
 
@@ -86,6 +115,7 @@ def validate_data_models() -> Dict[str, Any]:
             "success": True,
             "user_id": user_context.user_id,
             "memory_id": str(memory_record.memory_id),
+            "data_models_count": len(data_models),
         }
 
     except Exception as e:
@@ -94,27 +124,21 @@ def validate_data_models() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_error_handling() -> Dict[str, Any]:
+def validate_error_handling() -> dict[str, Any]:
     """Validate error handling and monadic patterns."""
     print("🔍 Testing error handling...")
 
     try:
-        from omnimemory.protocols.error_models import (
-            OmniMemoryError,
-            OmniMemoryErrorCode,
-            StorageError,
-            ValidationError,
-        )
+        from omnimemory.protocols.error_models import StorageError, ValidationError
 
         # Test error creation and chaining
         base_error = ValidationError(
-            error_code=OmniMemoryErrorCode.VALIDATION_FAILED,
             message="Test validation error",
-            details={"field": "content", "issue": "too_long"},
+            field_name="content",
+            field_value="too_long",
         )
 
         chained_error = StorageError(
-            error_code=OmniMemoryErrorCode.STORAGE_UNAVAILABLE,
             message="Storage system down",
             cause=base_error,
         )
@@ -122,7 +146,7 @@ def validate_error_handling() -> Dict[str, Any]:
         print("✅ Error handling validation successful")
         return {
             "success": True,
-            "base_error_code": base_error.error_code.value,
+            "base_error_code": base_error.omnimemory_error_code.value,
             "chained_error_has_cause": chained_error.cause is not None,
         }
 
@@ -132,7 +156,7 @@ def validate_error_handling() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_container_creation() -> Dict[str, Any]:
+def validate_container_creation() -> dict[str, Any]:
     """Validate ONEX container creation and basic functionality."""
     print("🔍 Testing ONEX container creation...")
 
@@ -161,7 +185,7 @@ def validate_container_creation() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_base_implementations() -> Dict[str, Any]:
+def validate_base_implementations() -> dict[str, Any]:
     """Validate base implementation classes."""
     print("🔍 Testing base implementations...")
 
@@ -201,7 +225,7 @@ def validate_base_implementations() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-async def validate_async_patterns() -> Dict[str, Any]:
+async def validate_async_patterns() -> dict[str, Any]:
     """Validate async patterns and NodeResult usage."""
     print("🔍 Testing async patterns...")
 
@@ -211,6 +235,9 @@ async def validate_async_patterns() -> Dict[str, Any]:
         from omnibase_core.core.monadic.model_node_result import NodeResult
 
         from omnimemory.protocols.data_models import UserContext
+
+        # Use imports to validate they exist (satisfies flake8 F401)
+        async_components = (NodeResult, UserContext)
 
         # Create container and test ONEX patterns
         container = ModelOnexContainer()
@@ -225,6 +252,7 @@ async def validate_async_patterns() -> Dict[str, Any]:
             "has_resolve_method": has_resolve_method,
             "has_register_methods": has_register_methods,
             "container_created": True,
+            "async_components_count": len(async_components),
         }
 
     except Exception as e:

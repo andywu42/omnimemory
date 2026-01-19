@@ -10,23 +10,25 @@ Tests only the components that don't depend on omnibase_core:
 
 import sys
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+from uuid import uuid4
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+import yaml
+from pydantic import BaseModel, Field
+
+# Add src and protocols to Python path once at module level
+_BASE_PATH = Path(__file__).parent
+sys.path.insert(0, str(_BASE_PATH / "src"))
+sys.path.insert(0, str(_BASE_PATH / "src" / "omnimemory" / "protocols"))
 
 
-def validate_protocol_definitions() -> Dict[str, Any]:
+def validate_protocol_definitions() -> dict[str, Any]:
     """Validate protocol definitions structure."""
     print("🔍 Testing protocol definitions...")
 
     try:
-        # Import protocols directly without going through __init__
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
         import base_protocols
 
         # Check that protocols exist as classes
@@ -50,16 +52,11 @@ def validate_protocol_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_data_model_definitions() -> Dict[str, Any]:
+def validate_data_model_definitions() -> dict[str, Any]:
     """Validate data model definitions."""
     print("🔍 Testing data model definitions...")
 
     try:
-        # Import data models directly
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
         import data_models
 
         # Check for key model classes
@@ -77,13 +74,6 @@ def validate_data_model_definitions() -> Dict[str, Any]:
             if hasattr(data_models, model_name):
                 models_found.append(model_name)
 
-        # Test basic model creation (using simple types to avoid omnibase_core)
-        from datetime import datetime, timezone
-        from typing import Any, Dict, List, Optional
-        from uuid import uuid4
-
-        from pydantic import BaseModel, Field
-
         # Create a test model similar to our structure
         class TestMemoryModel(BaseModel):
             """Test model to verify Pydantic patterns work."""
@@ -93,7 +83,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
             created_at: datetime = Field(
                 default_factory=lambda: datetime.now(timezone.utc)
             )
-            metadata: Optional[Dict[str, Any]] = None
+            metadata: dict[str, Any] | None = None
 
         test_instance = TestMemoryModel(content="Test content", metadata={"test": True})
 
@@ -114,16 +104,11 @@ def validate_data_model_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_error_model_definitions() -> Dict[str, Any]:
+def validate_error_model_definitions() -> dict[str, Any]:
     """Validate error model definitions."""
     print("🔍 Testing error model definitions...")
 
     try:
-        # Import error models directly
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
         import error_models
 
         # Check for key error classes
@@ -154,14 +139,12 @@ def validate_error_model_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_contract_specification() -> Dict[str, Any]:
+def validate_contract_specification() -> dict[str, Any]:
     """Validate contract.yaml structure."""
     print("🔍 Testing contract specification...")
 
     try:
-        import yaml
-
-        contract_path = Path(__file__).parent / "contract.yaml"
+        contract_path = _BASE_PATH / "contract.yaml"
         if not contract_path.exists():
             return {"success": False, "error": "contract.yaml not found"}
 
@@ -186,10 +169,11 @@ def validate_contract_specification() -> Dict[str, Any]:
         protocols_count = len(contract.get("protocols", {}).get("memory_protocols", {}))
         data_models_count = len(contract.get("data_models", {}).get("core_models", []))
 
-        print(f"✅ Contract validation successful")
-        print(
-            f"   Architecture: {contract.get('contract', {}).get('architecture', {}).get('pattern', 'Unknown')}"
-        )
+        print("✅ Contract validation successful")
+        contract_section = contract.get("contract", {})
+        arch_section = contract_section.get("architecture", {})
+        arch_pattern = arch_section.get("pattern", "Unknown")
+        print(f"   Architecture: {arch_pattern}")
         print(f"   Protocols: {protocols_count}")
         print(f"   Data models: {data_models_count}")
 
@@ -208,13 +192,11 @@ def validate_contract_specification() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_project_structure() -> Dict[str, Any]:
+def validate_project_structure() -> dict[str, Any]:
     """Validate overall project structure."""
     print("🔍 Testing project structure...")
 
     try:
-        base_path = Path(__file__).parent
-
         # Check for expected directories and files
         expected_structure = {
             "src/omnimemory": "Main package directory",
@@ -229,13 +211,13 @@ def validate_project_structure() -> Dict[str, Any]:
         missing_items = []
 
         for item, description in expected_structure.items():
-            item_path = base_path / item
+            item_path = _BASE_PATH / item
             if item_path.exists():
                 found_items[item] = description
             else:
                 missing_items.append(item)
 
-        print(f"✅ Project structure validation")
+        print("✅ Project structure validation")
         print(
             f"   Found: {len(found_items)} / {len(expected_structure)} expected items"
         )

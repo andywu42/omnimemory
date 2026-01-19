@@ -210,7 +210,7 @@ OMNIMEMORY__QDRANT__ON_DISK=true
 | `int` | Integer | `10485760` |
 | `float` | Floating point number | `0.7` |
 | `str` | String | `omnimemory` |
-| `list` | JSON array or comma-separated values | `[".json", ".txt"]` or `.json,.txt` |
+| `list` | JSON array format | `[".json", ".txt"]` |
 
 ## Secrets Management
 

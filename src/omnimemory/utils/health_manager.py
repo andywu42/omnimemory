@@ -19,19 +19,21 @@ from typing import Awaitable, Callable, Dict, List, Optional, Union
 
 import psutil
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from ..models.foundation.model_health_metadata import (
-    AggregateHealthMetadata,
-    ConfigurationChangeMetadata,
-    HealthCheckMetadata,
-)
+from ..models.foundation.model_health_metadata import HealthCheckMetadata
 from ..models.foundation.model_health_response import (
     ModelCircuitBreakerStats,
     ModelCircuitBreakerStatsCollection,
+    ModelDependencyStatus,
+    ModelHealthResponse,
     ModelRateLimitedHealthCheckResponse,
+    ModelResourceMetrics,
 )
+from .concurrency import CircuitBreaker
 from .error_sanitizer import SanitizationLevel, sanitize_error
+from .observability import OperationType, correlation_context, trace_operation
+from .resource_manager import AsyncCircuitBreaker, CircuitBreakerConfig
 
 # === RATE LIMITING ===
 
@@ -133,14 +135,6 @@ def _get_environment() -> str:
     else:
         return "development"
 
-
-from ..models.foundation.model_health_response import (
-    ModelDependencyStatus,
-    ModelHealthResponse,
-    ModelResourceMetrics,
-)
-from .observability import OperationType, correlation_context, trace_operation
-from .resource_manager import AsyncCircuitBreaker, CircuitBreakerConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -509,7 +503,8 @@ class HealthCheckManager:
             r for r in non_critical_results if r.status == HealthStatus.UNHEALTHY
         ]
 
-        # If more than half of non-critical dependencies are unhealthy, system is degraded
+        # If more than half of non-critical dependencies are unhealthy,
+        # system is degraded
         if (
             non_critical_results
             and len(non_critical_unhealthy) > len(non_critical_results) / 2
@@ -694,7 +689,8 @@ async def create_pinecone_health_check(
         )
 
         try:
-            # Simple connection test - this would need to be adapted based on Pinecone client
+            # Simple connection test - this would need to be adapted
+            # based on Pinecone client
             # For now, return healthy as a placeholder
             return HealthCheckResult(
                 config=config,
@@ -723,7 +719,10 @@ HealthCheckResultDict = Dict[str, HealthCheckResultValue]
 
 
 class HealthCheckDetails(BaseModel):
-    """Strongly typed health check details with rate-limit and circuit state tracking."""
+    """Strongly typed health check details.
+
+    Includes rate-limit and circuit state tracking.
+    """
 
     message: Optional[str] = Field(
         default=None, description="Human-readable status message"
@@ -767,37 +766,31 @@ class HealthCheckDetails(BaseModel):
 class ResourceHealthCheck(BaseModel):
     """Result of a resource health check."""
 
+    model_config = ConfigDict(use_enum_values=False)
+
     status: HealthStatus = Field(description="Health status of the resource")
     response_time: float = Field(default=0.0, description="Response time in seconds")
     details: HealthCheckDetails = Field(
         default_factory=HealthCheckDetails, description="Additional details"
     )
-    correlation_id: Optional[str] = Field(
+    correlation_id: str | None = Field(
         default=None, description="Correlation ID for tracking"
     )
-
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = False
 
 
 class SystemHealth(BaseModel):
     """Overall system health status."""
 
+    model_config = ConfigDict(use_enum_values=False)
+
     overall_status: HealthStatus = Field(description="Overall system health status")
-    resource_statuses: Dict[str, ResourceHealthCheck] = Field(
+    resource_statuses: dict[str, ResourceHealthCheck] = Field(
         default_factory=dict, description="Health status of individual resources"
     )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp of health check",
     )
-
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = False
 
 
 class HealthManager:

@@ -37,7 +37,7 @@ class FilesystemSettings(BaseSettings):
     Environment variables (prefix: OMNIMEMORY__FILESYSTEM__):
         BASE_PATH: Base directory for memory storage (required, must be absolute)
         MAX_FILE_SIZE_BYTES: Maximum file size (default: 10MB)
-        ALLOWED_EXTENSIONS: Comma-separated extensions (default: .json,.txt,.md)
+        ALLOWED_EXTENSIONS: JSON array of extensions (default: [".json",".txt",".md"])
         CREATE_IF_MISSING: Create directory if missing (default: true)
         ENABLE_COMPRESSION: Enable gzip compression (default: false)
         BUFFER_SIZE_BYTES: I/O buffer size (default: 64KB)
@@ -155,7 +155,8 @@ class PostgresSettings(BaseSettings):
     )
     ssl_mode: str = Field(
         default="prefer",
-        description="SSL mode (disable, allow, prefer, require, verify-ca, verify-full)",
+        description="SSL mode: disable, allow, prefer, require, "
+        "verify-ca, verify-full",
     )
     schema_name: str = Field(
         default="omnimemory",

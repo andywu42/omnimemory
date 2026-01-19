@@ -19,7 +19,10 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,7 +42,8 @@ class BootstrapError(Exception):
     """Error during bootstrap initialization.
 
     Attributes:
-        config_block: Name of the configuration block that failed (e.g., "filesystem", "postgres").
+        config_block: Name of the configuration block that failed
+            (e.g., "filesystem", "postgres").
         cause: The underlying exception that caused the failure, if any.
     """
 
@@ -78,6 +82,23 @@ class BootstrapResult:
 # Global state for idempotency
 _bootstrap_completed: bool = False
 _bootstrap_result: BootstrapResult | None = None
+# Lock to serialize bootstrap/shutdown operations and prevent race conditions
+_bootstrap_lock: asyncio.Lock | None = None
+
+
+def _get_bootstrap_lock() -> asyncio.Lock:
+    """Get or create the bootstrap lock.
+
+    Creates the lock lazily to avoid issues with event loop not being available
+    at module import time.
+
+    Returns:
+        The asyncio.Lock for serializing bootstrap/shutdown operations.
+    """
+    global _bootstrap_lock
+    if _bootstrap_lock is None:
+        _bootstrap_lock = asyncio.Lock()
+    return _bootstrap_lock
 
 
 async def _validate_filesystem_config(config: ModelFilesystemConfig) -> list[str]:
@@ -123,11 +144,18 @@ async def _validate_filesystem_config(config: ModelFilesystemConfig) -> list[str
             config_block="filesystem",
         )
 
-    # Check write permissions by creating and removing a test file
-    test_file = base_path / ".omnimemory_write_test"
+    # Check write permissions by creating and removing a unique temp file
+    # Use tempfile to avoid overwriting/deleting any pre-existing files
     try:
-        test_file.touch()
-        test_file.unlink()
+        fd, temp_path = tempfile.mkstemp(
+            prefix=".omnimemory_write_test_", dir=base_path
+        )
+        try:
+            # Close the file descriptor
+            os.close(fd)
+        finally:
+            # Clean up the temp file
+            Path(temp_path).unlink()
     except OSError as e:
         raise BootstrapError(
             f"base_path '{base_path}' is not writable: {e}",
@@ -233,57 +261,59 @@ async def bootstrap(
     """
     global _bootstrap_completed, _bootstrap_result
 
-    # Idempotency check
-    if _bootstrap_completed and not force:
-        logger.debug("Bootstrap already completed, returning cached result")
-        assert _bootstrap_result is not None  # noqa: S101
-        return _bootstrap_result
+    # Serialize bootstrap operations to avoid race conditions
+    async with _get_bootstrap_lock():
+        # Idempotency check (inside lock to ensure thread-safety)
+        if _bootstrap_completed and not force:
+            logger.debug("Bootstrap already completed, returning cached result")
+            assert _bootstrap_result is not None  # noqa: S101
+            return _bootstrap_result
 
-    logger.info("Starting OmniMemory bootstrap...")
+        logger.info("Starting OmniMemory bootstrap...")
 
-    # Initialize secrets provider
-    if secrets_provider is None:
-        secrets_provider = EnvSecretsProvider(prefix="OMNIMEMORY_")
+        # Initialize secrets provider
+        if secrets_provider is None:
+            secrets_provider = EnvSecretsProvider(prefix="OMNIMEMORY_")
 
-    initialized_backends: list[str] = []
-    all_warnings: list[str] = []
+        initialized_backends: list[str] = []
+        all_warnings: list[str] = []
 
-    # Validate filesystem (required)
-    logger.info("Validating filesystem configuration...")
-    warnings = await _validate_filesystem_config(config.filesystem)
-    all_warnings.extend(warnings)
-    initialized_backends.append("filesystem")
-
-    # Validate postgres (optional)
-    if config.postgres is not None:
-        logger.info("Validating PostgreSQL configuration...")
-        warnings = await _validate_postgres_config(config.postgres)
+        # Validate filesystem (required)
+        logger.info("Validating filesystem configuration...")
+        warnings = await _validate_filesystem_config(config.filesystem)
         all_warnings.extend(warnings)
-        initialized_backends.append("postgres")
+        initialized_backends.append("filesystem")
 
-    # Validate qdrant (optional)
-    if config.qdrant is not None:
-        logger.info("Validating Qdrant configuration...")
-        warnings = await _validate_qdrant_config(config.qdrant)
-        all_warnings.extend(warnings)
-        initialized_backends.append("qdrant")
+        # Validate postgres (optional)
+        if config.postgres is not None:
+            logger.info("Validating PostgreSQL configuration...")
+            warnings = await _validate_postgres_config(config.postgres)
+            all_warnings.extend(warnings)
+            initialized_backends.append("postgres")
 
-    # Build result
-    result = BootstrapResult(
-        success=True,
-        initialized_backends=initialized_backends,
-        warnings=all_warnings,
-        secrets_provider=secrets_provider,
-    )
+        # Validate qdrant (optional)
+        if config.qdrant is not None:
+            logger.info("Validating Qdrant configuration...")
+            warnings = await _validate_qdrant_config(config.qdrant)
+            all_warnings.extend(warnings)
+            initialized_backends.append("qdrant")
 
-    # Cache for idempotency
-    _bootstrap_completed = True
-    _bootstrap_result = result
+        # Build result
+        result = BootstrapResult(
+            success=True,
+            initialized_backends=initialized_backends,
+            warnings=all_warnings,
+            secrets_provider=secrets_provider,
+        )
 
-    logger.info(f"Bootstrap complete. Backends: {initialized_backends}")
-    if all_warnings:
-        for warning in all_warnings:
-            logger.warning(f"Bootstrap warning: {warning}")
+        # Cache for idempotency
+        _bootstrap_completed = True
+        _bootstrap_result = result
+
+        logger.info(f"Bootstrap complete. Backends: {initialized_backends}")
+        if all_warnings:
+            for warning in all_warnings:
+                logger.warning(f"Bootstrap warning: {warning}")
 
     return result
 
@@ -297,13 +327,15 @@ async def shutdown() -> None:
     """
     global _bootstrap_completed, _bootstrap_result
 
-    logger.info("Shutting down OmniMemory...")
+    # Serialize shutdown operations to avoid race conditions with bootstrap
+    async with _get_bootstrap_lock():
+        logger.info("Shutting down OmniMemory...")
 
-    # Reset bootstrap state
-    _bootstrap_completed = False
-    _bootstrap_result = None
+        # Reset bootstrap state
+        _bootstrap_completed = False
+        _bootstrap_result = None
 
-    logger.info("Shutdown complete")
+        logger.info("Shutdown complete")
 
 
 def is_bootstrapped() -> bool:

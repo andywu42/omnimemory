@@ -10,7 +10,6 @@ This module provides:
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import re
 import time
@@ -18,16 +17,9 @@ import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar, Union
-
-# Type variable for generic function types
-F = TypeVar("F", bound=Callable[..., object])
-
-# Type alias for metadata values - supports common serializable types
-# This replaces Any with explicit types for type safety
-MetadataValue = Union[str, int, float, bool, None]
 
 import structlog
 from pydantic import BaseModel, Field
@@ -35,6 +27,13 @@ from pydantic import BaseModel, Field
 from ..models.foundation.model_typed_collections import ModelMetadata
 from .error_sanitizer import SanitizationLevel
 from .error_sanitizer import sanitize_error as _base_sanitize_error
+
+# Type variable for generic function types
+F = TypeVar("F", bound=Callable[..., object])
+
+# Type alias for metadata values - supports common serializable types
+# This replaces Any with explicit types for type safety
+MetadataValue = Union[str, int, float, bool, None]
 
 # === SECURITY VALIDATION FUNCTIONS ===
 
@@ -163,7 +162,7 @@ class CorrelationContext(BaseModel):
     parent_correlation_id: Optional[str] = Field(default=None)
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ObservabilityManager:

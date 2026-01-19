@@ -3,8 +3,7 @@ Trust score model with time decay following ONEX standards.
 """
 
 import math
-from datetime import datetime, timedelta, timezone
-from functools import lru_cache
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -92,7 +91,8 @@ class ModelTrustScore(BaseModel):
             expected_level = cls._score_to_level(score)
             if v != expected_level:
                 raise ValueError(
-                    f"Trust level {v} doesn't match score {score}, expected {expected_level}"
+                    f"Trust level {v} doesn't match score {score}, "
+                    f"expected {expected_level}"
                 )
         return v
 

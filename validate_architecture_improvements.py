@@ -5,7 +5,6 @@ Validation script for advanced architecture improvements.
 This script validates the implementation without requiring external dependencies.
 """
 
-import importlib.util
 import os
 import sys
 from typing import List, Tuple
