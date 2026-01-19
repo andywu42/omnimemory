@@ -30,6 +30,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from pathlib import Path
@@ -46,6 +47,42 @@ __all__ = [
     "HandlerFileSystemAdapter",
     "HandlerFileSystemAdapterConfig",
 ]
+
+
+def _is_not_found_infra_error(error: InfraConnectionError) -> bool:
+    """Check if an InfraConnectionError indicates a "not found" condition.
+
+    This helper encapsulates the detection of "not found" errors from the
+    filesystem handler. The filesystem handler (omnibase_infra) raises
+    InfraConnectionError with SERVICE_UNAVAILABLE error code for all filesystem
+    errors, including "not found" scenarios. It does not use RESOURCE_NOT_FOUND
+    or set __cause__ to FileNotFoundError.
+
+    The handler uses explicit existence checks before raising errors, so the
+    only way to distinguish "not found" from other errors is by message content.
+    This is a known limitation documented here as a single point of maintenance.
+
+    Handler message patterns for "not found":
+        - "File not found: {name}" (read_file, delete_file)
+        - "Directory not found: {name}" (list_directory)
+
+    Args:
+        error: The InfraConnectionError to check.
+
+    Returns:
+        True if the error indicates a resource was not found, False otherwise.
+
+    Note:
+        This approach is fragile and depends on message format stability in
+        omnibase_infra. If the handler changes its message format, this
+        function must be updated. A future improvement would be for the
+        handler to use RESOURCE_NOT_FOUND error code or structured metadata.
+    """
+    message = str(error).lower()
+    # Check for patterns used by handler_filesystem.py:
+    # - "file not found:" (read_file, delete_file operations)
+    # - "directory not found:" (list_directory operation)
+    return "not found:" in message
 
 
 class HandlerFileSystemAdapterConfig(BaseModel):
@@ -247,11 +284,26 @@ class HandlerFileSystemAdapter:
             except RuntimeError:
                 # Re-raise RuntimeError without wrapping
                 raise
-            except Exception as e:
-                # Log unexpected errors before re-raising as RuntimeError
-                logger.exception(
-                    "Unexpected error during initialization: %s",
+            except InfraConnectionError as e:
+                logger.error(
+                    "Infrastructure error initializing adapter at %s: %s",
+                    self._snapshots_path,
                     e,
+                )
+                raise RuntimeError(f"Initialization failed: {e}") from e
+            except TimeoutError as e:
+                logger.error(
+                    "Timeout during initialization at %s: %s",
+                    self._snapshots_path,
+                    e,
+                )
+                raise RuntimeError(f"Initialization timed out: {e}") from e
+            except Exception as e:
+                # Safety net for truly unexpected errors - log at ERROR level
+                logger.error(
+                    "Unexpected error during initialization: %s (type: %s)",
+                    e,
+                    type(e).__name__,
                 )
                 raise RuntimeError(f"Initialization failed: {e}") from e
 
@@ -379,9 +431,41 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"I/O error storing snapshot: {e}",
             )
+        except InfraConnectionError as e:
+            # Handler raises InfraConnectionError for various filesystem issues
+            logger.warning(
+                "Infrastructure error storing snapshot %s: %s",
+                snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Store failed: {e}",
+            )
+        except TimeoutError as e:
+            logger.warning("Timeout storing snapshot %s: %s", snapshot_id, e)
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Store operation timed out: {e}",
+            )
+        except UnicodeEncodeError as e:
+            logger.warning(
+                "Unicode encoding error storing snapshot %s: %s",
+                snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Snapshot contains invalid characters: {e}",
+            )
         except Exception as e:
-            # Log unexpected exceptions for debugging
-            logger.exception("Unexpected error storing snapshot %s: %s", snapshot_id, e)
+            # Safety net for truly unexpected errors - log at ERROR level
+            logger.error(
+                "Unexpected error storing snapshot %s: %s (type: %s)",
+                snapshot_id,
+                e,
+                type(e).__name__,
+            )
             return ModelMemoryStorageResponse(
                 status="error",
                 error_message=f"Store failed: {e}",
@@ -489,13 +573,13 @@ class HandlerFileSystemAdapter:
             )
         except InfraConnectionError as e:
             # Handler raises InfraConnectionError for file not found
-            error_str = str(e).lower()
-            if "not found" in error_str or "file not found" in error_str:
+            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
                 )
-            logger.exception(
+            logger.warning(
                 "Infrastructure error retrieving snapshot %s: %s",
                 request.snapshot_id,
                 e,
@@ -504,11 +588,43 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"Retrieve failed: {e}",
             )
-        except Exception as e:
-            logger.exception(
-                "Unexpected error retrieving snapshot %s: %s",
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "JSON decode error for snapshot %s: %s",
                 request.snapshot_id,
                 e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Snapshot file contains invalid JSON: {e}",
+            )
+        except UnicodeDecodeError as e:
+            logger.warning(
+                "Unicode decode error for snapshot %s: %s",
+                request.snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Snapshot file contains invalid encoding: {e}",
+            )
+        except TimeoutError as e:
+            logger.warning(
+                "Timeout retrieving snapshot %s: %s",
+                request.snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Retrieve operation timed out: {e}",
+            )
+        except Exception as e:
+            # Safety net for truly unexpected errors - log at ERROR level
+            logger.error(
+                "Unexpected error retrieving snapshot %s: %s (type: %s)",
+                request.snapshot_id,
+                e,
+                type(e).__name__,
             )
             return ModelMemoryStorageResponse(
                 status="error",
@@ -621,13 +737,13 @@ class HandlerFileSystemAdapter:
             )
         except InfraConnectionError as e:
             # Handler raises InfraConnectionError for file not found
-            error_str = str(e).lower()
-            if "not found" in error_str or "file not found" in error_str:
+            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
                 )
-            logger.exception(
+            logger.warning(
                 "Infrastructure error deleting snapshot %s: %s",
                 request.snapshot_id,
                 e,
@@ -636,11 +752,23 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"Delete failed: {e}",
             )
-        except Exception as e:
-            logger.exception(
-                "Unexpected error deleting snapshot %s: %s",
+        except TimeoutError as e:
+            logger.warning(
+                "Timeout deleting snapshot %s: %s",
                 request.snapshot_id,
                 e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Delete operation timed out: {e}",
+            )
+        except Exception as e:
+            # Safety net for truly unexpected errors - log at ERROR level
+            logger.error(
+                "Unexpected error deleting snapshot %s: %s (type: %s)",
+                request.snapshot_id,
+                e,
+                type(e).__name__,
             )
             return ModelMemoryStorageResponse(
                 status="error",
@@ -772,15 +900,15 @@ class HandlerFileSystemAdapter:
             )
         except InfraConnectionError as e:
             # Handler raises InfraConnectionError for directory not found
-            error_str = str(e).lower()
-            if "not found" in error_str or "no such" in error_str:
+            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="error",
                     error_message=(
                         f"Snapshots directory not found: {self._snapshots_path}"
                     ),
                 )
-            logger.exception(
+            logger.warning(
                 "Infrastructure error listing snapshots in %s: %s",
                 self._snapshots_path,
                 e,
@@ -789,11 +917,23 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"List failed: {e}",
             )
-        except Exception as e:
-            logger.exception(
-                "Unexpected error listing snapshots in %s: %s",
+        except TimeoutError as e:
+            logger.warning(
+                "Timeout listing snapshots in %s: %s",
                 self._snapshots_path,
                 e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"List operation timed out: {e}",
+            )
+        except Exception as e:
+            # Safety net for truly unexpected errors - log at ERROR level
+            logger.error(
+                "Unexpected error listing snapshots in %s: %s (type: %s)",
+                self._snapshots_path,
+                e,
+                type(e).__name__,
             )
             return ModelMemoryStorageResponse(
                 status="error",
