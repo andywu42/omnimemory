@@ -18,7 +18,7 @@ Required fields:
     - operation (str): Operation name (e.g., "store", "retrieve", "delete")
     - handler (str): Handler name (e.g., "filesystem", "postgresql")
     - status (str): Operation status, one of "success" or "failure"
-    - latency_ms (float): Operation latency in milliseconds (rounded to 2 decimal places)
+    - latency_ms (float): Operation latency in milliseconds (2 decimal places)
     - timestamp (str): ISO8601 timestamp in UTC (format: YYYY-MM-DDTHH:MM:SS.sssZ)
 
 Optional fields (only present on failure):
@@ -52,21 +52,55 @@ Metric Label Validation (strict_labels option):
 All metric classes (Counter, Histogram, Gauge) support a `strict_labels` parameter:
 
     - strict_labels=False (default): Labels are matched by name, missing labels
-      default to empty string, extra labels are ignored. Use for backwards
-      compatibility and flexibility.
+      default to empty string, extra labels are ignored. This mode exists for
+      backwards compatibility only.
 
-    - strict_labels=True: Validates that EXACTLY the expected labels are provided.
-      Raises ValueError if labels are missing or extra labels are passed.
-      RECOMMENDED for production code to prevent silent mis-tagging errors.
+    - strict_labels=True (RECOMMENDED FOR PRODUCTION): Validates that EXACTLY the
+      expected labels are provided. Raises ValueError if labels are missing or
+      extra labels are passed. This catches bugs early and prevents data quality issues.
 
-Example:
-    # Lenient mode (default) - won't catch mistakes
+**WARNING: Silent Mis-Tagging Without strict_labels**
+
+When strict_labels=False (the default), missing labels silently default to empty
+string (""). This can cause serious issues:
+
+    1. **Metric Pollution**: Operations get tagged with "" instead of the correct
+       value, making metrics unreliable for alerting and dashboards.
+
+    2. **Hidden Bugs**: Typos in label names (e.g., "opration" vs "operation")
+       silently create new label dimensions with empty required labels.
+
+    3. **Cardinality Issues**: Empty string labels aggregate unrelated operations,
+       skewing percentiles and averages.
+
+    4. **Debugging Nightmares**: When alerts fire, you can't trace back to the
+       specific operation because labels are missing or incorrect.
+
+**Best Practices**:
+    - ALWAYS use strict_labels=True in production code
+    - Use strict_labels=False only for temporary migrations or testing
+    - Consider enabling strict_labels globally via a configuration flag
+
+Example - Lenient mode (DEFAULT - NOT RECOMMENDED):
     counter = Counter("ops", ["operation", "status"])
-    counter.inc(operation="store")  # "status" defaults to "" - silent mis-tag!
+    counter.inc(operation="store")  # "status" silently defaults to ""
+    # Result: metric recorded as ("store", "") - SILENT MIS-TAG!
+    # This won't raise an error but WILL corrupt your metrics!
 
-    # Strict mode - catches mistakes immediately
+Example - Strict mode (RECOMMENDED FOR PRODUCTION):
     counter = Counter("ops", ["operation", "status"], strict_labels=True)
-    counter.inc(operation="store")  # Raises ValueError: missing labels: ['status']
+    counter.inc(operation="store")
+    # Raises: ValueError: Label validation failed for metric 'ops':
+    #         missing labels: ['status'].
+    #         Expected: ['operation', 'status'], got: ['operation']
+
+Example - Extra labels also caught in strict mode:
+    counter = Counter("ops", ["operation", "status"], strict_labels=True)
+    counter.inc(operation="store", status="ok", region="us-east")
+    # Raises: ValueError: Label validation failed for metric 'ops':
+    #         extra labels: ['region'].
+    #         Expected: ['operation', 'status'],
+    #         got: ['operation', 'region', 'status']
 """
 
 from __future__ import annotations
@@ -142,8 +176,10 @@ class LabelValidationError(Exception):
             errors.append(f"unexpected extra labels: {sorted(extra_labels)}")
 
         message = (
-            f"Label validation failed for metric '{metric_name}': {'; '.join(errors)}. "
-            f"Expected labels: {sorted(expected_labels)}, got: {sorted(provided_labels)}"
+            f"Label validation failed for metric '{metric_name}': "
+            f"{'; '.join(errors)}. "
+            f"Expected labels: {sorted(expected_labels)}, "
+            f"got: {sorted(provided_labels)}"
         )
         super().__init__(message)
 
@@ -589,15 +625,31 @@ class Counter:
     Thread-safe counter that tracks total operations by labels.
     Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
-    Example:
+    Label Validation:
+        By default (strict_labels=False), missing labels silently default to empty
+        string (""), which can cause metric pollution and debugging issues. For
+        production use, ALWAYS set strict_labels=True to catch label mismatches
+        immediately.
+
+    Example - Basic usage (lenient mode, NOT RECOMMENDED for production):
         counter = Counter("memory_operation_total", ["operation", "status", "handler"])
         counter.inc(operation="store", status="success", handler="filesystem")
+        counter.inc(operation="store")  # DANGER: "status" and "handler" become ""
 
-        # With strict label validation:
+    Example - Production usage (strict mode, RECOMMENDED):
         counter = Counter("ops", ["operation", "status"], strict_labels=True)
-        counter.inc(operation="store", status="ok")  # OK
-        counter.inc(operation="store")  # Raises ValueError (missing "status")
-        counter.inc(operation="store", status="ok", extra="bad")  # Raises ValueError
+        counter.inc(operation="store", status="ok")  # OK - all labels provided
+        counter.inc(operation="store")  # Raises ValueError: missing labels: ['status']
+        counter.inc(operation="store", status="ok", extra="bad")
+        # Raises ValueError: extra labels: ['extra']
+
+    Warning:
+        Without strict_labels=True, typos in label names will NOT raise errors.
+        Instead, the typo creates a new label with empty string for required labels:
+
+        counter = Counter("ops", ["operation", "status"])
+        counter.inc(opration="store", status="ok")  # Note typo: "opration"
+        # Result: labels are ("", "ok") - "opration" is ignored, "operation" is ""!
     """
 
     def __init__(
@@ -653,8 +705,9 @@ class Counter:
 
         if errors:
             raise ValueError(
-                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
-                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+                f"Label validation failed for metric '{self.name}': "
+                f"{'; '.join(errors)}. "
+                f"Expected: {sorted(expected)}, got: {sorted(provided)}"
             )
 
     def inc(self, amount: int = 1, **labels: str) -> None:
@@ -753,14 +806,29 @@ class Histogram:
     Thread-safe histogram that tracks value distributions with configurable buckets.
     Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
-    Example:
+    Label Validation:
+        By default (strict_labels=False), missing labels silently default to empty
+        string (""), which corrupts histogram percentiles by mixing unrelated data.
+        For production use, ALWAYS set strict_labels=True.
+
+    Example - Basic usage (lenient mode, NOT RECOMMENDED for production):
         hist = Histogram("memory_storage_latency_ms", ["operation", "handler"])
         hist.observe(45.2, operation="store", handler="filesystem")
+        hist.observe(100.0, operation="store")  # DANGER: "handler" becomes ""
+        # Now p99 latency for ("store", "") mixes data that should be separate!
 
-        # With strict label validation:
+    Example - Production usage (strict mode, RECOMMENDED):
         hist = Histogram("latency", ["operation", "handler"], strict_labels=True)
-        hist.observe(45.2, operation="store", handler="fs")  # OK
-        hist.observe(45.2, operation="store")  # Raises ValueError (missing "handler")
+        hist.observe(45.2, operation="store", handler="fs")  # OK - all labels
+        hist.observe(45.2, operation="store")
+        # Raises ValueError: missing labels: ['handler']
+        hist.observe(45.2, operation="store", handler="fs", region="us")
+        # Raises ValueError: extra labels: ['region']
+
+    Warning:
+        Missing labels in histograms are especially dangerous because they corrupt
+        percentile calculations. If some observations go to ("store", "fs") and
+        others to ("store", ""), your p50/p99 metrics become meaningless.
     """
 
     def __init__(
@@ -841,8 +909,9 @@ class Histogram:
 
         if errors:
             raise ValueError(
-                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
-                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+                f"Label validation failed for metric '{self.name}': "
+                f"{'; '.join(errors)}. "
+                f"Expected: {sorted(expected)}, got: {sorted(provided)}"
             )
 
     def observe(self, value: float, **labels: str) -> None:
@@ -922,15 +991,31 @@ class Gauge:
     Thread-safe gauge that tracks current state values.
     Uses bounded storage with LRU eviction to prevent unbounded memory growth.
 
-    Example:
+    Label Validation:
+        By default (strict_labels=False), missing labels silently default to empty
+        string (""), which can cause incorrect state reporting (e.g., health checks
+        reporting wrong handler status). For production use, ALWAYS set
+        strict_labels=True.
+
+    Example - Basic usage (lenient mode, NOT RECOMMENDED for production):
         gauge = Gauge("handler_health_status", ["handler"])
         gauge.set(1.0, handler="filesystem")  # healthy
         gauge.set(0.0, handler="filesystem")  # unhealthy
+        gauge.set(1.0)  # DANGER: sets health for handler="" (unknown handler!)
 
-        # With strict label validation:
+    Example - Production usage (strict mode, RECOMMENDED):
         gauge = Gauge("health", ["handler", "region"], strict_labels=True)
-        gauge.set(1.0, handler="fs", region="us-east")  # OK
-        gauge.set(1.0, handler="fs")  # Raises ValueError (missing "region")
+        gauge.set(1.0, handler="fs", region="us-east")  # OK - all labels
+        gauge.set(1.0, handler="fs")
+        # Raises ValueError: missing labels: ['region']
+        gauge.set(1.0, handler="fs", region="us", zone="a")
+        # Raises ValueError: extra labels: ['zone']
+
+    Warning:
+        Gauges with missing labels can cause incorrect health reporting. If your
+        alerting checks gauge.get(handler="postgres") but the gauge was set with
+        no handler label, you'll get 0.0 (default) instead of the actual health
+        status, potentially causing false alerts or missed outages.
     """
 
     def __init__(
@@ -986,8 +1071,9 @@ class Gauge:
 
         if errors:
             raise ValueError(
-                f"Label validation failed for metric '{self.name}': {'; '.join(errors)}. "
-                f"Expected labels: {sorted(expected)}, got: {sorted(provided)}"
+                f"Label validation failed for metric '{self.name}': "
+                f"{'; '.join(errors)}. "
+                f"Expected: {sorted(expected)}, got: {sorted(provided)}"
             )
 
     def set(self, value: float, **labels: str) -> None:
@@ -2051,7 +2137,7 @@ class HandlerObservabilityWrapper:
                 - operation (str): Operation name (e.g., "store", "retrieve")
                 - handler (str): Handler name (e.g., "filesystem", "postgresql")
                 - status (str): "success" or "failure"
-                - latency_ms (float): Operation latency in milliseconds (2 decimal places)
+                - latency_ms (float): Latency in milliseconds (2 decimal places)
                 - timestamp (str): ISO8601 UTC timestamp (YYYY-MM-DDTHH:MM:SS.sssZ)
 
             Optional fields (only on failure):
@@ -2139,7 +2225,7 @@ class HandlerObservabilityWrapper:
             because it doesn't depend on the order of labels in label_names.
         """
         # Get all counter values for this handler
-        # Use labels_from_key() for explicit label matching (avoids position-based issues)
+        # Use labels_from_key() for explicit label matching (not position-based)
         counter_metric = self.registry.memory_operation_total
         all_counters = counter_metric.get_all()
         handler_counters = {
