@@ -5,13 +5,11 @@ Priority model following ONEX foundation patterns.
 from datetime import datetime, timezone
 
 from omnibase_core.enums.enum_priority_level import EnumPriorityLevel
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelPriority(BaseModel):
     """Priority model with level, context, and metadata."""
-
-    model_config = ConfigDict(extra="forbid")
 
     level: EnumPriorityLevel = Field(
         description="Priority level using ONEX standard enum",

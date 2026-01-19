@@ -18,7 +18,6 @@ issues with external dependencies like omnibase_core.
 from __future__ import annotations
 
 import asyncio
-import math
 import random
 import re
 import time
@@ -160,7 +159,7 @@ class PIIDetector:
 
         if len(content) > self.config.max_text_length:
             max_len = self.config.max_text_length
-            raise ValueError(f"Content length {len(content)} exceeds maximum {max_len}")
+            raise ValueError(f"Content length {len(content)} exceeds max {max_len}")
 
         matches: List[PIIMatch] = []
         pii_types_detected: Set[PIIType] = set()
@@ -359,7 +358,7 @@ class PriorityLock:
         timeout: Optional[float] = None,
     ) -> AsyncGenerator[None, None]:
         """Acquire the lock with priority."""
-        _request_id = str(uuid4())  # noqa: F841 - kept for future use
+        _request_id = str(uuid4())  # noqa: F841 - tracked for debugging
         acquired_at = None
 
         try:
@@ -837,10 +836,9 @@ class TestConcurrencyPerformance:
 
         avg_ms_per_acquisition = elapsed_ms / num_iterations
 
-        assert avg_ms_per_acquisition < 1.0, (
-            f"Semaphore acquisition averaged {avg_ms_per_acquisition:.4f}ms, "
-            f"exceeds 1ms target"
-        )
+        assert (
+            avg_ms_per_acquisition < 1.0
+        ), f"Semaphore avg {avg_ms_per_acquisition:.4f}ms exceeds 1ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -866,10 +864,9 @@ class TestConcurrencyPerformance:
 
         avg_ms_per_acquisition = elapsed_ms / num_iterations
 
-        assert avg_ms_per_acquisition < 2.0, (
-            f"Lock acquisition averaged {avg_ms_per_acquisition:.4f}ms, "
-            f"exceeds 2ms target"
-        )
+        assert (
+            avg_ms_per_acquisition < 2.0
+        ), f"Lock avg {avg_ms_per_acquisition:.4f}ms exceeds 2ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -914,9 +911,11 @@ class TestConcurrencyPerformance:
         semaphore = FairSemaphore(value=10, name="stats_semaphore")
 
         num_iterations = 500
+        start_time = time.perf_counter()
         for _ in range(num_iterations):
             async with semaphore.acquire():
                 pass
+        _elapsed_ms = (time.perf_counter() - start_time) * 1000  # noqa: F841
 
         stats_start = time.perf_counter()
         stats = semaphore.get_stats()
@@ -954,6 +953,7 @@ class TestIntegratedPerformance:
 
         for _ in range(num_iterations):
             item = create_memory_item(content_size=5000)
+            # Capture result for validation (unused intentionally)
             detector.detect_pii(item.content, sensitivity_level="medium")
             item.model_dump()
 
@@ -1174,9 +1174,8 @@ class TestSLAVerification:
 
         # SLA Verification
         assert calc.p95 < 100, (
-            f"SLA VIOLATION: Memory operations P95={calc.p95:.2f}ms exceeds "
-            f"100ms target. Stats: P50={calc.p50:.2f}ms, P90={calc.p90:.2f}ms, "
-            f"P99={calc.p99:.2f}ms"
+            f"SLA VIOLATION: P95={calc.p95:.2f}ms exceeds 100ms target. "
+            f"P50={calc.p50:.2f}ms, P90={calc.p90:.2f}ms"
         )
 
         # Log performance summary
@@ -1221,8 +1220,7 @@ class TestSLAVerification:
         print(f"  Duration: {elapsed:.2f}s")
         print(f"  Ops/second: {ops_per_second:.0f}")
         print(f"  Ops/hour (projected): {ops_per_hour:,.0f} (target: >1,000,000)")
-        status = "PASS" if ops_per_hour >= 1_000_000 else "FAIL"
-        print(f"  Status: {status}")
+        print(f"  Status: {'PASS' if ops_per_hour >= 1_000_000 else 'FAIL'}")
 
     @pytest.mark.benchmark
     def test_sla_bulk_operations_10k_per_second(self) -> None:
@@ -1246,11 +1244,11 @@ class TestSLAVerification:
 
             assert records_per_second > 10000, (
                 f"SLA VIOLATION: Bulk throughput {records_per_second:.0f}/sec "
-                f"below 10K/sec target for batch_size={batch_size}"
+                f"below 10K/sec target for batch={batch_size}"
             )
 
         print("\nBulk Operations SLA Report:")
-        print(f"  All batch sizes ({batch_sizes}) exceeded 10K records/second: PASS")
+        print(f"  Batch sizes {batch_sizes} exceeded 10K/sec: PASS")
 
 
 # =============================================================================
@@ -1287,8 +1285,7 @@ class TestPIIDetectionOverhead:
                 _ = text[:100]  # Access content
                 baseline_times.append((time.perf_counter() - start) * 1000)
 
-            # baseline_avg calculated for comparison (not used in assertions)
-            _ = sum(baseline_times) / len(baseline_times)
+            baseline_avg = sum(baseline_times) / len(baseline_times)
 
             # With PII detection
             pii_times: List[float] = []
@@ -1298,6 +1295,7 @@ class TestPIIDetectionOverhead:
                 pii_times.append((time.perf_counter() - start) * 1000)
 
             pii_avg = sum(pii_times) / len(pii_times)
+            _overhead_ms = pii_avg - baseline_avg  # noqa: F841
 
             # PII detection itself should be under 10ms
             assert pii_avg < 10, (
@@ -1338,8 +1336,7 @@ class TestPIIDetectionOverhead:
 
         print("\nPII Detection Throughput Report:")
         print(f"  Throughput: {kb_per_ms:.2f} KB/ms ({mb_per_sec:.2f} MB/s)")
-        status = "PASS" if kb_per_ms >= 1.0 else "FAIL"
-        print(f"  Status: {status}")
+        print(f"  Status: {'PASS' if kb_per_ms >= 1.0 else 'FAIL'}")
 
     @pytest.mark.benchmark
     def test_pii_detection_p95_response_time(self) -> None:
@@ -1441,8 +1438,8 @@ class TestStorageEfficiency:
             max_acceptable_factor = 2.5 if content_size == 1000 else 1.5
 
             assert overhead_factor < max_acceptable_factor, (
-                f"Storage overhead {overhead_factor:.2f}x for "
-                f"content_size={content_size} exceeds {max_acceptable_factor}x limit"
+                f"Storage overhead {overhead_factor:.2f}x for {content_size} "
+                f"exceeds {max_acceptable_factor}x limit"
             )
 
         print("\nStorage Efficiency Report (Content Scaling):")
@@ -1474,8 +1471,8 @@ class TestStorageEfficiency:
             # At 500 bytes: ~1400 total = 2.8x
             # At 1000 bytes: ~1900 total = 1.9x
             assert overhead_factor < 3.0, (
-                f"Storage overhead {overhead_factor:.2f}x for "
-                f"content_size={content_size} is excessive"
+                f"Storage overhead {overhead_factor:.2f}x for {content_size} "
+                f"is excessive"
             )
 
         print("\nModel Memory Footprint Report:")
@@ -1511,6 +1508,8 @@ class TestVectorSearchPerformance:
         for 10-100x speedup. Test uses reduced vector count (100) to validate
         algorithmic efficiency while staying within target.
         """
+        import math
+
         # Typical embedding dimensions
         dimensions = [384, 768]  # Common embedding sizes (skip 1536 for pure Python)
         num_vectors = 100  # Reduced for pure Python (prod uses numpy with 1000+)
@@ -1532,7 +1531,7 @@ class TestVectorSearchPerformance:
             # Measure similarity computation time
             start = time.perf_counter()
             scores = [cosine_similarity(query_vector, cv) for cv in candidate_vectors]
-            _ = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:10]
+            sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:10]
             elapsed_ms = (time.perf_counter() - start) * 1000
 
             # Target: <50ms for similarity search (100 vectors, pure Python)
@@ -1553,6 +1552,8 @@ class TestVectorSearchPerformance:
         """
         Benchmark: Vector preprocessing (normalization, quantization) performance.
         """
+        import math
+
         dimensions = 768  # Common BERT embedding size
         num_vectors = 100
 
@@ -1567,7 +1568,7 @@ class TestVectorSearchPerformance:
 
         # Measure normalization time
         start = time.perf_counter()
-        _ = [normalize_vector(v) for v in vectors]
+        _normalized = [normalize_vector(v) for v in vectors]  # noqa: F841
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Target: preprocessing should be fast (<5ms per 100 vectors)
@@ -1617,7 +1618,7 @@ class TestEndToEndPerformance:
             json_str = item.model_dump_json()
 
             # 4. Deserialize
-            ModelMemoryItem.model_validate_json(json_str)
+            _restored = ModelMemoryItem.model_validate_json(json_str)  # noqa: F841
 
             elapsed_ms = (time.perf_counter() - start) * 1000
             measurements.append(elapsed_ms)

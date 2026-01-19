@@ -3,22 +3,21 @@ Tags model following ONEX standards.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ModelTag(BaseModel):
     """Individual tag model with metadata."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(
         description="Tag name",
         min_length=1,
         max_length=100,
     )
-    category: str | None = Field(
+    category: Optional[str] = Field(
         default=None,
         description="Optional tag category for organization",
         max_length=50,
@@ -27,7 +26,7 @@ class ModelTag(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the tag was created",
     )
-    created_by: UUID | None = Field(
+    created_by: Optional[UUID] = Field(
         default=None,
         description="User who created the tag",
     )
@@ -59,8 +58,6 @@ class ModelTag(BaseModel):
 class ModelTagCollection(BaseModel):
     """Collection of tags with validation and management."""
 
-    model_config = ConfigDict(extra="forbid")
-
     tags: list[ModelTag] = Field(
         default_factory=list,
         description="Collection of tags",
@@ -87,9 +84,9 @@ class ModelTagCollection(BaseModel):
     def add_tag(
         self,
         name: str,
-        category: str | None = None,
+        category: Optional[str] = None,
         weight: float = 1.0,
-        created_by: UUID | None = None,
+        created_by: Optional[UUID] = None,
     ) -> None:
         """Add a new tag to the collection."""
         # Check if tag already exists
@@ -132,7 +129,7 @@ class ModelTagCollection(BaseModel):
 
     @classmethod
     def from_string_list(
-        cls, tag_names: list[str], created_by: UUID | None = None
+        cls, tag_names: list[str], created_by: Optional[UUID] = None
     ) -> "ModelTagCollection":
         """Create tag collection from legacy string list."""
         collection = cls()

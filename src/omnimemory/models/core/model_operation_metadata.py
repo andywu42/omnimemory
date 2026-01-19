@@ -2,17 +2,16 @@
 Operation metadata model for tracking operation-specific information.
 """
 
+from typing import Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from ..foundation.model_typed_collections import ModelConfiguration, ModelMetadata
 
 
 class ModelOperationMetadata(BaseModel):
     """Operation metadata for tracking operation-specific information."""
-
-    model_config = ConfigDict(extra="forbid")
 
     # Operation identification
     operation_type: str = Field(
@@ -23,19 +22,19 @@ class ModelOperationMetadata(BaseModel):
     )
 
     # Request context
-    correlation_id: UUID | None = Field(
+    correlation_id: Optional[UUID] = Field(
         default=None, description="Correlation ID for tracing related operations"
     )
-    session_id: UUID | None = Field(
+    session_id: Optional[UUID] = Field(
         default=None, description="Session ID for multi-operation sessions"
     )
-    user_id: UUID | None = Field(
+    user_id: Optional[UUID] = Field(
         default=None, description="User identifier who initiated the operation"
     )
 
     # Source information
     source_component: str = Field(description="Component that initiated the operation")
-    source_version: str | None = Field(
+    source_version: Optional[str] = Field(
         default=None, description="Version of the source component"
     )
 
@@ -58,15 +57,15 @@ class ModelOperationMetadata(BaseModel):
     environment: str = Field(
         default="production", description="Environment where operation was executed"
     )
-    node_id: UUID | None = Field(
+    node_id: Optional[UUID] = Field(
         default=None, description="ONEX node identifier that processed the operation"
     )
 
     # Feature flags and experiments
-    feature_flags: dict[str, bool] = Field(
+    feature_flags: Dict[str, bool] = Field(
         default_factory=dict, description="Feature flags active during operation"
     )
-    experiment_id: str | None = Field(
+    experiment_id: Optional[str] = Field(
         default=None, description="A/B test or experiment identifier"
     )
 

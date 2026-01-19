@@ -10,8 +10,9 @@ import logging
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from ..models.foundation.model_audit_metadata import (
     AuditEventDetails,
@@ -56,35 +57,38 @@ class AuditEvent(BaseModel):
     # Context information
     operation: str = Field(description="Operation being performed")
     component: str = Field(description="Component generating the event")
-    user_context: str | None = Field(
+    user_context: Optional[str] = Field(
         default=None, description="User context if available"
     )
-    session_id: str | None = Field(default=None, description="Session identifier")
+    session_id: Optional[str] = Field(default=None, description="Session identifier")
 
     # Event details
     message: str = Field(description="Human-readable event description")
-    details: AuditEventDetails | None = Field(
-        default=None, description="Additional event details"
+    details: AuditEventDetails = Field(
+        default_factory=AuditEventDetails, description="Additional event details"
     )
 
     # Security context
-    source_ip: str | None = Field(default=None, description="Source IP address")
-    user_agent: str | None = Field(default=None, description="User agent string")
+    source_ip: Optional[str] = Field(default=None, description="Source IP address")
+    user_agent: Optional[str] = Field(default=None, description="User agent string")
 
     # Performance data
-    duration_ms: float | None = Field(default=None, description="Operation duration")
-    resource_usage: ResourceUsageMetadata | None = Field(
+    duration_ms: Optional[float] = Field(default=None, description="Operation duration")
+    resource_usage: Optional[ResourceUsageMetadata] = Field(
         default=None, description="Resource usage metrics"
     )
 
     # Compliance tracking
-    data_classification: str | None = Field(
+    data_classification: Optional[str] = Field(
         default=None, description="Data classification level"
     )
     pii_detected: bool = Field(default=False, description="Whether PII was detected")
     sanitized: bool = Field(default=False, description="Whether data was sanitized")
 
-    model_config = ConfigDict()
+    class Config:
+        """Pydantic config for audit events."""
+
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class AuditLogger:
@@ -92,7 +96,7 @@ class AuditLogger:
 
     def __init__(
         self,
-        log_file: Path | None = None,
+        log_file: Optional[Path] = None,
         console_output: bool = True,
         json_format: bool = True,
     ):
@@ -185,8 +189,8 @@ class AuditLogger:
             exc_info=None,
         )
 
-        # Attach audit event data (mode="json" ensures datetime serialization)
-        record.audit_event = event.model_dump(mode="json")
+        # Attach audit event data
+        record.audit_event = event.model_dump()
 
         # Log the event
         self.logger.handle(record)
@@ -206,9 +210,9 @@ class AuditLogger:
         operation_type: str,
         memory_id: str,
         success: bool,
-        duration_ms: float | None = None,
-        details: AuditEventDetails | None = None,
-        user_context: str | None = None,
+        duration_ms: Optional[float] = None,
+        details: Optional[AuditEventDetails] = None,
+        user_context: Optional[str] = None,
     ) -> None:
         """Log a memory operation event."""
         event_type_map = {
@@ -228,7 +232,7 @@ class AuditLogger:
                 f"Memory {operation_type} "
                 f"{'succeeded' if success else 'failed'} for ID: {memory_id}"
             ),
-            details=details,
+            details=details or {},
             duration_ms=duration_ms,
             user_context=user_context,
         )
@@ -237,24 +241,13 @@ class AuditLogger:
 
     def log_pii_detection(
         self,
-        pii_types: list[str],
+        pii_types: list,
         content_length: int,
         sanitized: bool = False,
-        details: AuditEventDetails | None = None,
+        details: Optional[AuditEventDetails] = None,
     ) -> None:
         """Log PII detection event."""
         severity = AuditSeverity.HIGH if pii_types else AuditSeverity.LOW
-
-        # Build AuditEventDetails if not provided, including PII-specific info
-        if details is None:
-            details = AuditEventDetails(
-                operation_type="pii_scan",
-                request_parameters={
-                    "pii_types_detected": ",".join(pii_types),
-                    "content_length": str(content_length),
-                    "sanitized": str(sanitized),
-                },
-            )
 
         event = AuditEvent(
             event_id=self._generate_event_id(),
@@ -268,10 +261,14 @@ class AuditLogger:
             operation="pii_scan",
             component="pii_detector",
             message=(
-                f"PII detection scan found {len(pii_types)} PII types "
-                f"in {content_length} chars"
+                f"PII scan found {len(pii_types)} types in {content_length} chars"
             ),
-            details=details,
+            details={
+                "pii_types_detected": pii_types,
+                "content_length": content_length,
+                "sanitized": sanitized,
+                **(details or {}),
+            },
             pii_detected=bool(pii_types),
             sanitized=sanitized,
         )
@@ -282,22 +279,11 @@ class AuditLogger:
         self,
         violation_type: str,
         description: str,
-        source_ip: str | None = None,
-        user_context: str | None = None,
-        details: AuditEventDetails | None = None,
+        source_ip: Optional[str] = None,
+        user_context: Optional[str] = None,
+        details: Optional[AuditEventDetails] = None,
     ) -> None:
         """Log security violation event."""
-        # Build default AuditEventDetails if not provided
-        if details is None:
-            details = AuditEventDetails(
-                operation_type="security_violation",
-                request_parameters={
-                    "violation_type": violation_type,
-                },
-                error_details=description,
-                ip_address=source_ip,
-            )
-
         event = AuditEvent(
             event_id=self._generate_event_id(),
             timestamp=datetime.now(timezone.utc),
@@ -306,7 +292,7 @@ class AuditLogger:
             operation="security_check",
             component="security_monitor",
             message=f"Security violation: {violation_type} - {description}",
-            details=details,
+            details=details or {},
             source_ip=source_ip,
             user_context=user_context,
         )
@@ -316,30 +302,12 @@ class AuditLogger:
     def log_config_change(
         self,
         config_key: str,
-        old_value: str | None,
+        old_value: Optional[str],
         new_value: str,
-        user_context: str | None = None,
-        details: AuditEventDetails | None = None,
+        user_context: Optional[str] = None,
+        details: Optional[AuditEventDetails] = None,
     ) -> None:
         """Log configuration change event."""
-        # Redact sensitive values
-        redacted_old = (
-            "***REDACTED***"
-            if old_value and "secret" in config_key.lower()
-            else old_value
-        )
-        redacted_new = "***REDACTED***" if "secret" in config_key.lower() else new_value
-
-        # Build default AuditEventDetails if not provided
-        if details is None:
-            details = AuditEventDetails(
-                operation_type="config_change",
-                resource_id=config_key,
-                resource_type="configuration",
-                old_value=redacted_old,
-                new_value=redacted_new,
-            )
-
         event = AuditEvent(
             event_id=self._generate_event_id(),
             timestamp=datetime.now(timezone.utc),
@@ -348,7 +316,18 @@ class AuditLogger:
             operation="config_update",
             component="config_manager",
             message=f"Configuration changed: {config_key}",
-            details=details,
+            details={
+                "config_key": config_key,
+                "old_value": (
+                    "***REDACTED***"
+                    if old_value and "secret" in config_key.lower()
+                    else old_value
+                ),
+                "new_value": (
+                    "***REDACTED***" if "secret" in config_key.lower() else new_value
+                ),
+                **(details or {}),
+            },
             user_context=user_context,
         )
 
@@ -362,7 +341,7 @@ class AuditLogger:
 
 
 # Global audit logger instance
-_audit_logger: AuditLogger | None = None
+_audit_logger: Optional[AuditLogger] = None
 
 
 def get_audit_logger() -> AuditLogger:
@@ -378,7 +357,7 @@ def get_audit_logger() -> AuditLogger:
 
 
 def configure_audit_logger(
-    log_file: Path | None = None,
+    log_file: Optional[Path] = None,
     console_output: bool = True,
     json_format: bool = True,
 ) -> None:

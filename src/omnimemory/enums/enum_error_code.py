@@ -2,17 +2,8 @@
 Memory-specific error codes following ONEX standards.
 
 This module ONLY contains error codes specific to OmniMemory operations.
-All general error codes are imported from omnibase_core.core.errors.core_errors
-when available.
+General error codes come from omnibase_core.core.errors.core_errors when available.
 """
-
-import re
-
-# === PRE-COMPILED REGEX PATTERNS ===
-# These patterns are compiled once at module load time for optimal performance.
-
-# Pattern to extract error code number from OmniMemory error codes
-_ERROR_CODE_NUMBER_PATTERN = re.compile(r"ONEX_OMNIMEMORY_(\d+)_")
 
 try:
     from omnibase_core.core.errors.core_errors import OnexErrorCode
@@ -77,7 +68,9 @@ class OmniMemoryErrorCode(OnexErrorCode):
 
     def get_number(self) -> int:
         """Get the numeric identifier for this error code."""
-        match = _ERROR_CODE_NUMBER_PATTERN.search(self.value)
+        import re
+
+        match = re.search(r"ONEX_OMNIMEMORY_(\d+)_", self.value)
         return int(match.group(1)) if match else 0
 
     def get_description(self) -> str:
@@ -91,21 +84,13 @@ class OmniMemoryErrorCode(OnexErrorCode):
             self.MEMORY_OPTIMIZATION_FAILED: "Failed to optimize memory storage",
             self.MEMORY_MIGRATION_FAILED: "Failed to migrate legacy memory data",
             self.MEMORY_ANALYSIS_FAILED: "Failed to analyze memory content",
-            self.MEMORY_PATTERN_RECOGNITION_FAILED: (
-                "Failed to recognize memory patterns"
-            ),
-            self.MEMORY_SEMANTIC_PROCESSING_FAILED: (
-                "Failed to process semantic information"
-            ),
-            self.MEMORY_EMBEDDING_GENERATION_FAILED: (
-                "Failed to generate memory embeddings"
-            ),
+            self.MEMORY_PATTERN_RECOGNITION_FAILED: "Pattern recognition failed",
+            self.MEMORY_SEMANTIC_PROCESSING_FAILED: "Semantic processing failed",
+            self.MEMORY_EMBEDDING_GENERATION_FAILED: "Embedding generation failed",
             self.VECTOR_INDEX_CORRUPTION: "Vector index is corrupted or invalid",
             self.MEMORY_QUOTA_EXCEEDED: "Memory storage quota exceeded",
             self.TEMPORAL_MEMORY_EXPIRED: "Temporal memory has expired",
-            self.MEMORY_DEPENDENCY_CYCLE: (
-                "Circular dependency detected in memory structure"
-            ),
+            self.MEMORY_DEPENDENCY_CYCLE: "Circular dependency in memory",
             self.MEMORY_VERSION_CONFLICT: "Version conflict in memory data",
         }
         return descriptions.get(self, "Unknown OmniMemory error")

@@ -2,13 +2,11 @@
 Configuration model following ONEX standards.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelDatabaseConfig(BaseModel):
     """Database configuration settings."""
-
-    model_config = ConfigDict(extra="forbid")
 
     host: str = Field(description="Database host address")
     port: int = Field(description="Database port number")
@@ -28,8 +26,6 @@ class ModelDatabaseConfig(BaseModel):
 class ModelCacheConfig(BaseModel):
     """Cache configuration settings."""
 
-    model_config = ConfigDict(extra="forbid")
-
     enabled: bool = Field(default=True, description="Whether caching is enabled")
     max_size_mb: int = Field(default=100, description="Maximum cache size in megabytes")
     ttl_seconds: int = Field(
@@ -42,8 +38,6 @@ class ModelCacheConfig(BaseModel):
 
 class ModelPerformanceConfig(BaseModel):
     """Performance configuration settings."""
-
-    model_config = ConfigDict(extra="forbid")
 
     max_concurrent_operations: int = Field(
         default=100, description="Maximum concurrent operations"
@@ -62,8 +56,6 @@ class ModelPerformanceConfig(BaseModel):
 class ModelObservabilityConfig(BaseModel):
     """Observability configuration settings."""
 
-    model_config = ConfigDict(extra="forbid")
-
     metrics_enabled: bool = Field(
         default=True, description="Whether metrics collection is enabled"
     )
@@ -80,8 +72,6 @@ class ModelObservabilityConfig(BaseModel):
 
 class ModelSystemConfiguration(BaseModel):
     """Complete system configuration following ONEX standards."""
-
-    model_config = ConfigDict(extra="forbid")
 
     database: ModelDatabaseConfig = Field(description="Database configuration")
     cache: ModelCacheConfig = Field(description="Cache configuration")

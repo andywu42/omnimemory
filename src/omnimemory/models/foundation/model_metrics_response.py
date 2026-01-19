@@ -5,13 +5,11 @@ Metrics response model following ONEX standards.
 from datetime import datetime, timezone
 from typing import Dict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelOperationCounts(BaseModel):
     """Count of operations by type."""
-
-    model_config = ConfigDict(extra="forbid")
 
     storage_operations: int = Field(
         default=0, description="Number of storage operations"
@@ -28,8 +26,6 @@ class ModelOperationCounts(BaseModel):
 
 class ModelPerformanceMetrics(BaseModel):
     """Performance metrics for operations."""
-
-    model_config = ConfigDict(extra="forbid")
 
     average_latency_ms: float = Field(
         description="Average operation latency in milliseconds"
@@ -50,8 +46,6 @@ class ModelPerformanceMetrics(BaseModel):
 class ModelResourceMetricsDetailed(BaseModel):
     """Detailed resource utilization metrics."""
 
-    model_config = ConfigDict(extra="forbid")
-
     memory_allocated_mb: float = Field(description="Memory allocated in megabytes")
     memory_used_mb: float = Field(description="Memory currently used in megabytes")
     cache_hit_rate_percent: float = Field(
@@ -68,8 +62,6 @@ class ModelResourceMetricsDetailed(BaseModel):
 
 class ModelMetricsResponse(BaseModel):
     """Comprehensive metrics response following ONEX standards."""
-
-    model_config = ConfigDict(extra="forbid")
 
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

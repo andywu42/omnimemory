@@ -46,6 +46,12 @@ from .health_manager import (
 )
 from .observability import (
     CorrelationContext,
+    Counter,
+    Gauge,
+    HandlerMetrics,
+    HandlerObservabilityWrapper,
+    Histogram,
+    MetricsRegistry,
     ObservabilityManager,
     OperationType,
     TraceLevel,
@@ -55,6 +61,7 @@ from .observability import (
     inject_correlation_context,
     inject_correlation_context_async,
     log_with_correlation,
+    metrics_registry,
     observability_manager,
     sanitize_metadata_value,
     trace_operation,
@@ -126,6 +133,14 @@ __all__ = [
     "inject_correlation_context_async",
     "validate_correlation_id",
     "sanitize_metadata_value",
+    # In-process metrics (P1C)
+    "Counter",
+    "Histogram",
+    "Gauge",
+    "MetricsRegistry",
+    "metrics_registry",
+    "HandlerMetrics",
+    "HandlerObservabilityWrapper",
     # Concurrency
     "LockPriority",
     "PoolStatus",

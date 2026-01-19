@@ -7,19 +7,17 @@ without omnibase_core dependencies.
 """
 
 import sys
-import tomllib
 import traceback
 from pathlib import Path
-from typing import Any
-
-import yaml
+from typing import Any, Dict
 
 
-def validate_contract_specification() -> dict[str, Any]:
+def validate_contract_specification() -> Dict[str, Any]:
     """Validate contract.yaml structure."""
     print("🔍 Testing contract specification...")
 
     try:
+        import yaml
 
         contract_path = Path(__file__).parent / "contract.yaml"
         if not contract_path.exists():
@@ -77,7 +75,7 @@ def validate_contract_specification() -> dict[str, Any]:
 
         schemas_count = len(contract.get("schemas", {}))
 
-        print("✅ Contract validation successful")
+        print("  Contract validation successful")
         print(f"   Architecture: {architecture.get('pattern')}")
         print(f"   Nodes: {', '.join(expected_nodes)}")
         print(f"   Protocols: {total_protocols}")
@@ -97,7 +95,7 @@ def validate_contract_specification() -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_project_structure() -> dict[str, Any]:
+def validate_project_structure() -> Dict[str, Any]:
     """Validate overall project structure."""
     print("🔍 Testing project structure...")
 
@@ -115,9 +113,9 @@ def validate_project_structure() -> dict[str, Any]:
             "src/omnimemory/protocols/error_models.py": "Error model definitions",
             "src/omnimemory/core": "Core implementation",
             "src/omnimemory/core/__init__.py": "Core package",
-            "src/omnimemory/core/container.py": "ONEX Container implementation",
+            "src/omnimemory/core/container.py": "ONEX Container",
             "src/omnimemory/core/service_providers.py": "Service providers",
-            "src/omnimemory/core/base_implementations.py": "Base implementations",
+            "src/omnimemory/core/base_implementations.py": "Base services",
             "contract.yaml": "ONEX contract specification",
             "pyproject.toml": "Project configuration",
             "tests": "Test directory",
@@ -134,14 +132,13 @@ def validate_project_structure() -> dict[str, Any]:
             else:
                 missing_items.append(item)
 
-        print("✅ Project structure validation")
-        print(
-            f"   Found: {len(found_items)} / {len(expected_structure)} expected items"
-        )
+        print("  Project structure validation")
+        total = len(expected_structure)
+        print(f"   Found: {len(found_items)} / {total} expected items")
         if missing_items:
+            items = ", ".join(missing_items[:3])
             suffix = "..." if len(missing_items) > 3 else ""
-            missing_str = ", ".join(missing_items[:3]) + suffix
-            print(f"   Missing: {missing_str}")
+            print(f"   Missing: {items}{suffix}")
 
         return {
             "success": len(missing_items) == 0,
@@ -156,7 +153,7 @@ def validate_project_structure() -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_file_syntax() -> dict[str, Any]:
+def validate_file_syntax() -> Dict[str, Any]:
     """Validate Python file syntax without importing."""
     print("🔍 Testing file syntax...")
 
@@ -183,7 +180,7 @@ def validate_file_syntax() -> dict[str, Any]:
                 # Other errors (like encoding) are also noteworthy
                 syntax_errors.append(f"{py_file.relative_to(base_path)}: {e}")
 
-        print("✅ File syntax validation")
+        print("  File syntax validation")
         print(f"   Checked: {len(python_files)} Python files")
         if syntax_errors:
             print(f"   Syntax errors: {len(syntax_errors)}")
@@ -202,11 +199,13 @@ def validate_file_syntax() -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_pyproject_configuration() -> dict[str, Any]:
+def validate_pyproject_configuration() -> Dict[str, Any]:
     """Validate pyproject.toml configuration."""
     print("🔍 Testing pyproject.toml configuration...")
 
     try:
+        import tomllib
+
         pyproject_path = Path(__file__).parent / "pyproject.toml"
         if not pyproject_path.exists():
             return {"success": False, "error": "pyproject.toml not found"}
@@ -239,12 +238,13 @@ def validate_pyproject_configuration() -> dict[str, Any]:
             if dep in dependencies:
                 found_deps.append(dep)
 
-        print("✅ pyproject.toml validation successful")
-        print(f"   Package: {tool_poetry.get('name')} v{tool_poetry.get('version')}")
-        total_deps = len(dependencies)
-        found_key = len(found_deps)
-        total_key = len(key_deps)
-        print(f"   Dependencies: {total_deps} total, {found_key}/{total_key} key deps")
+        print("  pyproject.toml validation successful")
+        name = tool_poetry.get("name")
+        version = tool_poetry.get("version")
+        print(f"   Package: {name} v{version}")
+        deps_total = len(dependencies)
+        key_found = f"{len(found_deps)}/{len(key_deps)}"
+        print(f"   Dependencies: {deps_total} total, {key_found} key deps")
 
         return {
             "success": True,

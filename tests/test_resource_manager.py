@@ -5,7 +5,6 @@ Tests for resource manager utilities following ONEX standards.
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -424,6 +423,8 @@ class TestResourceHandle:
         assert not handle.is_expired()
 
         # Wait for expiration
+        import time
+
         time.sleep(0.2)
 
         # Now should be expired

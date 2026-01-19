@@ -70,8 +70,8 @@ class ONEXArchitectureDemo:
             indexed=True,
         )
 
-        # Create memory request with ONEX compliance
-        memory_request = ModelMemoryRequest(
+        # Create memory request with ONEX compliance (for validation demo)
+        _ = ModelMemoryRequest(
             correlation_id=self.demo_correlation_id,
             session_id=uuid4(),
             user_id=str(uuid4()),  # This will need UUID fix
@@ -85,7 +85,7 @@ class ONEXArchitectureDemo:
             metadata={"demo": True, "node_type": "effect"},
         )
 
-        print(f"📝 Created memory store request: {memory_request.correlation_id}")
+        print(f"📝 Created memory store request: {memory_item.item_id}")
 
         # Simulate async memory storage (EFFECT pattern)
         await asyncio.sleep(0.1)
@@ -111,24 +111,45 @@ class ONEXArchitectureDemo:
         """Demonstrate COMPUTE node - intelligence processing."""
         print("\n=== COMPUTE Node: Intelligence Processing ===")
 
-        # Mock intelligence processing request data
-        # (IntelligenceProcessRequest/Response models not yet available)
-        processing_type = "semantic_analysis"
-        print(f"🧠 Processing intelligence data: {processing_type}")
+        # Create mock intelligence processing request (simplified for demo)
+        intelligence_request = {
+            "correlation_id": str(self.demo_correlation_id),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "raw_data": "Process this intelligence data using ONEX patterns",
+            "processing_type": "semantic_analysis",
+            "metadata": {"demo": True, "node_type": "compute"},
+        }
+
+        print(
+            f"🧠 Processing intelligence data: {intelligence_request['processing_type']}"
+        )
 
         # Simulate async intelligence processing (COMPUTE pattern)
         await asyncio.sleep(0.2)
 
-        # Mock processing response data
-        execution_time_ms = 200
-        insights = [
-            "ONEX patterns detected",
-            "Architecture demonstration context",
-            "High semantic coherence",
-        ]
+        # Mock processing response (simplified for demo)
+        intelligence_response = {
+            "correlation_id": str(self.demo_correlation_id),
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "execution_time_ms": 200,
+            "provenance": ["onex_demo_system", "intelligence_processor"],
+            "trust_score": 0.88,
+            "processed_data": {
+                "semantic_features": ["onex", "patterns", "architecture"],
+                "confidence_score": 0.92,
+                "processing_method": "semantic_analysis",
+            },
+            "insights": [
+                "ONEX patterns detected",
+                "Architecture demonstration context",
+                "High semantic coherence",
+            ],
+        }
 
-        print(f"✅ Intelligence processed in {execution_time_ms}ms")
-        print(f"📊 Generated {len(insights)} insights")
+        exec_time = intelligence_response["execution_time_ms"]
+        print(f"✅ Intelligence processed in {exec_time}ms")
+        print(f"📊 Generated {len(intelligence_response['insights'])} insights")
 
     async def demo_reducer_node_operations(self) -> None:
         """Demonstrate REDUCER node - memory consolidation."""

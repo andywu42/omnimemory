@@ -5,13 +5,11 @@ System health model following ONEX standards.
 from datetime import datetime, timezone
 
 from omnibase_core.enums import EnumHealthStatus
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelSystemHealth(BaseModel):
     """System health information following ONEX standards."""
-
-    model_config = ConfigDict(extra="forbid")
 
     # System identification
     system_id: str = Field(

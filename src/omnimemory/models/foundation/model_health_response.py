@@ -5,15 +5,13 @@ Health response model following ONEX standards.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelDependencyStatus(BaseModel):
     """Status of a system dependency."""
-
-    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Name of the dependency")
     status: Literal["healthy", "degraded", "unhealthy"] = Field(
@@ -28,8 +26,6 @@ class ModelDependencyStatus(BaseModel):
 
 class ModelResourceMetrics(BaseModel):
     """System resource utilization metrics."""
-
-    model_config = ConfigDict(extra="forbid")
 
     cpu_usage_percent: float = Field(
         ge=0.0, le=100.0, description="CPU usage percentage"
@@ -48,8 +44,6 @@ class ModelResourceMetrics(BaseModel):
 
 class ModelHealthResponse(BaseModel):
     """Health check response following ONEX standards."""
-
-    model_config = ConfigDict(extra="forbid")
 
     status: Literal["healthy", "degraded", "unhealthy"] = Field(
         description="Overall system health status"
@@ -73,8 +67,6 @@ class ModelHealthResponse(BaseModel):
 class ModelCircuitBreakerStats(BaseModel):
     """Circuit breaker statistics for a single dependency."""
 
-    model_config = ConfigDict(extra="forbid")
-
     state: Literal["closed", "open", "half_open"] = Field(
         description="Current circuit breaker state"
     )
@@ -82,7 +74,7 @@ class ModelCircuitBreakerStats(BaseModel):
     success_count: int = Field(ge=0, description="Total number of successful calls")
     total_calls: int = Field(ge=0, description="Total number of calls made")
     total_timeouts: int = Field(ge=0, description="Total number of timeout failures")
-    last_failure_time: datetime | None = Field(
+    last_failure_time: Optional[datetime] = Field(
         default=None, description="Timestamp of the last failure"
     )
     state_changed_at: datetime = Field(
@@ -92,8 +84,6 @@ class ModelCircuitBreakerStats(BaseModel):
 
 class ModelCircuitBreakerStatsCollection(BaseModel):
     """Collection of circuit breaker statistics for all dependencies."""
-
-    model_config = ConfigDict(extra="forbid")
 
     circuit_breakers: dict[str, ModelCircuitBreakerStats] = Field(
         description="Circuit breaker statistics keyed by dependency name"
@@ -107,8 +97,6 @@ class ModelCircuitBreakerStatsCollection(BaseModel):
 class ModelRateLimitedHealthCheckResponse(BaseModel):
     """Rate-limited health check response."""
 
-    model_config = ConfigDict(extra="forbid")
-
     status: str = Field(
         default="rate_limited", description="Status of the rate-limited response"
     )
@@ -118,20 +106,20 @@ class ModelRateLimitedHealthCheckResponse(BaseModel):
     )
     details: dict[str, str | int | float] = Field(
         default_factory=dict,
-        description="Additional details including retry_after and requests",
+        description="Additional details including retry_after and requests count",
     )
-    health_check: ModelHealthResponse | None = Field(
+    health_check: Optional[ModelHealthResponse] = Field(
         default=None, description="Health check result if within rate limit"
     )
     rate_limited: bool = Field(
         default=True, description="Whether the request was rate limited"
     )
-    rate_limit_reset_time: datetime | None = Field(
+    rate_limit_reset_time: Optional[datetime] = Field(
         default=None, description="When the rate limit will reset"
     )
-    remaining_requests: int | None = Field(
+    remaining_requests: Optional[int] = Field(
         default=None, description="Number of requests remaining in the current window"
     )
-    error_message: str | None = Field(
+    error_message: Optional[str] = Field(
         default=None, description="Error message if rate limited"
     )

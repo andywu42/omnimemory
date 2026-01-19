@@ -5,49 +5,47 @@ This module provides strongly typed replacements for Dict[str, Any] patterns
 in audit logging, ensuring type safety and validation.
 """
 
-from typing import List
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class AuditEventDetails(BaseModel):
     """Strongly typed details for audit events."""
 
-    model_config = ConfigDict(extra="forbid")
-
     operation_type: str = Field(description="Type of operation being audited")
 
-    resource_id: str | None = Field(
+    resource_id: Optional[str] = Field(
         default=None, description="Identifier of the resource being accessed"
     )
 
-    resource_type: str | None = Field(
+    resource_type: Optional[str] = Field(
         default=None, description="Type of resource (memory, configuration, etc.)"
     )
 
-    old_value: str | None = Field(
+    old_value: Optional[str] = Field(
         default=None, description="Previous value before change"
     )
 
-    new_value: str | None = Field(default=None, description="New value after change")
+    new_value: Optional[str] = Field(default=None, description="New value after change")
 
-    request_parameters: dict[str, str] | None = Field(
+    request_parameters: Optional[Dict[str, str]] = Field(
         default=None, description="Parameters passed with the request"
     )
 
-    response_status: str | None = Field(
+    response_status: Optional[str] = Field(
         default=None, description="Response status code or result"
     )
 
-    error_details: str | None = Field(
+    error_details: Optional[str] = Field(
         default=None, description="Error details if operation failed"
     )
 
-    ip_address: str | None = Field(
+    ip_address: Optional[str] = Field(
         default=None, description="IP address of the requestor"
     )
 
-    user_agent: str | None = Field(
+    user_agent: Optional[str] = Field(
         default=None, description="User agent string from the request"
     )
 
@@ -55,49 +53,47 @@ class AuditEventDetails(BaseModel):
 class ResourceUsageMetadata(BaseModel):
     """Strongly typed resource usage metrics."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    cpu_usage_percent: float | None = Field(
+    cpu_usage_percent: Optional[float] = Field(
         default=None, description="CPU usage percentage during operation"
     )
 
-    memory_usage_mb: float | None = Field(
+    memory_usage_mb: Optional[float] = Field(
         default=None, description="Memory usage in megabytes"
     )
 
-    disk_io_bytes: int | None = Field(default=None, description="Disk I/O in bytes")
+    disk_io_bytes: Optional[int] = Field(default=None, description="Disk I/O in bytes")
 
-    network_io_bytes: int | None = Field(
+    network_io_bytes: Optional[int] = Field(
         default=None, description="Network I/O in bytes"
     )
 
-    operation_duration_ms: float | None = Field(
+    operation_duration_ms: Optional[float] = Field(
         default=None, description="Duration of operation in milliseconds"
     )
 
-    database_queries: int | None = Field(
+    database_queries: Optional[int] = Field(
         default=None, description="Number of database queries performed"
     )
 
-    cache_hits: int | None = Field(default=None, description="Number of cache hits")
+    cache_hits: Optional[int] = Field(default=None, description="Number of cache hits")
 
-    cache_misses: int | None = Field(default=None, description="Number of cache misses")
+    cache_misses: Optional[int] = Field(
+        default=None, description="Number of cache misses"
+    )
 
 
 class SecurityAuditDetails(BaseModel):
     """Strongly typed security audit information."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    authentication_method: str | None = Field(
+    authentication_method: Optional[str] = Field(
         default=None, description="Authentication method used"
     )
 
-    authorization_level: str | None = Field(
+    authorization_level: Optional[str] = Field(
         default=None, description="Authorization level granted"
     )
 
-    permission_required: str | None = Field(
+    permission_required: Optional[str] = Field(
         default=None, description="Permission required for the operation"
     )
 
@@ -105,7 +101,7 @@ class SecurityAuditDetails(BaseModel):
         default=False, description="Whether permission was granted"
     )
 
-    security_scan_results: List[str] | None = Field(
+    security_scan_results: Optional[List[str]] = Field(
         default=None, description="Results of security scanning"
     )
 
@@ -113,11 +109,11 @@ class SecurityAuditDetails(BaseModel):
         default=False, description="Whether PII was detected in the request"
     )
 
-    data_classification: str | None = Field(
+    data_classification: Optional[str] = Field(
         default=None, description="Classification level of data accessed"
     )
 
-    risk_score: float | None = Field(
+    risk_score: Optional[float] = Field(
         default=None, description="Calculated risk score for the operation"
     )
 
@@ -125,26 +121,26 @@ class SecurityAuditDetails(BaseModel):
 class PerformanceAuditDetails(BaseModel):
     """Strongly typed performance audit information."""
 
-    model_config = ConfigDict(extra="forbid")
-
     operation_latency_ms: float = Field(description="Operation latency in milliseconds")
 
-    throughput_ops_per_second: float | None = Field(
+    throughput_ops_per_second: Optional[float] = Field(
         default=None, description="Throughput in operations per second"
     )
 
-    queue_depth: int | None = Field(
+    queue_depth: Optional[int] = Field(
         default=None, description="Queue depth at operation time"
     )
 
-    connection_pool_usage: float | None = Field(
+    connection_pool_usage: Optional[float] = Field(
         default=None, description="Connection pool usage percentage"
     )
 
-    circuit_breaker_state: str | None = Field(
+    circuit_breaker_state: Optional[str] = Field(
         default=None, description="Circuit breaker state during operation"
     )
 
     retry_count: int = Field(default=0, description="Number of retries attempted")
 
-    cache_efficiency: float | None = Field(default=None, description="Cache hit ratio")
+    cache_efficiency: Optional[float] = Field(
+        default=None, description="Cache hit ratio"
+    )

@@ -8,11 +8,7 @@ All protocols use typing.Protocol for structural typing and avoid isinstance
 checks, supporting the ModelOnexContainer pattern for dependency injection.
 """
 
-# Base protocols
-# Effect node protocols (memory storage, retrieval, persistence)
-# Compute node protocols (intelligence processing, semantic analysis)
-# Reducer node protocols (consolidation, aggregation, optimization)
-# Orchestrator node protocols (workflow, agent, memory coordination)
+# Protocol categories: Base, Effect, Compute, Reducer, and Orchestrator node protocols
 from .base_protocols import (
     ProtocolAgentCoordinator,
     ProtocolIntelligenceProcessor,
@@ -83,8 +79,6 @@ __all__ = [
     "ProtocolWorkflowCoordinator",
     "ProtocolAgentCoordinator",
     "ProtocolMemoryOrchestrator",
-    # Infrastructure protocols
-    "ProtocolSecretsProvider",
     # Data models
     "BaseMemoryRequest",
     "BaseMemoryResponse",
@@ -116,4 +110,6 @@ __all__ = [
     "CoordinationError",
     "SystemError",
     "OmniMemoryErrorCode",
+    # Secrets provider
+    "ProtocolSecretsProvider",
 ]

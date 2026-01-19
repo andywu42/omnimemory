@@ -8,10 +8,9 @@ patterns, protocols, and error handling.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Dict
 
 import pytest
-import yaml
 
 from omnimemory import (  # Protocols; Data models; Error handling
     AccessLevel,
@@ -33,6 +32,30 @@ from omnimemory.compat import ModelOnexContainer, NodeResult
 
 class MockMemoryStorageNode:
     """Mock implementation of memory storage service for testing."""
+
+    async def _check_storage_connectivity(self) -> bool:
+        """Mock storage connectivity check."""
+        return True
+
+    async def _get_storage_operation_count(self) -> int:
+        """Mock storage operation count."""
+        return 42
+
+    async def _get_cache_hit_rate(self) -> float:
+        """Mock cache hit rate."""
+        return 0.85
+
+    async def _get_storage_utilization(self) -> Dict[str, float]:
+        """Mock storage utilization."""
+        return {"disk": 0.60, "memory": 0.45}
+
+    async def _validate_configuration(self, config: Dict[str, str]) -> bool:
+        """Mock configuration validation."""
+        return "invalid_key" not in config
+
+    async def _apply_configuration(self, config: Dict[str, str]) -> None:
+        """Mock configuration application."""
+        pass
 
     async def store_memory(
         self,
@@ -223,6 +246,11 @@ class TestFoundationArchitecture:
         Uses Path(__file__) for CWD-independent path resolution.
         Skips gracefully if contract.yaml doesn't exist.
         """
+        # Verify contract.yaml can be loaded
+        from pathlib import Path
+
+        import yaml
+
         # Use __file__ relative path for CWD independence
         contract_path = Path(__file__).parent.parent / "contract.yaml"
         if not contract_path.exists():

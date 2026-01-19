@@ -7,9 +7,14 @@ that integrate with NodeResult for consistent error handling across the system.
 """
 
 from enum import Enum
+from typing import Dict, List, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+# Type alias for field values in validation errors
+# Supports common field types that can fail validation
+FieldValueType = Union[
+    str, int, float, bool, bytes, list[object], dict[str, object], None
+]
 
 # Use local compatibility stub until omnibase_core provides OnexError
 try:
@@ -17,11 +22,9 @@ try:
 except (ImportError, ModuleNotFoundError):
     from ..compat.onex_error import OnexError as BaseOnexError
 
-# Type alias for field values in validation errors
-# Supports common field types that can fail validation
-FieldValueType = (
-    str | int | float | bool | bytes | list[object] | dict[str, object] | None
-)
+from pydantic import BaseModel, Field  # noqa: E402
+
+from ..models.foundation import ModelMetadata  # noqa: E402
 
 # === ERROR CODES ===
 
@@ -106,8 +109,6 @@ class OmniMemoryErrorCode(str, Enum):
 class ErrorCategoryInfo(BaseModel):
     """Information about an error category."""
 
-    model_config = ConfigDict(extra="forbid")
-
     prefix: str = Field(description="Error code prefix")
     description: str = Field(description="Category description")
     recoverable: bool = Field(description="Whether errors are generally recoverable")
@@ -115,7 +116,7 @@ class ErrorCategoryInfo(BaseModel):
     default_backoff_factor: float = Field(2.0, description="Default backoff multiplier")
 
 
-ERROR_CATEGORIES: dict[str, ErrorCategoryInfo] = {
+ERROR_CATEGORIES: Dict[str, ErrorCategoryInfo] = {
     "VALIDATION": ErrorCategoryInfo(
         prefix="ONEX_OMNIMEMORY_VAL",
         description="Input validation errors",
@@ -161,7 +162,7 @@ ERROR_CATEGORIES: dict[str, ErrorCategoryInfo] = {
 }
 
 
-def get_error_category(error_code: OmniMemoryErrorCode) -> ErrorCategoryInfo | None:
+def get_error_category(error_code: OmniMemoryErrorCode) -> Optional[ErrorCategoryInfo]:
     """Get error category information for an error code."""
     for category_name, category_info in ERROR_CATEGORIES.items():
         if error_code.value.startswith(category_info.prefix):
@@ -184,11 +185,11 @@ class OmniMemoryError(BaseOnexError):
         self,
         error_code: OmniMemoryErrorCode,
         message: str,
-        context: dict[str, object] | None = None,
-        correlation_id: UUID | None = None,
-        cause: Exception | None = None,
-        recovery_hint: str | None = None,
-        retry_after: int | None = None,
+        context: Optional[ModelMetadata] = None,
+        correlation_id: Optional[UUID] = None,
+        cause: Optional[Exception] = None,
+        recovery_hint: Optional[str] = None,
+        retry_after: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -197,7 +198,7 @@ class OmniMemoryError(BaseOnexError):
         Args:
             error_code: Specific error code from OmniMemoryErrorCode
             message: Human-readable error message
-            context: Additional error context as dict (enhanced with category info)
+            context: Additional error context information
             correlation_id: Request correlation ID for tracing
             cause: Underlying exception that caused this error
             recovery_hint: Suggestion for error recovery
@@ -257,9 +258,9 @@ class OmniMemoryError(BaseOnexError):
         """Get suggested backoff factor for retries."""
         return self.category_info.default_backoff_factor if self.category_info else 1.0
 
-    def to_dict(self) -> dict[str, str | int | float | bool | dict[str, object] | None]:
+    def to_dict(self) -> dict[str, str]:
         """Convert error to dictionary for serialization."""
-        base_dict: dict[str, str | int | float | bool | dict[str, object] | None] = {
+        base_dict = {
             "error_code": self.omnimemory_error_code.value,
             "message": self.message,
             "context": self.context,
@@ -288,9 +289,9 @@ class ValidationError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        field_name: str | None = None,
-        field_value: FieldValueType = None,
-        validation_rule: str | None = None,
+        field_name: Optional[str] = None,
+        field_value: Optional[FieldValueType] = None,
+        validation_rule: Optional[str] = None,
         **kwargs,
     ):
         # Determine specific validation error code
@@ -329,8 +330,8 @@ class StorageError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        storage_system: str | None = None,
-        operation: str | None = None,
+        storage_system: Optional[str] = None,
+        operation: Optional[str] = None,
         **kwargs,
     ):
         # Determine specific storage error code
@@ -374,8 +375,8 @@ class RetrievalError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        memory_id: UUID | None = None,
-        query: str | None = None,
+        memory_id: Optional[UUID] = None,
+        query: Optional[str] = None,
         **kwargs,
     ):
         # Determine specific retrieval error code
@@ -418,8 +419,8 @@ class ProcessingError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        processing_stage: str | None = None,
-        model_name: str | None = None,
+        processing_stage: Optional[str] = None,
+        model_name: Optional[str] = None,
         **kwargs,
     ):
         # Determine specific processing error code
@@ -462,8 +463,8 @@ class CoordinationError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        workflow_id: UUID | None = None,
-        agent_ids: list[UUID] | None = None,
+        workflow_id: Optional[UUID] = None,
+        agent_ids: Optional[List[UUID]] = None,
         **kwargs,
     ):
         # Determine specific coordination error code
@@ -506,7 +507,7 @@ class SystemError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        system_component: str | None = None,
+        system_component: Optional[str] = None,
         **kwargs,
     ):
         # Determine specific system error code
@@ -547,7 +548,7 @@ class SystemError(OmniMemoryError):
 def wrap_exception(
     exception: Exception,
     error_code: OmniMemoryErrorCode,
-    message: str | None = None,
+    message: Optional[str] = None,
     **kwargs,
 ) -> OmniMemoryError:
     """
@@ -598,9 +599,7 @@ def chain_errors(
     return primary_error
 
 
-def create_error_summary(
-    errors: list[OmniMemoryError],
-) -> dict[str, int | float | dict[str, int]]:
+def create_error_summary(errors: list[OmniMemoryError]) -> dict[str, str]:
     """
     Create a summary of multiple errors for reporting.
 
@@ -611,17 +610,10 @@ def create_error_summary(
         Dictionary containing error summary statistics
     """
     if not errors:
-        return {
-            "total_errors": 0,
-            "recoverable_errors": 0,
-            "non_recoverable_errors": 0,
-            "error_counts_by_code": {},
-            "error_counts_by_category": {},
-            "recovery_rate": 0.0,
-        }
+        return {"total_errors": 0}
 
-    error_counts: dict[str, int] = {}
-    category_counts: dict[str, int] = {}
+    error_counts = {}
+    category_counts = {}
     recoverable_count = 0
 
     for error in errors:

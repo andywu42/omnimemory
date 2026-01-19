@@ -6,11 +6,7 @@ error handling, migration progress tracking, and system-level operations.
 """
 
 from ...enums.enum_error_code import OmniMemoryErrorCode
-from ...enums.enum_severity import EnumSeverity
-
-# Backward compatibility alias
-EnumErrorCode = OmniMemoryErrorCode
-
+from ...enums.enum_severity import EnumSeverity  # noqa: E402
 from .model_audit_metadata import (  # noqa: E402
     AuditEventDetails,
     PerformanceAuditDetails,
@@ -94,6 +90,9 @@ from .model_typed_collections import (  # noqa: E402
     convert_list_of_dicts_to_structured_data,
     convert_list_to_string_list,
 )
+
+# Backward compatibility alias
+EnumErrorCode = OmniMemoryErrorCode
 
 __all__ = [
     "EnumErrorCode",

@@ -3,13 +3,11 @@ Service configuration model following ONEX standards.
 """
 
 from omnibase_core.enums import EnumNodeType
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModelServiceConfig(BaseModel):
     """Configuration for ONEX memory services following standards."""
-
-    model_config = ConfigDict(extra="forbid")
 
     # Service identification
     service_id: str = Field(
