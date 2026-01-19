@@ -86,13 +86,13 @@ def sample_snapshot() -> ModelMemorySnapshot:
 
 @pytest.fixture
 def sample_snapshot_with_id() -> ModelMemorySnapshot:
-    """Create a sample memory snapshot with a deterministic string ID for testing.
+    """Create a sample memory snapshot with enriched test metadata.
 
-    This fixture creates a snapshot with a specific snapshot_id format that
-    is easy to identify in tests.
+    This fixture creates a snapshot with additional test-friendly fields
+    including namespace, subject_key, and tags for richer test scenarios.
 
     Returns:
-        A valid ModelMemorySnapshot instance with a predictable ID format.
+        A valid ModelMemorySnapshot instance with test metadata populated.
     """
     subject = ModelSubjectRef(
         subject_type=EnumSubjectType.AGENT,
@@ -202,30 +202,29 @@ class TestStoreOperation:
             f"Expected file {expected_file} was not created"
         )
 
-    @pytest.mark.asyncio
-    async def test_store_without_snapshot_returns_error(
+    def test_store_without_snapshot_raises_validation_error(
         self,
-        adapter: HandlerFileSystemAdapter,
     ) -> None:
-        """Test that store operation without snapshot returns error.
+        """Test that store operation without snapshot raises ValidationError.
 
-        Given: A store request with no snapshot
-        When: Executing the store operation
-        Then: Response status is 'error' with appropriate message
+        Given: Attempting to create a store request with no snapshot
+        When: Constructing the ModelMemoryStorageRequest
+        Then: Pydantic raises ValidationError with appropriate message
         """
-        request = ModelMemoryStorageRequest(
-            operation="store",
-            snapshot=None,
-        )
+        from pydantic import ValidationError
 
-        response = await adapter.execute(request)
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(
+                operation="store",
+                snapshot=None,
+            )
 
-        assert response.status == "error", (
-            f"Expected status 'error', got '{response.status}'"
+        error_message = str(exc_info.value)
+        assert "store" in error_message.lower(), (
+            f"Error should mention 'store': {error_message}"
         )
-        assert response.error_message is not None, "Expected error message"
-        assert "snapshot" in response.error_message.lower(), (
-            f"Error should mention 'snapshot': {response.error_message}"
+        assert "snapshot" in error_message.lower(), (
+            f"Error should mention 'snapshot': {error_message}"
         )
 
     @pytest.mark.asyncio
@@ -342,30 +341,29 @@ class TestRetrieveOperation:
         )
         assert response.snapshot is None, "Should not return a snapshot"
 
-    @pytest.mark.asyncio
-    async def test_retrieve_without_snapshot_id_returns_error(
+    def test_retrieve_without_snapshot_id_raises_validation_error(
         self,
-        adapter: HandlerFileSystemAdapter,
     ) -> None:
-        """Test that retrieve operation without snapshot_id returns error.
+        """Test that retrieve operation without snapshot_id raises ValidationError.
 
-        Given: A retrieve request with no snapshot_id
-        When: Executing the retrieve operation
-        Then: Response status is 'error' with appropriate message
+        Given: Attempting to create a retrieve request with no snapshot_id
+        When: Constructing the ModelMemoryStorageRequest
+        Then: Pydantic raises ValidationError with appropriate message
         """
-        request = ModelMemoryStorageRequest(
-            operation="retrieve",
-            snapshot_id=None,
-        )
+        from pydantic import ValidationError
 
-        response = await adapter.execute(request)
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(
+                operation="retrieve",
+                snapshot_id=None,
+            )
 
-        assert response.status == "error", (
-            f"Expected status 'error', got '{response.status}'"
+        error_message = str(exc_info.value)
+        assert "retrieve" in error_message.lower(), (
+            f"Error should mention 'retrieve': {error_message}"
         )
-        assert response.error_message is not None, "Expected error message"
-        assert "snapshot_id" in response.error_message.lower(), (
-            f"Error should mention 'snapshot_id': {response.error_message}"
+        assert "snapshot_id" in error_message.lower(), (
+            f"Error should mention 'snapshot_id': {error_message}"
         )
 
 
@@ -607,28 +605,30 @@ class TestDeleteOperation:
             f"Expected status 'not_found', got '{response.status}'"
         )
 
-    @pytest.mark.asyncio
-    async def test_delete_without_snapshot_id_returns_error(
+    def test_delete_without_snapshot_id_raises_validation_error(
         self,
-        adapter: HandlerFileSystemAdapter,
     ) -> None:
-        """Test that delete operation without snapshot_id returns error.
+        """Test that delete operation without snapshot_id raises ValidationError.
 
-        Given: A delete request with no snapshot_id
-        When: Executing the delete operation
-        Then: Response status is 'error' with appropriate message
+        Given: Attempting to create a delete request with no snapshot_id
+        When: Constructing the ModelMemoryStorageRequest
+        Then: Pydantic raises ValidationError with appropriate message
         """
-        request = ModelMemoryStorageRequest(
-            operation="delete",
-            snapshot_id=None,
-        )
+        from pydantic import ValidationError
 
-        response = await adapter.execute(request)
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id=None,
+            )
 
-        assert response.status == "error", (
-            f"Expected status 'error', got '{response.status}'"
+        error_message = str(exc_info.value)
+        assert "delete" in error_message.lower(), (
+            f"Error should mention 'delete': {error_message}"
         )
-        assert response.error_message is not None
+        assert "snapshot_id" in error_message.lower(), (
+            f"Error should mention 'snapshot_id': {error_message}"
+        )
 
 
 # =============================================================================
@@ -803,26 +803,30 @@ class TestUpdateOperation:
         assert retrieve_response.snapshot.version == 2
         assert retrieve_response.snapshot.tags == ("updated",)
 
-    @pytest.mark.asyncio
-    async def test_update_without_snapshot_returns_error(
+    def test_update_without_snapshot_raises_validation_error(
         self,
-        adapter: HandlerFileSystemAdapter,
     ) -> None:
-        """Test that update operation without snapshot returns error.
+        """Test that update operation without snapshot raises ValidationError.
 
-        Given: An update request with no snapshot
-        When: Executing the update operation
-        Then: Response status is 'error'
+        Given: Attempting to create an update request with no snapshot
+        When: Constructing the ModelMemoryStorageRequest
+        Then: Pydantic raises ValidationError with appropriate message
         """
-        request = ModelMemoryStorageRequest(
-            operation="update",
-            snapshot=None,
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(
+                operation="update",
+                snapshot=None,
+            )
+
+        error_message = str(exc_info.value)
+        assert "update" in error_message.lower(), (
+            f"Error should mention 'update': {error_message}"
         )
-
-        response = await adapter.execute(request)
-
-        assert response.status == "error"
-        assert response.error_message is not None
+        assert "snapshot" in error_message.lower(), (
+            f"Error should mention 'snapshot': {error_message}"
+        )
 
     @pytest.mark.asyncio
     async def test_update_preserves_snapshot_id(
@@ -1119,3 +1123,170 @@ class TestEdgeCases:
 
         assert all(r.status == "success" for r in retrieve_results)
         assert all(r.snapshot is not None for r in retrieve_results)
+
+
+# =============================================================================
+# Per-Operation Field Validation Tests
+# =============================================================================
+
+
+class TestPerOperationValidation:
+    """Tests for per-operation field validation on ModelMemoryStorageRequest.
+
+    These tests verify that the model_validator correctly enforces field
+    requirements based on the operation type:
+
+    - store: requires snapshot
+    - retrieve: requires snapshot_id
+    - delete: requires snapshot_id
+    - update: requires snapshot
+    - list: no required fields (optional filters)
+    """
+
+    def test_store_requires_snapshot(self) -> None:
+        """Test that store operation requires snapshot field."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(operation="store")
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert "snapshot" in str(errors[0])
+
+    def test_store_with_snapshot_valid(
+        self,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that store operation with snapshot is valid."""
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+        )
+        assert request.operation == "store"
+        assert request.snapshot is not None
+
+    def test_retrieve_requires_snapshot_id(self) -> None:
+        """Test that retrieve operation requires snapshot_id field."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(operation="retrieve")
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert "snapshot_id" in str(errors[0])
+
+    def test_retrieve_with_snapshot_id_valid(self) -> None:
+        """Test that retrieve operation with snapshot_id is valid."""
+        request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id="test-id-123",
+        )
+        assert request.operation == "retrieve"
+        assert request.snapshot_id == "test-id-123"
+
+    def test_delete_requires_snapshot_id(self) -> None:
+        """Test that delete operation requires snapshot_id field."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(operation="delete")
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert "snapshot_id" in str(errors[0])
+
+    def test_delete_with_snapshot_id_valid(self) -> None:
+        """Test that delete operation with snapshot_id is valid."""
+        request = ModelMemoryStorageRequest(
+            operation="delete",
+            snapshot_id="test-id-456",
+        )
+        assert request.operation == "delete"
+        assert request.snapshot_id == "test-id-456"
+
+    def test_update_requires_snapshot(self) -> None:
+        """Test that update operation requires snapshot field."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            ModelMemoryStorageRequest(operation="update")
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert "snapshot" in str(errors[0])
+
+    def test_update_with_snapshot_valid(
+        self,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that update operation with snapshot is valid."""
+        request = ModelMemoryStorageRequest(
+            operation="update",
+            snapshot=sample_snapshot,
+        )
+        assert request.operation == "update"
+        assert request.snapshot is not None
+
+    def test_list_no_required_fields(self) -> None:
+        """Test that list operation has no required fields."""
+        request = ModelMemoryStorageRequest(operation="list")
+        assert request.operation == "list"
+        assert request.snapshot is None
+        assert request.snapshot_id is None
+
+    def test_list_with_optional_filters(self) -> None:
+        """Test that list operation accepts optional metadata and tags."""
+        request = ModelMemoryStorageRequest(
+            operation="list",
+            metadata={"source": "test"},
+            tags=["important", "decision"],
+        )
+        assert request.operation == "list"
+        assert request.metadata == {"source": "test"}
+        assert request.tags == ["important", "decision"]
+
+    def test_store_with_extra_snapshot_id_valid(
+        self,
+        sample_snapshot: ModelMemorySnapshot,
+    ) -> None:
+        """Test that store with both snapshot and snapshot_id is valid.
+
+        The snapshot_id field can be provided for documentation purposes
+        even though the snapshot contains its own ID.
+        """
+        request = ModelMemoryStorageRequest(
+            operation="store",
+            snapshot=sample_snapshot,
+            snapshot_id="extra-id",
+        )
+        assert request.operation == "store"
+        assert request.snapshot is not None
+        assert request.snapshot_id == "extra-id"
+
+    def test_retrieve_with_extra_fields_valid(self) -> None:
+        """Test that retrieve with extra metadata/tags is valid.
+
+        Extra fields don't invalidate the request, they're just ignored
+        or used for logging/filtering purposes.
+        """
+        request = ModelMemoryStorageRequest(
+            operation="retrieve",
+            snapshot_id="test-id",
+            metadata={"reason": "audit"},
+            tags=["priority"],
+        )
+        assert request.operation == "retrieve"
+        assert request.snapshot_id == "test-id"
+        assert request.metadata is not None
+        assert request.tags is not None
+
+    def test_invalid_operation_rejected(self) -> None:
+        """Test that invalid operation values are rejected by Pydantic."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ModelMemoryStorageRequest(
+                operation="invalid_op",  # type: ignore[arg-type]
+            )

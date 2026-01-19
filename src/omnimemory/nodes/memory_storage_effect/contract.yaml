@@ -151,7 +151,7 @@ validation_rules:
   output_validation_enabled: true
   performance_validation_enabled: true
   constraint_definitions:
-    operation: "MemoryOperation enum [STORE, RETRIEVE, LIST, DELETE]"
+    operation: "MemoryOperation enum [store, retrieve, delete, update, list]"
     snapshot_id: "string type for snapshot identifier (UUID)"
     snapshot: "ModelMemorySnapshot for storage operations"
     metadata: "dict type for additional operation metadata"

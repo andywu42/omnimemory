@@ -20,9 +20,9 @@ Example:
     Initial implementation for OMN-1384.
 """
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
 
@@ -36,6 +36,13 @@ class ModelMemoryStorageRequest(BaseModel):
     on memory snapshots. The operation field determines which action to take,
     and other fields provide context-specific data for that operation.
 
+    Validation rules per operation:
+        - store: Requires snapshot (snapshot_id derived from snapshot)
+        - retrieve: Requires snapshot_id
+        - delete: Requires snapshot_id
+        - update: Requires snapshot (snapshot_id derived from snapshot)
+        - list: No required fields (metadata/tags are optional filters)
+
     Attributes:
         operation: The storage operation to perform. One of:
             - "store": Create a new snapshot in storage
@@ -44,7 +51,7 @@ class ModelMemoryStorageRequest(BaseModel):
             - "update": Modify an existing snapshot
             - "list": Query snapshots with optional filtering
         snapshot_id: Unique identifier of the snapshot. Required for
-            retrieve, delete, and update operations.
+            retrieve and delete operations.
         snapshot: The memory snapshot data. Required for store and update
             operations.
         metadata: Additional key-value metadata to attach to the operation
@@ -72,6 +79,9 @@ class ModelMemoryStorageRequest(BaseModel):
         ...     operation="list",
         ...     tags=["decision"],
         ... )
+
+    Raises:
+        ValueError: If required fields for the operation are missing.
     """
 
     operation: Literal["store", "retrieve", "delete", "update", "list"] = Field(
@@ -81,12 +91,12 @@ class ModelMemoryStorageRequest(BaseModel):
 
     snapshot_id: str | None = Field(
         default=None,
-        description="Snapshot ID (required for retrieve/delete/update)",
+        description="Snapshot ID (required for retrieve/delete)",
     )
 
     snapshot: ModelMemorySnapshot | None = Field(
         default=None,
-        description="Snapshot data (for store/update operations)",
+        description="Snapshot data (required for store/update operations)",
     )
 
     metadata: dict[str, str] | None = Field(
@@ -98,3 +108,33 @@ class ModelMemoryStorageRequest(BaseModel):
         default=None,
         description="Tags for categorization and filtering",
     )
+
+    @model_validator(mode="after")
+    def validate_operation_fields(self) -> Self:
+        """Validate that required fields are present for each operation type.
+
+        Validation rules:
+            - store: snapshot is required
+            - retrieve: snapshot_id is required
+            - delete: snapshot_id is required
+            - update: snapshot is required
+            - list: no required fields
+
+        Returns:
+            Self: The validated instance.
+
+        Raises:
+            ValueError: If required fields are missing for the operation.
+        """
+        if self.operation in ("store", "update"):
+            if self.snapshot is None:
+                raise ValueError(
+                    f"'{self.operation}' operation requires 'snapshot' field"
+                )
+        elif self.operation in ("retrieve", "delete"):
+            if self.snapshot_id is None:
+                raise ValueError(
+                    f"'{self.operation}' operation requires 'snapshot_id' field"
+                )
+        # "list" operation has no required fields (metadata/tags are optional filters)
+        return self
