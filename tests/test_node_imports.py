@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import importlib
 import types
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 from tests.conftest import CORE_8_NODES, NODES_DIR
 
@@ -32,6 +32,7 @@ class TestNodeImports:
         """Verify the nodes package can be imported."""
         try:
             import omnimemory.nodes
+
             assert omnimemory.nodes is not None
         except ImportError as e:
             pytest.skip(f"Package not installed in editable mode: {e}")
@@ -55,6 +56,7 @@ class TestNodeImports:
         """
         try:
             from omnimemory.nodes import __all__ as nodes_all
+
             for node_name in CORE_8_NODES:
                 # Only check nodes whose directories exist
                 node_dir: Path = NODES_DIR / node_name

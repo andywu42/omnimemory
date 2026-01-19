@@ -15,10 +15,10 @@ These are documented exceptions to the zero-Any policy for compat modules.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar, Optional, Callable, Any, List
+from typing import Any, Callable, Generic, List, Optional, TypeVar
 
-T = TypeVar('T')
-U = TypeVar('U')
+T = TypeVar("T")
+U = TypeVar("U")
 
 
 @dataclass
@@ -50,7 +50,7 @@ class NodeResult(Generic[T]):
         provenance: Optional[List[str]] = None,
         trust_score: float = 1.0,
         metadata: Optional[dict[str, Any]] = None,
-        **extra_metadata: Any
+        **extra_metadata: Any,
     ) -> NodeResult[T]:
         """
         Create a successful result.
@@ -74,7 +74,7 @@ class NodeResult(Generic[T]):
             is_success=True,
             provenance=provenance or [],
             trust_score=trust_score,
-            metadata=combined_metadata
+            metadata=combined_metadata,
         )
 
     @classmethod
@@ -85,7 +85,7 @@ class NodeResult(Generic[T]):
         provenance: Optional[List[str]] = None,
         trust_score: float = 0.0,
         metadata: Optional[dict[str, Any]] = None,
-        **extra_metadata: Any
+        **extra_metadata: Any,
     ) -> NodeResult[T]:
         """
         Create a failure result.
@@ -113,7 +113,7 @@ class NodeResult(Generic[T]):
             is_success=False,
             provenance=provenance or [],
             trust_score=trust_score,
-            metadata=combined_metadata
+            metadata=combined_metadata,
         )
 
     def map(self, func: Callable[[T], U]) -> NodeResult[U]:

@@ -18,19 +18,18 @@ issues with external dependencies like omnibase_core.
 from __future__ import annotations
 
 import asyncio
-import re
 import random
+import re
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum
 from typing import AsyncGenerator, Dict, List, Optional, Set, Union
-from uuid import uuid4, UUID
-from collections import deque
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Self-Contained Implementations for Testing
@@ -45,6 +44,7 @@ PatternConfigValue = Union[str, float]
 
 class PIIType(str, Enum):
     """Types of PII that can be detected."""
+
     EMAIL = "email"
     PHONE = "phone"
     SSN = "ssn"
@@ -59,6 +59,7 @@ class PIIType(str, Enum):
 
 class PIIMatch(BaseModel):
     """A detected PII match in content."""
+
     pii_type: PIIType = Field(description="Type of PII detected")
     value: str = Field(description="The detected PII value (may be masked)")
     start_index: int = Field(description="Start position in the content")
@@ -69,15 +70,23 @@ class PIIMatch(BaseModel):
 
 class PIIDetectionResult(BaseModel):
     """Result of PII detection scan."""
+
     has_pii: bool = Field(description="Whether any PII was detected")
-    matches: List[PIIMatch] = Field(default_factory=list, description="List of PII matches found")
+    matches: List[PIIMatch] = Field(
+        default_factory=list, description="List of PII matches found"
+    )
     sanitized_content: str = Field(description="Content with PII masked/removed")
-    pii_types_detected: Set[PIIType] = Field(default_factory=set, description="Types of PII found")
-    scan_duration_ms: float = Field(description="Time taken for the scan in milliseconds")
+    pii_types_detected: Set[PIIType] = Field(
+        default_factory=set, description="Types of PII found"
+    )
+    scan_duration_ms: float = Field(
+        description="Time taken for the scan in milliseconds"
+    )
 
 
 class PIIDetectorConfig(BaseModel):
     """Configuration for PII detection."""
+
     high_confidence: float = Field(default=0.98, ge=0.0, le=1.0)
     medium_high_confidence: float = Field(default=0.95, ge=0.0, le=1.0)
     medium_confidence: float = Field(default=0.90, ge=0.0, le=1.0)
@@ -96,57 +105,63 @@ class PIIDetector:
         self.config = config or PIIDetectorConfig()
         self._patterns = self._initialize_patterns()
 
-    def _initialize_patterns(self) -> Dict[PIIType, List[Dict[str, PatternConfigValue]]]:
+    def _initialize_patterns(
+        self,
+    ) -> Dict[PIIType, List[Dict[str, PatternConfigValue]]]:
         """Initialize regex patterns for different PII types."""
         return {
             PIIType.EMAIL: [
                 {
-                    "pattern": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+                    "pattern": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
                     "confidence": self.config.medium_high_confidence,
-                    "mask_template": "***@***.***"
+                    "mask_template": "***@***.***",
                 }
             ],
             PIIType.PHONE: [
                 {
-                    "pattern": r'(\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
+                    "pattern": r"(\+1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",
                     "confidence": self.config.medium_confidence,
-                    "mask_template": "***-***-****"
+                    "mask_template": "***-***-****",
                 }
             ],
             PIIType.SSN: [
                 {
-                    "pattern": r'\b\d{3}-\d{2}-\d{4}\b',
+                    "pattern": r"\b\d{3}-\d{2}-\d{4}\b",
                     "confidence": self.config.high_confidence,
-                    "mask_template": "***-**-****"
+                    "mask_template": "***-**-****",
                 }
             ],
             PIIType.IP_ADDRESS: [
                 {
-                    "pattern": r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
+                    "pattern": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
                     "confidence": self.config.medium_confidence,
-                    "mask_template": "***.***.***.***"
+                    "mask_template": "***.***.***.***",
                 }
             ],
             PIIType.API_KEY: [
                 {
-                    "pattern": r'sk-[A-Za-z0-9]{32,}',
+                    "pattern": r"sk-[A-Za-z0-9]{32,}",
                     "confidence": self.config.high_confidence,
-                    "mask_template": "sk-***REDACTED***"
+                    "mask_template": "sk-***REDACTED***",
                 },
                 {
-                    "pattern": r'ghp_[A-Za-z0-9]{36}',
+                    "pattern": r"ghp_[A-Za-z0-9]{36}",
                     "confidence": self.config.high_confidence,
-                    "mask_template": "ghp_***REDACTED***"
-                }
+                    "mask_template": "ghp_***REDACTED***",
+                },
             ],
         }
 
-    def detect_pii(self, content: str, sensitivity_level: str = "medium") -> PIIDetectionResult:
+    def detect_pii(
+        self, content: str, sensitivity_level: str = "medium"
+    ) -> PIIDetectionResult:
         """Detect PII in the given content."""
         start_time = time.time()
 
         if len(content) > self.config.max_text_length:
-            raise ValueError(f"Content length {len(content)} exceeds maximum {self.config.max_text_length}")
+            raise ValueError(
+                f"Content length {len(content)} exceeds maximum {self.config.max_text_length}"
+            )
 
         matches: List[PIIMatch] = []
         pii_types_detected: Set[PIIType] = set()
@@ -155,7 +170,7 @@ class PIIDetector:
         confidence_threshold = {
             "low": self.config.medium_high_confidence,
             "medium": self.config.reduced_confidence,
-            "high": self.config.low_confidence
+            "high": self.config.low_confidence,
         }.get(sensitivity_level, self.config.reduced_confidence)
 
         for pii_type, patterns in self._patterns.items():
@@ -178,7 +193,7 @@ class PIIDetector:
                         start_index=match.start(),
                         end_index=match.end(),
                         confidence=base_confidence,
-                        masked_value=mask_template
+                        masked_value=mask_template,
                     )
                     matches.append(pii_match)
                     pii_types_detected.add(pii_type)
@@ -197,7 +212,7 @@ class PIIDetector:
             matches=matches,
             sanitized_content=sanitized_content,
             pii_types_detected=pii_types_detected,
-            scan_duration_ms=scan_duration_ms
+            scan_duration_ms=scan_duration_ms,
         )
 
     def _deduplicate_matches(self, matches: List[PIIMatch]) -> List[PIIMatch]:
@@ -211,8 +226,10 @@ class PIIDetector:
         for match in matches:
             overlap = False
             for existing in deduplicated:
-                if (match.start_index < existing.end_index and
-                    match.end_index > existing.start_index):
+                if (
+                    match.start_index < existing.end_index
+                    and match.end_index > existing.start_index
+                ):
                     overlap = True
                     break
             if not overlap:
@@ -226,15 +243,16 @@ class PIIDetector:
         sanitized = content
         for match in sorted_matches:
             sanitized = (
-                sanitized[:match.start_index] +
-                match.masked_value +
-                sanitized[match.end_index:]
+                sanitized[: match.start_index]
+                + match.masked_value
+                + sanitized[match.end_index :]
             )
         return sanitized
 
 
 class LockPriority(Enum):
     """Priority levels for lock acquisition."""
+
     LOW = 1
     NORMAL = 2
     HIGH = 3
@@ -243,6 +261,7 @@ class LockPriority(Enum):
 
 class SemaphoreStats:
     """Statistics for semaphore usage."""
+
     def __init__(self, total_permits: int):
         self.total_permits = total_permits
         self.available_permits = total_permits
@@ -267,9 +286,7 @@ class FairSemaphore:
 
     @asynccontextmanager
     async def acquire(
-        self,
-        timeout: Optional[float] = None,
-        correlation_id: Optional[str] = None
+        self, timeout: Optional[float] = None, correlation_id: Optional[str] = None
     ) -> AsyncGenerator[None, None]:
         """Acquire semaphore permit with timeout and tracking."""
         holder_id = str(uuid4())
@@ -314,10 +331,11 @@ class FairSemaphore:
                     else:
                         alpha = min(0.1, 2.0 / (releases + 1))
                         self._stats.average_hold_time = (
-                            (1 - alpha) * self._stats.average_hold_time +
-                            alpha * hold_time
-                        )
-                    self._stats.max_hold_time = max(self._stats.max_hold_time, hold_time)
+                            1 - alpha
+                        ) * self._stats.average_hold_time + alpha * hold_time
+                    self._stats.max_hold_time = max(
+                        self._stats.max_hold_time, hold_time
+                    )
 
                 self._semaphore.release()
 
@@ -339,7 +357,7 @@ class PriorityLock:
     async def acquire(
         self,
         priority: LockPriority = LockPriority.NORMAL,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
     ) -> AsyncGenerator[None, None]:
         """Acquire the lock with priority."""
         request_id = str(uuid4())
@@ -363,6 +381,7 @@ class PriorityLock:
 
 class EnumMemoryStorageType(str, Enum):
     """Types of memory storage."""
+
     VECTOR_DATABASE = "vector_database"
     RELATIONAL_DATABASE = "relational_database"
     DOCUMENT_STORE = "document_store"
@@ -387,33 +406,50 @@ class ModelMemoryItem(BaseModel):
     storage_type: EnumMemoryStorageType = Field(description="Type of storage")
     storage_location: str = Field(description="Location identifier")
     version: int = Field(default=1, description="Version number")
-    previous_version_id: UUID | None = Field(default=None, description="Previous version ID")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation time")
+    previous_version_id: UUID | None = Field(
+        default=None, description="Previous version ID"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="Creation time"
+    )
     updated_at: datetime | None = Field(default=None, description="Last update time")
     expires_at: datetime | None = Field(default=None, description="Expiration time")
     access_count: int = Field(default=0, description="Access count")
-    last_accessed_at: datetime | None = Field(default=None, description="Last access time")
-    importance_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Importance score")
-    relevance_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Relevance score")
-    quality_score: float = Field(default=0.5, ge=0.0, le=1.0, description="Quality score")
+    last_accessed_at: datetime | None = Field(
+        default=None, description="Last access time"
+    )
+    importance_score: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Importance score"
+    )
+    relevance_score: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Relevance score"
+    )
+    quality_score: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Quality score"
+    )
     parent_item_id: UUID | None = Field(default=None, description="Parent item ID")
-    related_item_ids: list[UUID] = Field(default_factory=list, description="Related item IDs")
+    related_item_ids: list[UUID] = Field(
+        default_factory=list, description="Related item IDs"
+    )
     processing_complete: bool = Field(default=True, description="Processing status")
     indexed: bool = Field(default=False, description="Indexing status")
 
-    @field_validator('content')
+    @field_validator("content")
     @classmethod
     def validate_content_size(cls, v):
         """Validate content size to prevent oversized memory items."""
         MAX_CONTENT_SIZE = 1_000_000  # 1MB max
-        if len(v.encode('utf-8')) > MAX_CONTENT_SIZE:
-            raise ValueError(f"Content exceeds maximum size of {MAX_CONTENT_SIZE} bytes")
+        if len(v.encode("utf-8")) > MAX_CONTENT_SIZE:
+            raise ValueError(
+                f"Content exceeds maximum size of {MAX_CONTENT_SIZE} bytes"
+            )
         return v
 
 
 # =============================================================================
 # Test Fixtures and Helpers
 # =============================================================================
+
 
 def generate_text_with_pii(size_bytes: int) -> str:
     """
@@ -441,8 +477,20 @@ def generate_text_with_pii(size_bytes: int) -> str:
         "GitHub token: ghp_abcdefghijklmnopqrstuvwxyz1234567890",
     ]
 
-    words = ["lorem", "ipsum", "dolor", "sit", "amet", "consectetur",
-             "adipiscing", "elit", "sed", "do", "eiusmod", "tempor"]
+    words = [
+        "lorem",
+        "ipsum",
+        "dolor",
+        "sit",
+        "amet",
+        "consectetur",
+        "adipiscing",
+        "elit",
+        "sed",
+        "do",
+        "eiusmod",
+        "tempor",
+    ]
 
     result = []
     current_size = 0
@@ -456,7 +504,7 @@ def generate_text_with_pii(size_bytes: int) -> str:
             text = " ".join(random.choices(words, k=random.randint(5, 15))) + ". "
 
         result.append(text)
-        current_size += len(text.encode('utf-8'))
+        current_size += len(text.encode("utf-8"))
 
     return "".join(result)[:size_bytes]
 
@@ -471,9 +519,28 @@ def generate_clean_text(size_bytes: int) -> str:
     Returns:
         Generated text without PII patterns
     """
-    words = ["the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
-             "memory", "system", "performs", "fast", "operations", "data",
-             "storage", "retrieval", "index", "search", "query", "result"]
+    words = [
+        "the",
+        "quick",
+        "brown",
+        "fox",
+        "jumps",
+        "over",
+        "lazy",
+        "dog",
+        "memory",
+        "system",
+        "performs",
+        "fast",
+        "operations",
+        "data",
+        "storage",
+        "retrieval",
+        "index",
+        "search",
+        "query",
+        "result",
+    ]
 
     result = []
     current_size = 0
@@ -481,7 +548,7 @@ def generate_clean_text(size_bytes: int) -> str:
     while current_size < size_bytes:
         sentence = " ".join(random.choices(words, k=random.randint(8, 15))) + ". "
         result.append(sentence)
-        current_size += len(sentence.encode('utf-8'))
+        current_size += len(sentence.encode("utf-8"))
 
     return "".join(result)[:size_bytes]
 
@@ -521,6 +588,7 @@ def create_memory_item(content_size: int = 1000) -> ModelMemoryItem:
 # =============================================================================
 # PIIDetector Performance Tests
 # =============================================================================
+
 
 class TestPIIDetectorPerformance:
     """
@@ -579,9 +647,9 @@ class TestPIIDetectorPerformance:
         assert result.has_pii is False
         assert len(result.matches) == 0
 
-        assert elapsed_ms < 50, (
-            f"Clean text PII scan took {elapsed_ms:.2f}ms, exceeds 50ms target."
-        )
+        assert (
+            elapsed_ms < 50
+        ), f"Clean text PII scan took {elapsed_ms:.2f}ms, exceeds 50ms target."
 
     @pytest.mark.benchmark
     @pytest.mark.slow
@@ -602,9 +670,9 @@ class TestPIIDetectorPerformance:
 
         scans_per_second = num_iterations / total_elapsed
 
-        assert scans_per_second >= 10, (
-            f"PII throughput {scans_per_second:.2f} scans/sec below 10 scans/sec target"
-        )
+        assert (
+            scans_per_second >= 10
+        ), f"PII throughput {scans_per_second:.2f} scans/sec below 10 scans/sec target"
 
     @pytest.mark.benchmark
     def test_pii_scan_reports_duration(self) -> None:
@@ -623,6 +691,7 @@ class TestPIIDetectorPerformance:
 # =============================================================================
 # Model Serialization Performance Tests
 # =============================================================================
+
 
 class TestModelSerializationPerformance:
     """
@@ -653,9 +722,9 @@ class TestModelSerializationPerformance:
 
         avg_ms_per_item = elapsed_ms / num_iterations
 
-        assert avg_ms_per_item < 1.0, (
-            f"Serialization averaged {avg_ms_per_item:.4f}ms, exceeds 1ms target"
-        )
+        assert (
+            avg_ms_per_item < 1.0
+        ), f"Serialization averaged {avg_ms_per_item:.4f}ms, exceeds 1ms target"
 
     @pytest.mark.benchmark
     def test_memory_item_deserialization_speed(self) -> None:
@@ -679,9 +748,9 @@ class TestModelSerializationPerformance:
 
         avg_ms_per_item = elapsed_ms / num_iterations
 
-        assert avg_ms_per_item < 1.0, (
-            f"Deserialization averaged {avg_ms_per_item:.4f}ms, exceeds 1ms target"
-        )
+        assert (
+            avg_ms_per_item < 1.0
+        ), f"Deserialization averaged {avg_ms_per_item:.4f}ms, exceeds 1ms target"
 
     @pytest.mark.benchmark
     def test_memory_item_json_roundtrip_speed(self) -> None:
@@ -706,9 +775,9 @@ class TestModelSerializationPerformance:
 
         avg_ms_per_roundtrip = elapsed_ms / num_iterations
 
-        assert avg_ms_per_roundtrip < 2.0, (
-            f"JSON roundtrip averaged {avg_ms_per_roundtrip:.4f}ms, exceeds 2ms target"
-        )
+        assert (
+            avg_ms_per_roundtrip < 2.0
+        ), f"JSON roundtrip averaged {avg_ms_per_roundtrip:.4f}ms, exceeds 2ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.slow
@@ -727,14 +796,15 @@ class TestModelSerializationPerformance:
 
         items_per_second = len(items) / elapsed
 
-        assert items_per_second > 10000, (
-            f"Batch serialization {items_per_second:.0f} items/sec below 10K target"
-        )
+        assert (
+            items_per_second > 10000
+        ), f"Batch serialization {items_per_second:.0f} items/sec below 10K target"
 
 
 # =============================================================================
 # Concurrency Performance Tests
 # =============================================================================
+
 
 class TestConcurrencyPerformance:
     """
@@ -768,9 +838,9 @@ class TestConcurrencyPerformance:
 
         avg_ms_per_acquisition = elapsed_ms / num_iterations
 
-        assert avg_ms_per_acquisition < 1.0, (
-            f"Semaphore acquisition averaged {avg_ms_per_acquisition:.4f}ms, exceeds 1ms target"
-        )
+        assert (
+            avg_ms_per_acquisition < 1.0
+        ), f"Semaphore acquisition averaged {avg_ms_per_acquisition:.4f}ms, exceeds 1ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -796,9 +866,9 @@ class TestConcurrencyPerformance:
 
         avg_ms_per_acquisition = elapsed_ms / num_iterations
 
-        assert avg_ms_per_acquisition < 2.0, (
-            f"Lock acquisition averaged {avg_ms_per_acquisition:.4f}ms, exceeds 2ms target"
-        )
+        assert (
+            avg_ms_per_acquisition < 2.0
+        ), f"Lock acquisition averaged {avg_ms_per_acquisition:.4f}ms, exceeds 2ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -823,18 +893,16 @@ class TestConcurrencyPerformance:
         ops_per_worker = 100
 
         start_time = time.perf_counter()
-        await asyncio.gather(*[
-            worker(i, ops_per_worker) for i in range(num_workers)
-        ])
+        await asyncio.gather(*[worker(i, ops_per_worker) for i in range(num_workers)])
         elapsed = time.perf_counter() - start_time
 
         total_ops = num_workers * ops_per_worker
         ops_per_second = total_ops / elapsed
 
         assert len(completed) == total_ops
-        assert ops_per_second > 500, (
-            f"Concurrent throughput {ops_per_second:.0f} ops/sec below 500 target"
-        )
+        assert (
+            ops_per_second > 500
+        ), f"Concurrent throughput {ops_per_second:.0f} ops/sec below 500 target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -857,14 +925,15 @@ class TestConcurrencyPerformance:
 
         assert stats.total_acquisitions == num_iterations
         assert stats.total_releases == num_iterations
-        assert stats_elapsed_ms < 1.0, (
-            f"Stats retrieval took {stats_elapsed_ms:.4f}ms, exceeds 1ms target"
-        )
+        assert (
+            stats_elapsed_ms < 1.0
+        ), f"Stats retrieval took {stats_elapsed_ms:.4f}ms, exceeds 1ms target"
 
 
 # =============================================================================
 # Combined/Integration Performance Tests
 # =============================================================================
+
 
 class TestIntegratedPerformance:
     """
@@ -892,9 +961,9 @@ class TestIntegratedPerformance:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         avg_ms = elapsed_ms / num_iterations
 
-        assert avg_ms < 150, (
-            f"Combined workflow averaged {avg_ms:.2f}ms, exceeds 150ms target"
-        )
+        assert (
+            avg_ms < 150
+        ), f"Combined workflow averaged {avg_ms:.2f}ms, exceeds 150ms target"
 
     @pytest.mark.benchmark
     @pytest.mark.asyncio
@@ -916,23 +985,22 @@ class TestIntegratedPerformance:
         num_operations = 100
         start_time = time.perf_counter()
 
-        await asyncio.gather(*[
-            memory_operation(i) for i in range(num_operations)
-        ])
+        await asyncio.gather(*[memory_operation(i) for i in range(num_operations)])
 
         elapsed = time.perf_counter() - start_time
         ops_per_second = num_operations / elapsed
 
         assert all(results)
         assert len(results) == num_operations
-        assert ops_per_second > 50, (
-            f"Concurrent memory ops {ops_per_second:.0f}/sec below 50 target"
-        )
+        assert (
+            ops_per_second > 50
+        ), f"Concurrent memory ops {ops_per_second:.0f}/sec below 50 target"
 
 
 # =============================================================================
 # Stress Tests
 # =============================================================================
+
 
 @pytest.mark.slow
 class TestStressPerformance:
@@ -955,9 +1023,9 @@ class TestStressPerformance:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         assert result is not None
-        assert elapsed_ms < 200, (
-            f"Max length scan took {elapsed_ms:.2f}ms, exceeds 200ms stress target"
-        )
+        assert (
+            elapsed_ms < 200
+        ), f"Max length scan took {elapsed_ms:.2f}ms, exceeds 200ms stress target"
 
     @pytest.mark.benchmark
     def test_large_batch_model_operations(self) -> None:
@@ -980,17 +1048,18 @@ class TestStressPerformance:
         deserialize_rate = len(items) / deserialize_elapsed
 
         assert len(deserialized) == len(items)
-        assert serialize_rate > 10000, (
-            f"Batch serialize {serialize_rate:.0f}/sec below 10K target"
-        )
-        assert deserialize_rate > 10000, (
-            f"Batch deserialize {deserialize_rate:.0f}/sec below 10K target"
-        )
+        assert (
+            serialize_rate > 10000
+        ), f"Batch serialize {serialize_rate:.0f}/sec below 10K target"
+        assert (
+            deserialize_rate > 10000
+        ), f"Batch deserialize {deserialize_rate:.0f}/sec below 10K target"
 
 
 # =============================================================================
 # SLA Verification Tests
 # =============================================================================
+
 
 class PercentileCalculator:
     """
@@ -1030,7 +1099,9 @@ class PercentileCalculator:
             return self.measurements[f]
 
         # Linear interpolation
-        return self.measurements[f] + (k - f) * (self.measurements[c] - self.measurements[f])
+        return self.measurements[f] + (k - f) * (
+            self.measurements[c] - self.measurements[f]
+        )
 
     @property
     def p50(self) -> float:
@@ -1112,7 +1183,9 @@ class TestSLAVerification:
         print(f"\nMemory Operations SLA Report:")
         print(f"  P50: {calc.p50:.2f}ms")
         print(f"  P90: {calc.p90:.2f}ms")
-        print(f"  P95: {calc.p95:.2f}ms (target: <100ms) {'PASS' if calc.p95 < 100 else 'FAIL'}")
+        print(
+            f"  P95: {calc.p95:.2f}ms (target: <100ms) {'PASS' if calc.p95 < 100 else 'FAIL'}"
+        )
         print(f"  P99: {calc.p99:.2f}ms")
         print(f"  Mean: {calc.mean:.2f}ms")
 
@@ -1183,6 +1256,7 @@ class TestSLAVerification:
 # =============================================================================
 # PII Detection Performance Tests (Extended)
 # =============================================================================
+
 
 class TestPIIDetectionOverhead:
     """
@@ -1258,9 +1332,9 @@ class TestPIIDetectionOverhead:
         mb_per_sec = kb_per_ms * 1000 / 1024
 
         # Target: at least 1 KB/ms = 1 MB/s
-        assert kb_per_ms >= 1.0, (
-            f"PII throughput {kb_per_ms:.2f} KB/ms below 1 KB/ms target"
-        )
+        assert (
+            kb_per_ms >= 1.0
+        ), f"PII throughput {kb_per_ms:.2f} KB/ms below 1 KB/ms target"
 
         print(f"\nPII Detection Throughput Report:")
         print(f"  Throughput: {kb_per_ms:.2f} KB/ms ({mb_per_sec:.2f} MB/s)")
@@ -1291,12 +1365,15 @@ class TestPIIDetectionOverhead:
         print(f"\nPII Detection P95 Report (5KB content with PII):")
         print(f"  P50: {calc.p50:.4f}ms")
         print(f"  P90: {calc.p90:.4f}ms")
-        print(f"  P95: {calc.p95:.4f}ms (target: <10ms) {'PASS' if calc.p95 < 10 else 'FAIL'}")
+        print(
+            f"  P95: {calc.p95:.4f}ms (target: <10ms) {'PASS' if calc.p95 < 10 else 'FAIL'}"
+        )
 
 
 # =============================================================================
 # Storage Efficiency Tests
 # =============================================================================
+
 
 class TestStorageEfficiency:
     """
@@ -1322,7 +1399,7 @@ class TestStorageEfficiency:
 
         # Measure serialized size
         serialized_items = [item.model_dump_json() for item in items]
-        total_bytes = sum(len(s.encode('utf-8')) for s in serialized_items)
+        total_bytes = sum(len(s.encode("utf-8")) for s in serialized_items)
 
         avg_bytes_per_item = total_bytes / sample_size
         # Subtract minimal content to get metadata overhead
@@ -1331,9 +1408,9 @@ class TestStorageEfficiency:
         # ModelMemoryItem has: 3 UUIDs (~108 chars), timestamps (~50 chars),
         # lists (~100 chars), scores (~60 chars), flags (~40 chars), etc.
         # Expected metadata overhead: ~850-950 bytes
-        assert metadata_overhead < 1000, (
-            f"Metadata overhead {metadata_overhead:.0f} bytes exceeds 1KB limit"
-        )
+        assert (
+            metadata_overhead < 1000
+        ), f"Metadata overhead {metadata_overhead:.0f} bytes exceeds 1KB limit"
 
         print(f"\nStorage Efficiency Report (Metadata Overhead):")
         print(f"  Sample size: {sample_size}")
@@ -1353,7 +1430,7 @@ class TestStorageEfficiency:
 
         for content_size in content_sizes:
             item = create_memory_item(content_size=content_size)
-            json_size = len(item.model_dump_json().encode('utf-8'))
+            json_size = len(item.model_dump_json().encode("utf-8"))
             overhead_factor = json_size / content_size
 
             # For content >= 1KB, overhead factor should be reasonable
@@ -1387,7 +1464,7 @@ class TestStorageEfficiency:
             item = create_memory_item(content_size=content_size)
 
             # Measure serialized size
-            json_size = len(item.model_dump_json().encode('utf-8'))
+            json_size = len(item.model_dump_json().encode("utf-8"))
 
             # Efficiency target: for content >= 500 bytes, overhead < 3x
             overhead_factor = json_size / content_size
@@ -1408,6 +1485,7 @@ class TestStorageEfficiency:
 # =============================================================================
 # Vector Search Simulation Tests
 # =============================================================================
+
 
 class TestVectorSearchPerformance:
     """
@@ -1442,8 +1520,7 @@ class TestVectorSearchPerformance:
             # Generate random vectors
             query_vector = [random.random() for _ in range(dim)]
             candidate_vectors = [
-                [random.random() for _ in range(dim)]
-                for _ in range(num_vectors)
+                [random.random() for _ in range(dim)] for _ in range(num_vectors)
             ]
 
             def cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -1483,8 +1560,7 @@ class TestVectorSearchPerformance:
         num_vectors = 100
 
         vectors = [
-            [random.random() for _ in range(dimensions)]
-            for _ in range(num_vectors)
+            [random.random() for _ in range(dimensions)] for _ in range(num_vectors)
         ]
 
         def normalize_vector(v: List[float]) -> List[float]:
@@ -1498,9 +1574,9 @@ class TestVectorSearchPerformance:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Target: preprocessing should be fast (<5ms per 100 vectors)
-        assert elapsed_ms < 50, (
-            f"Vector preprocessing took {elapsed_ms:.2f}ms, exceeds 50ms target"
-        )
+        assert (
+            elapsed_ms < 50
+        ), f"Vector preprocessing took {elapsed_ms:.2f}ms, exceeds 50ms target"
 
         print(f"\nVector Preprocessing Report:")
         print(f"  Vectors processed: {num_vectors}")
@@ -1512,6 +1588,7 @@ class TestVectorSearchPerformance:
 # =============================================================================
 # Extended Integration Tests
 # =============================================================================
+
 
 class TestEndToEndPerformance:
     """
@@ -1550,15 +1627,17 @@ class TestEndToEndPerformance:
 
         calc = PercentileCalculator(measurements)
 
-        assert calc.p95 < 100, (
-            f"Full workflow P95={calc.p95:.2f}ms exceeds 100ms target"
-        )
+        assert (
+            calc.p95 < 100
+        ), f"Full workflow P95={calc.p95:.2f}ms exceeds 100ms target"
 
         print(f"\nFull Memory Workflow SLA Report:")
         print(f"  Operations: Create + PII Scan + Serialize + Deserialize")
         print(f"  P50: {calc.p50:.2f}ms")
         print(f"  P90: {calc.p90:.2f}ms")
-        print(f"  P95: {calc.p95:.2f}ms (target: <100ms) {'PASS' if calc.p95 < 100 else 'FAIL'}")
+        print(
+            f"  P95: {calc.p95:.2f}ms (target: <100ms) {'PASS' if calc.p95 < 100 else 'FAIL'}"
+        )
         print(f"  P99: {calc.p99:.2f}ms")
 
     @pytest.mark.benchmark
@@ -1593,9 +1672,9 @@ class TestEndToEndPerformance:
         calc = PercentileCalculator(measurements)
 
         # Under concurrency, allow slightly higher P95 (150ms)
-        assert calc.p95 < 150, (
-            f"Concurrent workflow P95={calc.p95:.2f}ms exceeds 150ms target"
-        )
+        assert (
+            calc.p95 < 150
+        ), f"Concurrent workflow P95={calc.p95:.2f}ms exceeds 150ms target"
 
         print(f"\nConcurrent Workflow SLA Report:")
         print(f"  Concurrent workflows: {num_workflows}")
@@ -1606,6 +1685,7 @@ class TestEndToEndPerformance:
 # =============================================================================
 # Benchmark Summary Utilities
 # =============================================================================
+
 
 class TestBenchmarkSummary:
     """

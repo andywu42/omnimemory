@@ -27,58 +27,37 @@ __author__ = "OmniNode-ai"
 __email__ = "contact@omninode.ai"
 
 # Import ONEX-compliant model domains
-from .models import (
-    core,
-    memory,
-    intelligence,
-    service,
-    foundation,
-)
+from .models import core, foundation, intelligence, memory, service
 
 # Import protocol definitions
-from .protocols import (
-    # Base protocols
-    ProtocolMemoryBase,
-    ProtocolMemoryOperations,
-
-    # Effect node protocols (memory storage, retrieval, persistence)
-    ProtocolMemoryStorage,
-    ProtocolMemoryRetrieval,
-    ProtocolMemoryPersistence,
-
-    # Compute node protocols (intelligence processing, semantic analysis)
-    ProtocolIntelligenceProcessor,
-    ProtocolSemanticAnalyzer,
-    ProtocolPatternRecognition,
-
-    # Reducer node protocols (consolidation, aggregation, optimization)
-    ProtocolMemoryConsolidator,
-    ProtocolMemoryAggregator,
-    ProtocolMemoryOptimizer,
-
-    # Orchestrator node protocols (workflow, agent, memory coordination)
-    ProtocolWorkflowCoordinator,
-    ProtocolAgentCoordinator,
-    ProtocolMemoryOrchestrator,
-
-    # Data models
+from .protocols import (  # Base protocols; Effect node protocols (memory storage, retrieval, persistence); Compute node protocols (intelligence processing, semantic analysis); Reducer node protocols (consolidation, aggregation, optimization); Orchestrator node protocols (workflow, agent, memory coordination); Data models; Enums; Error handling
+    AccessLevel,
     BaseMemoryRequest,
     BaseMemoryResponse,
+    ContentType,
+    MemoryPriority,
     MemoryRecord,
     MemoryStoreRequest,
     MemoryStoreResponse,
-
-    # Enums
-    OperationStatus,
-    ContentType,
-    MemoryPriority,
-    AccessLevel,
-
-    # Error handling
     OmniMemoryError,
     OmniMemoryErrorCode,
-    ValidationError,
+    OperationStatus,
+    ProtocolAgentCoordinator,
+    ProtocolIntelligenceProcessor,
+    ProtocolMemoryAggregator,
+    ProtocolMemoryBase,
+    ProtocolMemoryConsolidator,
+    ProtocolMemoryOperations,
+    ProtocolMemoryOptimizer,
+    ProtocolMemoryOrchestrator,
+    ProtocolMemoryPersistence,
+    ProtocolMemoryRetrieval,
+    ProtocolMemoryStorage,
+    ProtocolPatternRecognition,
+    ProtocolSemanticAnalyzer,
+    ProtocolWorkflowCoordinator,
     SystemError,
+    ValidationError,
 )
 
 __all__ = [
@@ -86,51 +65,42 @@ __all__ = [
     "__version__",
     "__author__",
     "__email__",
-
     # ONEX model domains
     "core",
     "memory",
     "intelligence",
     "service",
     "foundation",
-
     # Base protocols
     "ProtocolMemoryBase",
     "ProtocolMemoryOperations",
-
     # Effect node protocols
     "ProtocolMemoryStorage",
     "ProtocolMemoryRetrieval",
     "ProtocolMemoryPersistence",
-
     # Compute node protocols
     "ProtocolIntelligenceProcessor",
     "ProtocolSemanticAnalyzer",
     "ProtocolPatternRecognition",
-
     # Reducer node protocols
     "ProtocolMemoryConsolidator",
     "ProtocolMemoryAggregator",
     "ProtocolMemoryOptimizer",
-
     # Orchestrator node protocols
     "ProtocolWorkflowCoordinator",
     "ProtocolAgentCoordinator",
     "ProtocolMemoryOrchestrator",
-
     # Data models
     "BaseMemoryRequest",
     "BaseMemoryResponse",
     "MemoryRecord",
     "MemoryStoreRequest",
     "MemoryStoreResponse",
-
     # Enums
     "OperationStatus",
     "ContentType",
     "MemoryPriority",
     "AccessLevel",
-
     # Error handling
     "OmniMemoryError",
     "OmniMemoryErrorCode",

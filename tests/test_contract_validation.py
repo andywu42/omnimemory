@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import importlib
 import types
+from pathlib import Path
 
 import pytest
 import yaml
-from pathlib import Path
 
 from tests.conftest import CORE_8_NODES, NODES_DIR
 
@@ -77,7 +77,9 @@ class TestContractValidation:
         # ONEX contracts must have node_type at root level (no legacy nested format)
         raw_node_type = data.get("node_type", "")
         node_type: str = str(raw_node_type) if raw_node_type else ""
-        assert node_type, f"Contract must have 'node_type' field at root level: {node_name}"
+        assert (
+            node_type
+        ), f"Contract must have 'node_type' field at root level: {node_name}"
         node_type = node_type.upper()
 
         # Import appropriate contract model based on node type
@@ -125,13 +127,17 @@ class TestContractRuntimeLoad:
             pytest.skip(f"File not yet implemented: {node_path}")
 
         # Convert node_name to class name (e.g., memory_storage_effect -> NodeMemoryStorageEffect)
-        class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
+        class_name: str = "Node" + "".join(
+            word.capitalize() for word in node_name.split("_")
+        )
 
         module_name: str = f"omnimemory.nodes.{node_name}.node"
         try:
             module: types.ModuleType = importlib.import_module(module_name)
             node_class: type | None = getattr(module, class_name, None)
-            assert node_class is not None, f"Node class {class_name} not found in {module_name}"
+            assert (
+                node_class is not None
+            ), f"Node class {class_name} not found in {module_name}"
         except ModuleNotFoundError as e:
             # Package not installed in editable mode - skip rather than fail
             pytest.skip(f"Package not installed in editable mode: {e}")
@@ -150,7 +156,9 @@ class TestContractRuntimeLoad:
         if not node_path.exists():
             pytest.skip(f"File not yet implemented: {node_path}")
 
-        class_name: str = "Node" + "".join(word.capitalize() for word in node_name.split("_"))
+        class_name: str = "Node" + "".join(
+            word.capitalize() for word in node_name.split("_")
+        )
         module_name: str = f"omnimemory.nodes.{node_name}.node"
 
         try:

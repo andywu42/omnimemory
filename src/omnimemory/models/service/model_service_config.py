@@ -2,9 +2,8 @@
 Service configuration model following ONEX standards.
 """
 
-from pydantic import BaseModel, Field
-
 from omnibase_core.enums import EnumNodeType
+from pydantic import BaseModel, Field
 
 
 class ModelServiceConfig(BaseModel):

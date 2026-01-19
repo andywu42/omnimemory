@@ -19,6 +19,6 @@ Advanced unified memory and intelligence system designed to migrate and moderniz
 - Contract-driven development with Pydantic models
 
 ## Current Status
-- Foundation models implemented (26 Pydantic models, zero Any types)  
+- Foundation models implemented (26 Pydantic models, zero Any types)
 - PR review phase with 10 remaining issues to resolve
 - Directory structure: src/omnimemory/models/{core,memory,intelligence,service,foundation}

@@ -45,9 +45,15 @@ class OmniMemoryErrorCode(OnexErrorCode):
 
     # Intelligence operation errors (specific to memory intelligence)
     MEMORY_ANALYSIS_FAILED = "ONEX_OMNIMEMORY_008_MEMORY_ANALYSIS_FAILED"
-    MEMORY_PATTERN_RECOGNITION_FAILED = "ONEX_OMNIMEMORY_009_MEMORY_PATTERN_RECOGNITION_FAILED"
-    MEMORY_SEMANTIC_PROCESSING_FAILED = "ONEX_OMNIMEMORY_010_MEMORY_SEMANTIC_PROCESSING_FAILED"
-    MEMORY_EMBEDDING_GENERATION_FAILED = "ONEX_OMNIMEMORY_011_MEMORY_EMBEDDING_GENERATION_FAILED"
+    MEMORY_PATTERN_RECOGNITION_FAILED = (
+        "ONEX_OMNIMEMORY_009_MEMORY_PATTERN_RECOGNITION_FAILED"
+    )
+    MEMORY_SEMANTIC_PROCESSING_FAILED = (
+        "ONEX_OMNIMEMORY_010_MEMORY_SEMANTIC_PROCESSING_FAILED"
+    )
+    MEMORY_EMBEDDING_GENERATION_FAILED = (
+        "ONEX_OMNIMEMORY_011_MEMORY_EMBEDDING_GENERATION_FAILED"
+    )
 
     # Memory storage specific errors
     VECTOR_INDEX_CORRUPTION = "ONEX_OMNIMEMORY_012_VECTOR_INDEX_CORRUPTION"
@@ -63,6 +69,7 @@ class OmniMemoryErrorCode(OnexErrorCode):
     def get_number(self) -> int:
         """Get the numeric identifier for this error code."""
         import re
+
         match = re.search(r"ONEX_OMNIMEMORY_(\d+)_", self.value)
         return int(match.group(1)) if match else 0
 

@@ -4,22 +4,23 @@ Tests for health manager utilities following ONEX standards.
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
+import pytest
+
+from omnimemory.models.foundation.model_health_response import (
+    ModelCircuitBreakerStats,
+    ModelCircuitBreakerStatsCollection,
+    ModelRateLimitedHealthCheckResponse,
+)
+from omnimemory.utils.concurrency import CircuitBreaker, CircuitBreakerState
 from omnimemory.utils.health_manager import (
     HealthManager,
     HealthStatus,
     ResourceHealthCheck,
     SystemHealth,
-)
-from omnimemory.utils.concurrency import CircuitBreaker, CircuitBreakerState
-from omnimemory.models.foundation.model_health_response import (
-    ModelCircuitBreakerStats,
-    ModelCircuitBreakerStatsCollection,
-    ModelRateLimitedHealthCheckResponse,
 )
 
 
@@ -82,6 +83,7 @@ class TestHealthManager:
 
         async def slow_check() -> dict[str, str]:
             import asyncio
+
             await asyncio.sleep(0.5)  # Longer than timeout
             return {"status": "healthy"}
 
@@ -253,8 +255,7 @@ class TestHealthManager:
 
         correlation_id = str(uuid4())
         result = await hm.check_resource_health(
-            "tracked_service",
-            correlation_id=correlation_id
+            "tracked_service", correlation_id=correlation_id
         )
 
         assert result.correlation_id == correlation_id
@@ -270,6 +271,7 @@ class TestHealthManager:
 
         async def service2_check() -> dict[str, str]:
             import asyncio
+
             await asyncio.sleep(0.1)
             return {"status": "healthy", "service": "service2"}
 
@@ -321,9 +323,7 @@ class TestHealthManagerIntegration:
     async def test_complete_health_monitoring_workflow(self) -> None:
         """Test complete health monitoring workflow."""
         hm = HealthManager(
-            default_timeout=1.0,
-            rate_limit_window=2.0,
-            max_checks_per_window=5
+            default_timeout=1.0, rate_limit_window=2.0, max_checks_per_window=5
         )
 
         # Simulate different types of services
@@ -332,12 +332,14 @@ class TestHealthManagerIntegration:
 
         async def intermittent_service() -> dict[str, str]:
             import random
+
             if random.random() < 0.3:  # 30% failure rate
                 raise ConnectionError("Intermittent failure")
             return {"status": "healthy", "load": "normal"}
 
         async def slow_service() -> dict[str, str]:
             import asyncio
+
             await asyncio.sleep(0.5)
             return {"status": "healthy", "response_time": "slow"}
 
@@ -348,8 +350,7 @@ class TestHealthManagerIntegration:
 
         # Add circuit breakers
         hm.circuit_breakers["intermittent"] = CircuitBreaker(
-            failure_threshold=2,
-            recovery_timeout=1.0
+            failure_threshold=2, recovery_timeout=1.0
         )
 
         # Perform multiple health checks
@@ -360,6 +361,7 @@ class TestHealthManagerIntegration:
 
             # Small delay between checks
             import asyncio
+
             await asyncio.sleep(0.1)
 
         # Verify we got results

@@ -15,27 +15,34 @@ import os
 import time
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, List, Optional, Callable, Awaitable, Union
-import psutil
+from typing import Awaitable, Callable, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+# Optional psutil import for resource metrics - gracefully degrade if unavailable
+_PSUTIL_AVAILABLE = False
+try:
+    import psutil
+
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+
 import structlog
+from pydantic import BaseModel, Field
 
-from .error_sanitizer import sanitize_error, SanitizationLevel
-
+from ..models.foundation.model_health_metadata import (
+    AggregateHealthMetadata,
+    ConfigurationChangeMetadata,
+    HealthCheckMetadata,
+)
 from ..models.foundation.model_health_response import (
     ModelCircuitBreakerStats,
     ModelCircuitBreakerStatsCollection,
     ModelRateLimitedHealthCheckResponse,
 )
-from ..models.foundation.model_health_metadata import (
-    HealthCheckMetadata,
-    AggregateHealthMetadata,
-    ConfigurationChangeMetadata,
-)
-
+from .error_sanitizer import SanitizationLevel, sanitize_error
 
 # === RATE LIMITING ===
+
 
 class RateLimiter:
     """Simple rate limiter for API endpoints."""
@@ -75,8 +82,7 @@ class RateLimiter:
             # Remove old requests outside the window
             cutoff_time = current_time - self.window_seconds
             self._requests[identifier] = [
-                req_time for req_time in requests
-                if req_time > cutoff_time
+                req_time for req_time in requests if req_time > cutoff_time
             ]
 
             # Check if we can accept this request
@@ -94,7 +100,9 @@ def _sanitize_error(error: Exception) -> str:
 
     Uses the enhanced centralized error sanitizer for improved security.
     """
-    return sanitize_error(error, context="health_check", level=SanitizationLevel.STANDARD)
+    return sanitize_error(
+        error, context="health_check", level=SanitizationLevel.STANDARD
+    )
 
 
 def _get_package_version() -> str:
@@ -102,11 +110,13 @@ def _get_package_version() -> str:
     try:
         # Try to get version from package metadata
         from importlib.metadata import version
+
         return version("omnimemory")
     except ImportError:
         # Fallback for older Python versions
         try:
             import pkg_resources
+
             return pkg_resources.get_distribution("omnimemory").version
         except Exception:
             return "0.1.0"  # Fallback version
@@ -117,7 +127,9 @@ def _get_package_version() -> str:
 def _get_environment() -> str:
     """Detect current environment from environment variables."""
     # Check common environment variables
-    env = os.getenv("ENVIRONMENT", os.getenv("ENV", os.getenv("NODE_ENV", "development")))
+    env = os.getenv(
+        "ENVIRONMENT", os.getenv("ENV", os.getenv("NODE_ENV", "development"))
+    )
 
     # Normalize environment names
     if env.lower() in ("prod", "production"):
@@ -131,17 +143,19 @@ def _get_environment() -> str:
 
 
 from ..models.foundation.model_health_response import (
-    ModelHealthResponse,
     ModelDependencyStatus,
-    ModelResourceMetrics
+    ModelHealthResponse,
+    ModelResourceMetrics,
 )
+from .observability import OperationType, correlation_context, trace_operation
 from .resource_manager import AsyncCircuitBreaker, CircuitBreakerConfig
-from .observability import correlation_context, trace_operation, OperationType
 
 logger = structlog.get_logger(__name__)
 
+
 class HealthStatus(Enum):
     """Enhanced health status enumeration."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -150,8 +164,10 @@ class HealthStatus(Enum):
     RATE_LIMITED = "rate_limited"
     CIRCUIT_OPEN = "circuit_open"
 
+
 class DependencyType(Enum):
     """Types of system dependencies."""
+
     DATABASE = "database"
     CACHE = "cache"
     VECTOR_DB = "vector_db"
@@ -159,17 +175,23 @@ class DependencyType(Enum):
     MESSAGE_QUEUE = "message_queue"
     STORAGE = "storage"
 
+
 class HealthCheckConfig(BaseModel):
     """Configuration for individual health checks."""
+
     name: str = Field(description="Dependency name")
     dependency_type: DependencyType = Field(description="Type of dependency")
     timeout: float = Field(default=5.0, description="Health check timeout in seconds")
-    critical: bool = Field(default=True, description="Whether failure affects overall health")
+    critical: bool = Field(
+        default=True, description="Whether failure affects overall health"
+    )
     circuit_breaker_config: Optional[CircuitBreakerConfig] = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
+
 class HealthCheckResult(BaseModel):
     """Result of an individual health check."""
+
     config: HealthCheckConfig = Field(description="Health check configuration")
     status: HealthStatus = Field(description="Health status")
     latency_ms: float = Field(description="Check latency in milliseconds")
@@ -184,8 +206,9 @@ class HealthCheckResult(BaseModel):
             status=self.status.value,
             latency_ms=self.latency_ms,
             last_check=self.timestamp,
-            error_message=self.error_message
+            error_message=self.error_message,
         )
+
 
 class HealthCheckManager:
     """
@@ -204,13 +227,15 @@ class HealthCheckManager:
         self._circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
         self._last_results: Dict[str, HealthCheckResult] = {}
         self._results_lock = asyncio.Lock()  # Prevent race conditions on metric updates
-        self._rate_limiter = RateLimiter(max_requests=30, window_seconds=60)  # Rate limit health checks
+        self._rate_limiter = RateLimiter(
+            max_requests=30, window_seconds=60
+        )  # Rate limit health checks
         self._system_start_time = time.time()
 
     def register_health_check(
         self,
         config: HealthCheckConfig,
-        check_func: Callable[[], Awaitable[HealthCheckResult]]
+        check_func: Callable[[], Awaitable[HealthCheckResult]],
     ):
         """
         Register a health check function with configuration.
@@ -225,15 +250,14 @@ class HealthCheckManager:
         # Create circuit breaker if configured
         if config.circuit_breaker_config:
             self._circuit_breakers[config.name] = AsyncCircuitBreaker(
-                config.name,
-                config.circuit_breaker_config
+                config.name, config.circuit_breaker_config
             )
 
         logger.info(
             "health_check_registered",
             dependency_name=config.name,
             dependency_type=config.dependency_type.value,
-            critical=config.critical
+            critical=config.critical,
         )
 
     async def check_single_dependency(self, name: str) -> HealthCheckResult:
@@ -248,10 +272,12 @@ class HealthCheckManager:
         """
         if name not in self._health_checks:
             return HealthCheckResult(
-                config=HealthCheckConfig(name=name, dependency_type=DependencyType.EXTERNAL_API),
+                config=HealthCheckConfig(
+                    name=name, dependency_type=DependencyType.EXTERNAL_API
+                ),
                 status=HealthStatus.UNKNOWN,
                 latency_ms=0.0,
-                error_message="Health check not registered"
+                error_message="Health check not registered",
             )
 
         config = self._configs[name]
@@ -262,7 +288,7 @@ class HealthCheckManager:
                 f"health_check_{name}",
                 OperationType.HEALTH_CHECK,
                 dependency=name,
-                dependency_type=config.dependency_type.value
+                dependency_type=config.dependency_type.value,
             ):
                 start_time = time.time()
 
@@ -273,7 +299,9 @@ class HealthCheckManager:
                         result = await circuit_breaker.call(check_func)
                     else:
                         # Apply timeout directly
-                        result = await asyncio.wait_for(check_func(), timeout=config.timeout)
+                        result = await asyncio.wait_for(
+                            check_func(), timeout=config.timeout
+                        )
 
                     # Ensure result has correct latency
                     result.latency_ms = (time.time() - start_time) * 1000
@@ -286,7 +314,7 @@ class HealthCheckManager:
                         "health_check_completed",
                         dependency_name=name,
                         status=result.status.value,
-                        latency_ms=result.latency_ms
+                        latency_ms=result.latency_ms,
                     )
 
                     return result
@@ -297,7 +325,7 @@ class HealthCheckManager:
                         config=config,
                         status=HealthStatus.UNHEALTHY,
                         latency_ms=latency_ms,
-                        error_message=f"Health check timeout after {config.timeout}s"
+                        error_message=f"Health check timeout after {config.timeout}s",
                     )
 
                     # Thread-safe update of results to prevent race conditions
@@ -307,7 +335,7 @@ class HealthCheckManager:
                         "health_check_timeout",
                         dependency_name=name,
                         timeout=config.timeout,
-                        latency_ms=latency_ms
+                        latency_ms=latency_ms,
                     )
 
                     return result
@@ -318,7 +346,7 @@ class HealthCheckManager:
                         config=config,
                         status=HealthStatus.UNHEALTHY,
                         latency_ms=latency_ms,
-                        error_message=_sanitize_error(e)
+                        error_message=_sanitize_error(e),
                     )
 
                     # Thread-safe update of results to prevent race conditions
@@ -329,7 +357,7 @@ class HealthCheckManager:
                         dependency_name=name,
                         error=_sanitize_error(e),
                         error_type=type(e).__name__,
-                        latency_ms=latency_ms
+                        latency_ms=latency_ms,
                     )
 
                     return result
@@ -351,7 +379,7 @@ class HealthCheckManager:
             async with trace_operation(
                 "health_check_all",
                 OperationType.HEALTH_CHECK,
-                dependency_count=len(self._health_checks)
+                dependency_count=len(self._health_checks),
             ):
                 # Use asyncio.gather with return_exceptions=True for failure isolation
                 tasks = [
@@ -373,7 +401,7 @@ class HealthCheckManager:
                             config=config,
                             status=HealthStatus.UNHEALTHY,
                             latency_ms=0.0,
-                            error_message=f"Health check exception: {str(result)}"
+                            error_message=f"Health check exception: {str(result)}",
                         )
                         health_results.append(error_result)
 
@@ -381,7 +409,7 @@ class HealthCheckManager:
                             "health_check_gather_exception",
                             dependency_name=dependency_name,
                             error=_sanitize_error(result),
-                            error_type=type(result).__name__
+                            error_type=type(result).__name__,
                         )
                     else:
                         health_results.append(result)
@@ -389,15 +417,42 @@ class HealthCheckManager:
                 logger.info(
                     "health_check_all_completed",
                     total_dependencies=len(health_results),
-                    healthy_count=len([r for r in health_results if r.status == HealthStatus.HEALTHY]),
-                    degraded_count=len([r for r in health_results if r.status == HealthStatus.DEGRADED]),
-                    unhealthy_count=len([r for r in health_results if r.status == HealthStatus.UNHEALTHY])
+                    healthy_count=len(
+                        [r for r in health_results if r.status == HealthStatus.HEALTHY]
+                    ),
+                    degraded_count=len(
+                        [r for r in health_results if r.status == HealthStatus.DEGRADED]
+                    ),
+                    unhealthy_count=len(
+                        [
+                            r
+                            for r in health_results
+                            if r.status == HealthStatus.UNHEALTHY
+                        ]
+                    ),
                 )
 
                 return health_results
 
     def get_resource_metrics(self) -> ModelResourceMetrics:
-        """Get current system resource metrics."""
+        """Get current system resource metrics.
+
+        Returns default metrics if psutil is unavailable or any error occurs.
+        """
+        # Check if psutil is available
+        if not _PSUTIL_AVAILABLE or psutil is None:
+            logger.debug(
+                "resource_metrics_unavailable",
+                reason="psutil_not_installed",
+            )
+            return ModelResourceMetrics(
+                cpu_usage_percent=0.0,
+                memory_usage_mb=0.0,
+                memory_usage_percent=0.0,
+                disk_usage_percent=0.0,
+                network_throughput_mbps=0.0,
+            )
+
         try:
             # Get CPU usage
             cpu_percent = psutil.cpu_percent(interval=0.1)
@@ -407,27 +462,56 @@ class HealthCheckManager:
             memory_mb = memory.used / 1024 / 1024
 
             # Get disk usage for root partition
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
             disk_percent = disk.percent
 
             # Get network stats (simplified)
             network_stats = psutil.net_io_counters()
             # Simple approximation of throughput (bytes per second converted to Mbps)
-            network_mbps = (network_stats.bytes_sent + network_stats.bytes_recv) / 1024 / 1024 * 8
+            network_mbps = (
+                (network_stats.bytes_sent + network_stats.bytes_recv) / 1024 / 1024 * 8
+            )
 
             return ModelResourceMetrics(
                 cpu_usage_percent=cpu_percent,
                 memory_usage_mb=memory_mb,
                 memory_usage_percent=memory.percent,
                 disk_usage_percent=disk_percent,
-                network_throughput_mbps=network_mbps
+                network_throughput_mbps=network_mbps,
             )
 
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            psutil.ZombieProcess,
+            psutil.Error,
+            OSError,
+            AttributeError,
+        ) as e:
+            # Handle specific psutil exceptions gracefully:
+            # - NoSuchProcess: process terminated
+            # - AccessDenied: insufficient permissions
+            # - ZombieProcess: process is zombie state
+            # - Error: base psutil exception
+            # - OSError: OS-level errors
+            # - AttributeError: corrupted psutil module
+            logger.warning(
+                "resource_metrics_psutil_error",
+                error=_sanitize_error(e),
+                error_type=type(e).__name__,
+            )
+            return ModelResourceMetrics(
+                cpu_usage_percent=0.0,
+                memory_usage_mb=0.0,
+                memory_usage_percent=0.0,
+                disk_usage_percent=0.0,
+                network_throughput_mbps=0.0,
+            )
         except Exception as e:
             logger.error(
                 "resource_metrics_error",
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             # Return default metrics on error
             return ModelResourceMetrics(
@@ -435,10 +519,12 @@ class HealthCheckManager:
                 memory_usage_mb=0.0,
                 memory_usage_percent=0.0,
                 disk_usage_percent=0.0,
-                network_throughput_mbps=0.0
+                network_throughput_mbps=0.0,
             )
 
-    def calculate_overall_status(self, results: List[HealthCheckResult]) -> HealthStatus:
+    def calculate_overall_status(
+        self, results: List[HealthCheckResult]
+    ) -> HealthStatus:
         """
         Calculate overall system health based on dependency results.
 
@@ -455,8 +541,12 @@ class HealthCheckManager:
         non_critical_results = [r for r in results if not r.config.critical]
 
         # Check critical dependencies
-        critical_unhealthy = [r for r in critical_results if r.status == HealthStatus.UNHEALTHY]
-        critical_degraded = [r for r in critical_results if r.status == HealthStatus.DEGRADED]
+        critical_unhealthy = [
+            r for r in critical_results if r.status == HealthStatus.UNHEALTHY
+        ]
+        critical_degraded = [
+            r for r in critical_results if r.status == HealthStatus.DEGRADED
+        ]
 
         # If any critical dependency is unhealthy, system is unhealthy
         if critical_unhealthy:
@@ -467,10 +557,15 @@ class HealthCheckManager:
             return HealthStatus.DEGRADED
 
         # Check non-critical dependencies for degradation signals
-        non_critical_unhealthy = [r for r in non_critical_results if r.status == HealthStatus.UNHEALTHY]
+        non_critical_unhealthy = [
+            r for r in non_critical_results if r.status == HealthStatus.UNHEALTHY
+        ]
 
         # If more than half of non-critical dependencies are unhealthy, system is degraded
-        if non_critical_results and len(non_critical_unhealthy) > len(non_critical_results) / 2:
+        if (
+            non_critical_results
+            and len(non_critical_unhealthy) > len(non_critical_results) / 2
+        ):
             return HealthStatus.DEGRADED
 
         return HealthStatus.HEALTHY
@@ -501,7 +596,9 @@ class HealthCheckManager:
             total_latency_ms = (time.time() - start_time) * 1000
 
             # Convert results to dependency status objects
-            dependencies = [result.to_dependency_status() for result in dependency_results]
+            dependencies = [
+                result.to_dependency_status() for result in dependency_results
+            ]
 
             response = ModelHealthResponse(
                 status=overall_status.value,
@@ -511,7 +608,7 @@ class HealthCheckManager:
                 dependencies=dependencies,
                 uptime_seconds=uptime_seconds,
                 version=_get_package_version(),
-                environment=_get_environment()
+                environment=_get_environment(),
             )
 
             logger.info(
@@ -519,7 +616,7 @@ class HealthCheckManager:
                 overall_status=overall_status.value,
                 dependency_count=len(dependencies),
                 latency_ms=total_latency_ms,
-                uptime_seconds=uptime_seconds
+                uptime_seconds=uptime_seconds,
             )
 
             return response
@@ -535,11 +632,13 @@ class HealthCheckManager:
                 total_calls=circuit_breaker.stats.total_calls,
                 total_timeouts=circuit_breaker.stats.total_timeouts,
                 last_failure_time=circuit_breaker.stats.last_failure_time,
-                state_changed_at=circuit_breaker.stats.state_changed_at
+                state_changed_at=circuit_breaker.stats.state_changed_at,
             )
         return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
 
-    async def rate_limited_health_check(self, client_identifier: str) -> ModelRateLimitedHealthCheckResponse:
+    async def rate_limited_health_check(
+        self, client_identifier: str
+    ) -> ModelRateLimitedHealthCheckResponse:
         """
         Rate-limited health check endpoint for API exposure.
 
@@ -556,7 +655,7 @@ class HealthCheckManager:
                 rate_limited=True,
                 error_message=f"Rate limit exceeded for client: {client_identifier}",
                 rate_limit_reset_time=None,  # Could be calculated from rate limiter
-                remaining_requests=0
+                remaining_requests=0,
             )
 
         # Perform health check
@@ -565,22 +664,25 @@ class HealthCheckManager:
             health_check=health_check_result,
             rate_limited=False,
             rate_limit_reset_time=None,
-            remaining_requests=None
+            remaining_requests=None,
         )
 
 
 # Global health manager instance
 health_manager = HealthCheckManager()
 
+
 # Convenience functions for registering common health checks
-async def create_postgresql_health_check(connection_string: str) -> Callable[[], Awaitable[HealthCheckResult]]:
+async def create_postgresql_health_check(
+    connection_string: str,
+) -> Callable[[], Awaitable[HealthCheckResult]]:
     """Create a PostgreSQL health check function."""
+
     async def check_postgresql() -> HealthCheckResult:
         import asyncpg
 
         config = HealthCheckConfig(
-            name="postgresql",
-            dependency_type=DependencyType.DATABASE
+            name="postgresql", dependency_type=DependencyType.DATABASE
         )
 
         try:
@@ -591,27 +693,28 @@ async def create_postgresql_health_check(connection_string: str) -> Callable[[],
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.HEALTHY,
-                latency_ms=0.0  # Will be set by the manager
+                latency_ms=0.0,  # Will be set by the manager
             )
         except Exception as e:
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
                 latency_ms=0.0,
-                error_message=_sanitize_error(e)
+                error_message=_sanitize_error(e),
             )
 
     return check_postgresql
 
-async def create_redis_health_check(redis_url: str) -> Callable[[], Awaitable[HealthCheckResult]]:
+
+async def create_redis_health_check(
+    redis_url: str,
+) -> Callable[[], Awaitable[HealthCheckResult]]:
     """Create a Redis health check function."""
+
     async def check_redis() -> HealthCheckResult:
         import redis.asyncio as redis
 
-        config = HealthCheckConfig(
-            name="redis",
-            dependency_type=DependencyType.CACHE
-        )
+        config = HealthCheckConfig(name="redis", dependency_type=DependencyType.CACHE)
 
         try:
             client = redis.from_url(redis_url)
@@ -619,26 +722,27 @@ async def create_redis_health_check(redis_url: str) -> Callable[[], Awaitable[He
             await client.close()
 
             return HealthCheckResult(
-                config=config,
-                status=HealthStatus.HEALTHY,
-                latency_ms=0.0
+                config=config, status=HealthStatus.HEALTHY, latency_ms=0.0
             )
         except Exception as e:
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
                 latency_ms=0.0,
-                error_message=_sanitize_error(e)
+                error_message=_sanitize_error(e),
             )
 
     return check_redis
 
-async def create_pinecone_health_check(api_key: str, environment: str) -> Callable[[], Awaitable[HealthCheckResult]]:
+
+async def create_pinecone_health_check(
+    api_key: str, environment: str
+) -> Callable[[], Awaitable[HealthCheckResult]]:
     """Create a Pinecone health check function."""
+
     async def check_pinecone() -> HealthCheckResult:
         config = HealthCheckConfig(
-            name="pinecone",
-            dependency_type=DependencyType.VECTOR_DB
+            name="pinecone", dependency_type=DependencyType.VECTOR_DB
         )
 
         try:
@@ -648,14 +752,14 @@ async def create_pinecone_health_check(api_key: str, environment: str) -> Callab
                 config=config,
                 status=HealthStatus.HEALTHY,
                 latency_ms=0.0,
-                metadata={"environment": environment}
+                metadata={"environment": environment},
             )
         except Exception as e:
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
                 latency_ms=0.0,
-                error_message=_sanitize_error(e)
+                error_message=_sanitize_error(e),
             )
 
     return check_pinecone
@@ -672,48 +776,79 @@ HealthCheckResultDict = Dict[str, HealthCheckResultValue]
 
 class HealthCheckDetails(BaseModel):
     """Strongly typed health check details with rate-limit and circuit state tracking."""
-    message: Optional[str] = Field(default=None, description="Human-readable status message")
+
+    message: Optional[str] = Field(
+        default=None, description="Human-readable status message"
+    )
     error: Optional[str] = Field(default=None, description="Error message if unhealthy")
     version: Optional[str] = Field(default=None, description="Service version")
     connection_url: Optional[str] = Field(default=None, description="Connection URL")
     last_check: Optional[str] = Field(default=None, description="Last check timestamp")
-    latency_ms: Optional[float] = Field(default=None, description="Latency in milliseconds")
+    latency_ms: Optional[float] = Field(
+        default=None, description="Latency in milliseconds"
+    )
     # Rate limiting state
-    rate_limit_active: bool = Field(default=False, description="Whether rate limiting is currently active")
-    rate_limit_remaining: Optional[int] = Field(default=None, description="Remaining requests in current window")
-    rate_limit_reset_time: Optional[float] = Field(default=None, description="Time when rate limit resets (epoch)")
+    rate_limit_active: bool = Field(
+        default=False, description="Whether rate limiting is currently active"
+    )
+    rate_limit_remaining: Optional[int] = Field(
+        default=None, description="Remaining requests in current window"
+    )
+    rate_limit_reset_time: Optional[float] = Field(
+        default=None, description="Time when rate limit resets (epoch)"
+    )
     # Circuit breaker state
-    circuit_open: bool = Field(default=False, description="Whether circuit breaker is open")
-    circuit_state: Optional[str] = Field(default=None, description="Current circuit breaker state")
-    circuit_failure_count: Optional[int] = Field(default=None, description="Number of failures recorded")
+    circuit_open: bool = Field(
+        default=False, description="Whether circuit breaker is open"
+    )
+    circuit_state: Optional[str] = Field(
+        default=None, description="Current circuit breaker state"
+    )
+    circuit_failure_count: Optional[int] = Field(
+        default=None, description="Number of failures recorded"
+    )
     # Result details
-    result_type: Optional[str] = Field(default=None, description="Type of result (success/error/timeout)")
-    extra: Dict[str, str] = Field(default_factory=dict, description="Additional string details")
+    result_type: Optional[str] = Field(
+        default=None, description="Type of result (success/error/timeout)"
+    )
+    extra: Dict[str, str] = Field(
+        default_factory=dict, description="Additional string details"
+    )
 
 
 class ResourceHealthCheck(BaseModel):
     """Result of a resource health check."""
+
     status: HealthStatus = Field(description="Health status of the resource")
     response_time: float = Field(default=0.0, description="Response time in seconds")
-    details: HealthCheckDetails = Field(default_factory=HealthCheckDetails, description="Additional details")
-    correlation_id: Optional[str] = Field(default=None, description="Correlation ID for tracking")
+    details: HealthCheckDetails = Field(
+        default_factory=HealthCheckDetails, description="Additional details"
+    )
+    correlation_id: Optional[str] = Field(
+        default=None, description="Correlation ID for tracking"
+    )
 
     class Config:
         """Pydantic config."""
+
         use_enum_values = False
 
 
 class SystemHealth(BaseModel):
     """Overall system health status."""
+
     overall_status: HealthStatus = Field(description="Overall system health status")
     resource_statuses: Dict[str, ResourceHealthCheck] = Field(
-        default_factory=dict,
-        description="Health status of individual resources"
+        default_factory=dict, description="Health status of individual resources"
     )
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of health check")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp of health check",
+    )
 
     class Config:
         """Pydantic config."""
+
         use_enum_values = False
 
 
@@ -732,7 +867,7 @@ class HealthManager:
         self,
         default_timeout: float = 5.0,
         rate_limit_window: float = 60.0,
-        max_checks_per_window: int = 100
+        max_checks_per_window: int = 100,
     ):
         """
         Initialize health manager.
@@ -750,14 +885,11 @@ class HealthManager:
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self._check_counts: Dict[str, List[float]] = {}
         self._rate_limiter = RateLimiter(
-            max_requests=max_checks_per_window,
-            window_seconds=int(rate_limit_window)
+            max_requests=max_checks_per_window, window_seconds=int(rate_limit_window)
         )
 
     def register_health_check(
-        self,
-        name: str,
-        check_func: Callable[[], Awaitable[HealthCheckResult]]
+        self, name: str, check_func: Callable[[], Awaitable[HealthCheckResult]]
     ) -> None:
         """
         Register a health check function.
@@ -771,9 +903,7 @@ class HealthManager:
         logger.info("health_check_registered", resource_name=name)
 
     async def check_resource_health(
-        self,
-        name: str,
-        correlation_id: Optional[str] = None
+        self, name: str, correlation_id: Optional[str] = None
     ) -> ResourceHealthCheck:
         """
         Check health of a specific resource.
@@ -804,9 +934,9 @@ class HealthManager:
                         rate_limit_active=True,
                         rate_limit_remaining=remaining,
                         rate_limit_reset_time=reset_time,
-                        result_type="rate_limited"
+                        result_type="rate_limited",
                     ),
-                    correlation_id=correlation_id
+                    correlation_id=correlation_id,
                 )
             self._check_counts[name].append(current_time)
 
@@ -815,19 +945,24 @@ class HealthManager:
             cb = self.circuit_breakers[name]
             # Import here to avoid circular dependency
             from .concurrency import CircuitBreakerState
-            if hasattr(cb, 'state') and cb.state == CircuitBreakerState.OPEN:
-                failure_count = getattr(cb, 'failure_count', None)
+
+            if hasattr(cb, "state") and cb.state == CircuitBreakerState.OPEN:
+                failure_count = getattr(cb, "failure_count", None)
                 return ResourceHealthCheck(
                     status=HealthStatus.CIRCUIT_OPEN,
                     response_time=0.0,
                     details=HealthCheckDetails(
                         message="Circuit breaker is open",
                         circuit_open=True,
-                        circuit_state=cb.state.value if hasattr(cb.state, 'value') else str(cb.state),
+                        circuit_state=(
+                            cb.state.value
+                            if hasattr(cb.state, "value")
+                            else str(cb.state)
+                        ),
                         circuit_failure_count=failure_count,
-                        result_type="circuit_open"
+                        result_type="circuit_open",
                     ),
-                    correlation_id=correlation_id
+                    correlation_id=correlation_id,
                 )
 
         if name not in self.health_checks:
@@ -835,26 +970,22 @@ class HealthManager:
                 status=HealthStatus.UNKNOWN,
                 response_time=0.0,
                 details=HealthCheckDetails(
-                    error=f"Health check not registered: {name}",
-                    result_type="unknown"
+                    error=f"Health check not registered: {name}", result_type="unknown"
                 ),
-                correlation_id=correlation_id
+                correlation_id=correlation_id,
             )
 
         check_func = self.health_checks[name]
         start_time = time.time()
 
         try:
-            result = await asyncio.wait_for(
-                check_func(),
-                timeout=self.default_timeout
-            )
+            result = await asyncio.wait_for(check_func(), timeout=self.default_timeout)
             response_time = time.time() - start_time
 
             # Record success on circuit breaker
             if name in self.circuit_breakers:
                 cb = self.circuit_breakers[name]
-                if hasattr(cb, 'record_success'):
+                if hasattr(cb, "record_success"):
                     cb.record_success()
 
             # Convert result to HealthCheckDetails
@@ -862,27 +993,34 @@ class HealthManager:
                 details = result
             elif isinstance(result, dict):
                 # Extract known fields from dict, put rest in extra
-                known_fields = {'message', 'error', 'version', 'connection_url', 'last_check', 'latency_ms'}
+                known_fields = {
+                    "message",
+                    "error",
+                    "version",
+                    "connection_url",
+                    "last_check",
+                    "latency_ms",
+                }
                 extra = {k: str(v) for k, v in result.items() if k not in known_fields}
                 details = HealthCheckDetails(
-                    message=result.get('message') or result.get('status'),
-                    version=result.get('version'),
+                    message=result.get("message") or result.get("status"),
+                    version=result.get("version"),
                     latency_ms=response_time * 1000,
                     result_type="success",
-                    extra=extra
+                    extra=extra,
                 )
             else:
                 details = HealthCheckDetails(
                     message=str(result),
                     latency_ms=response_time * 1000,
-                    result_type="success"
+                    result_type="success",
                 )
 
             return ResourceHealthCheck(
                 status=HealthStatus.HEALTHY,
                 response_time=response_time,
                 details=details,
-                correlation_id=correlation_id
+                correlation_id=correlation_id,
             )
 
         except asyncio.TimeoutError:
@@ -893,9 +1031,9 @@ class HealthManager:
                 details=HealthCheckDetails(
                     error=f"Health check timed out after {self.default_timeout}s",
                     latency_ms=response_time * 1000,
-                    result_type="timeout"
+                    result_type="timeout",
                 ),
-                correlation_id=correlation_id
+                correlation_id=correlation_id,
             )
 
         except Exception as e:
@@ -904,7 +1042,7 @@ class HealthManager:
             # Record failure on circuit breaker
             if name in self.circuit_breakers:
                 cb = self.circuit_breakers[name]
-                if hasattr(cb, 'record_failure'):
+                if hasattr(cb, "record_failure"):
                     cb.record_failure()
 
             return ResourceHealthCheck(
@@ -913,14 +1051,13 @@ class HealthManager:
                 details=HealthCheckDetails(
                     error=_sanitize_error(e),
                     latency_ms=response_time * 1000,
-                    result_type="error"
+                    result_type="error",
                 ),
-                correlation_id=correlation_id
+                correlation_id=correlation_id,
             )
 
     async def check_multiple_resources(
-        self,
-        names: List[str]
+        self, names: List[str]
     ) -> Dict[str, ResourceHealthCheck]:
         """
         Check health of multiple resources in parallel.
@@ -936,13 +1073,18 @@ class HealthManager:
 
         return {
             name: (
-                result if isinstance(result, ResourceHealthCheck)
+                result
+                if isinstance(result, ResourceHealthCheck)
                 else ResourceHealthCheck(
                     status=HealthStatus.UNHEALTHY,
                     details=HealthCheckDetails(
-                        error=_sanitize_error(result) if isinstance(result, Exception) else "Unknown error",
-                        result_type="error"
-                    )
+                        error=(
+                            _sanitize_error(result)
+                            if isinstance(result, Exception)
+                            else "Unknown error"
+                        ),
+                        result_type="error",
+                    ),
                 )
             )
             for name, result in zip(names, results)
@@ -957,8 +1099,7 @@ class HealthManager:
         """
         if not self.health_checks:
             return SystemHealth(
-                overall_status=HealthStatus.HEALTHY,
-                resource_statuses={}
+                overall_status=HealthStatus.HEALTHY, resource_statuses={}
             )
 
         resource_statuses = await self.check_multiple_resources(
@@ -976,8 +1117,7 @@ class HealthManager:
             overall_status = HealthStatus.DEGRADED
 
         return SystemHealth(
-            overall_status=overall_status,
-            resource_statuses=resource_statuses
+            overall_status=overall_status, resource_statuses=resource_statuses
         )
 
     def get_circuit_breaker_stats(self) -> ModelCircuitBreakerStatsCollection:
@@ -989,17 +1129,17 @@ class HealthManager:
         """
         stats = {}
         for name, cb in self.circuit_breakers.items():
-            state = getattr(cb, 'state', None)
-            state_value = state.value if hasattr(state, 'value') else str(state)
+            state = getattr(cb, "state", None)
+            state_value = state.value if hasattr(state, "value") else str(state)
 
             stats[name] = ModelCircuitBreakerStats(
                 state=state_value,
-                failure_count=getattr(cb, 'failure_count', 0),
-                success_count=getattr(cb, 'success_count', 0),
-                total_calls=getattr(cb, 'total_calls', 0),
-                total_timeouts=getattr(cb, 'total_timeouts', 0),
-                last_failure_time=getattr(cb, 'last_failure_time', None),
-                state_changed_at=getattr(cb, 'state_changed_at', None)
+                failure_count=getattr(cb, "failure_count", 0),
+                success_count=getattr(cb, "success_count", 0),
+                total_calls=getattr(cb, "total_calls", 0),
+                total_timeouts=getattr(cb, "total_timeouts", 0),
+                last_failure_time=getattr(cb, "last_failure_time", None),
+                state_changed_at=getattr(cb, "state_changed_at", None),
             )
 
         return ModelCircuitBreakerStatsCollection(circuit_breakers=stats)
@@ -1018,12 +1158,12 @@ class HealthManager:
                 "retry_after": self.rate_limit_window,
                 "current_window_requests": sum(
                     len(counts) for counts in self._check_counts.values()
-                )
+                ),
             },
             health_check=None,
             rate_limited=True,
             rate_limit_reset_time=None,
-            remaining_requests=0
+            remaining_requests=0,
         )
 
     def _sanitize_error(self, error: Exception) -> str:

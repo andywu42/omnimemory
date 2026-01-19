@@ -24,27 +24,30 @@ Path Resolution:
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 import yaml
-from pathlib import Path
 
 from tests.conftest import CORE_8_NODES, NODES_DIR
 
-
 # Valid ONEX node types
-VALID_NODE_TYPES: frozenset[str] = frozenset({"effect", "compute", "reducer", "orchestrator"})
+VALID_NODE_TYPES: frozenset[str] = frozenset(
+    {"effect", "compute", "reducer", "orchestrator"}
+)
 
 
 class ContractValidationResult(NamedTuple):
     """Result of contract.yaml validation."""
+
     valid: bool
     error: str | None = None
 
 
 class SuperInitValidationResult(NamedTuple):
     """Result of super().__init__(container) pattern validation."""
+
     valid: bool
     error: str | None = None
     class_name: str | None = None
@@ -74,7 +77,9 @@ def validate_super_init_pattern(node_py_path: Path) -> SuperInitValidationResult
         source_code = node_py_path.read_text()
         tree = ast.parse(source_code)
     except SyntaxError as e:
-        return SuperInitValidationResult(False, f"Syntax error in {node_py_path}: {e}", None)
+        return SuperInitValidationResult(
+            False, f"Syntax error in {node_py_path}: {e}", None
+        )
 
     # Find all class definitions
     classes_with_init: list[tuple[str, bool]] = []
@@ -101,7 +106,10 @@ def validate_super_init_pattern(node_py_path: Path) -> SuperInitValidationResult
                             ):
                                 # Check if container is passed as argument
                                 for arg in stmt.args:
-                                    if isinstance(arg, ast.Name) and arg.id == "container":
+                                    if (
+                                        isinstance(arg, ast.Name)
+                                        and arg.id == "container"
+                                    ):
                                         has_super_init_container = True
                                         break
                                     # Also accept self.container
@@ -167,7 +175,7 @@ def validate_contract(contract_path: Path) -> ContractValidationResult:
     if node_type not in VALID_NODE_TYPES:
         return ContractValidationResult(
             False,
-            f"Invalid node_type '{node_type}', must be one of: {', '.join(sorted(VALID_NODE_TYPES))}"
+            f"Invalid node_type '{node_type}', must be one of: {', '.join(sorted(VALID_NODE_TYPES))}",
         )
 
     if "name" not in contract_data:
@@ -247,29 +255,33 @@ class TestContractEnforcement:
             pytest.skip(f"node.py not present (expected): {node_py_path}")
 
         result: SuperInitValidationResult = validate_super_init_pattern(node_py_path)
-        assert result.valid, (
-            f"node.py for {node_name} failed super().__init__(container) check: {result.error}"
-        )
+        assert (
+            result.valid
+        ), f"node.py for {node_name} failed super().__init__(container) check: {result.error}"
 
     def test_validate_contract_accepts_flat_format(self, tmp_path: Path) -> None:
         """Test that validator accepts flat format (no 'onex' wrapper)."""
         good_contract: Path = tmp_path / "flat_contract.yaml"
-        good_contract.write_text("""
+        good_contract.write_text(
+            """
 name: test_node
 node_type: effect
 version: {major: 1, minor: 0, patch: 0}
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(good_contract)
         assert result.valid, f"Flat format should be valid: {result.error}"
 
     def test_validate_contract_rejects_invalid_node_type(self, tmp_path: Path) -> None:
         """Test that validator rejects invalid node_type values."""
         bad_contract: Path = tmp_path / "bad_contract.yaml"
-        bad_contract.write_text("""
+        bad_contract.write_text(
+            """
 onex:
   name: test
   node_type: invalid_type
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(bad_contract)
         assert not result.valid
         assert result.error is not None
@@ -278,10 +290,12 @@ onex:
     def test_validate_contract_rejects_missing_name(self, tmp_path: Path) -> None:
         """Test that validator rejects contracts without name field."""
         bad_contract: Path = tmp_path / "bad_contract.yaml"
-        bad_contract.write_text("""
+        bad_contract.write_text(
+            """
 onex:
   node_type: effect
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(bad_contract)
         assert not result.valid
         assert result.error is not None
@@ -290,7 +304,8 @@ onex:
     def test_validate_contract_accepts_valid_contract(self, tmp_path: Path) -> None:
         """Test that validator accepts properly formed contracts."""
         good_contract: Path = tmp_path / "good_contract.yaml"
-        good_contract.write_text("""
+        good_contract.write_text(
+            """
 onex:
   name: memory_storage
   node_type: effect
@@ -298,33 +313,40 @@ onex:
   handlers:
     - handler_db
     - handler_redis
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(good_contract)
         assert result.valid, f"Should be valid: {result.error}"
 
-    @pytest.mark.parametrize("node_type", ["effect", "compute", "reducer", "orchestrator"])
+    @pytest.mark.parametrize(
+        "node_type", ["effect", "compute", "reducer", "orchestrator"]
+    )
     def test_validate_contract_accepts_all_node_types(
         self, tmp_path: Path, node_type: str
     ) -> None:
         """Test that validator accepts all valid node types."""
         contract: Path = tmp_path / f"{node_type}_contract.yaml"
-        contract.write_text(f"""
+        contract.write_text(
+            f"""
 onex:
   name: test_{node_type}
   node_type: {node_type}
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(contract)
         assert result.valid, f"node_type '{node_type}' should be valid: {result.error}"
 
     def test_validate_contract_rejects_invalid_yaml(self, tmp_path: Path) -> None:
         """Test that validator rejects malformed YAML."""
         bad_contract: Path = tmp_path / "bad_yaml.yaml"
-        bad_contract.write_text("""
+        bad_contract.write_text(
+            """
 onex:
   name: test
   node_type: effect
   invalid: [unclosed bracket
-""")
+"""
+        )
         result: ContractValidationResult = validate_contract(bad_contract)
         assert not result.valid
         assert result.error is not None
@@ -343,35 +365,41 @@ class TestSuperInitValidation:
     def test_validates_proper_super_init_pattern(self, tmp_path: Path) -> None:
         """Test that proper super().__init__(container) passes validation."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def __init__(self, container):
         super().__init__(container)
         self.container = container
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert result.valid, f"Should be valid: {result.error}"
 
     def test_validates_self_container_pattern(self, tmp_path: Path) -> None:
         """Test that super().__init__(self.container) also passes."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def __init__(self, container):
         self.container = container
         super().__init__(self.container)
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert result.valid, f"Should be valid: {result.error}"
 
     def test_rejects_missing_super_init(self, tmp_path: Path) -> None:
         """Test that missing super().__init__() call is rejected."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def __init__(self, container):
         self.container = container
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert not result.valid
         assert result.error is not None
@@ -380,12 +408,14 @@ class NodeExample:
     def test_rejects_super_init_without_container(self, tmp_path: Path) -> None:
         """Test that super().__init__() without container arg is rejected."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def __init__(self, container):
         super().__init__()
         self.container = container
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert not result.valid
         assert result.error is not None
@@ -394,22 +424,26 @@ class NodeExample:
     def test_validates_class_without_init(self, tmp_path: Path) -> None:
         """Test that classes without __init__ are considered valid."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def process(self, data):
         return data
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert result.valid
 
     def test_rejects_syntax_errors(self, tmp_path: Path) -> None:
         """Test that syntax errors are properly reported."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeExample:
     def __init__(self
         # Missing closing paren
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert not result.valid
         assert "Syntax error" in str(result.error)
@@ -417,11 +451,13 @@ class NodeExample:
     def test_identifies_violating_class(self, tmp_path: Path) -> None:
         """Test that the violating class name is reported."""
         node_py: Path = tmp_path / "node.py"
-        node_py.write_text('''
+        node_py.write_text(
+            """
 class NodeBadExample:
     def __init__(self, container):
         self.container = container
-''')
+"""
+        )
         result: SuperInitValidationResult = validate_super_init_pattern(node_py)
         assert not result.valid
         assert result.class_name == "NodeBadExample"
