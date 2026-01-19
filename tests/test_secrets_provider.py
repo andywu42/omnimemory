@@ -12,8 +12,6 @@ These tests validate that the secrets provider:
 """
 from __future__ import annotations
 
-import os
-
 import pytest
 from pydantic import SecretStr
 

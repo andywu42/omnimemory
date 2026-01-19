@@ -106,7 +106,7 @@ class ModelRateLimitedHealthCheckResponse(BaseModel):
     )
     details: dict[str, str | int | float] = Field(
         default_factory=dict,
-        description="Additional details including retry_after and current_window_requests",
+        description="Additional details including retry_after and requests",
     )
     health_check: Optional[ModelHealthResponse] = Field(
         default=None, description="Health check result if within rate limit"

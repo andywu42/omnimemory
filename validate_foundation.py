@@ -140,6 +140,7 @@ def validate_error_handling() -> dict[str, Any]:
 
         chained_error = StorageError(
             message="Storage system down",
+            storage_system="primary",
             cause=base_error,
         )
 

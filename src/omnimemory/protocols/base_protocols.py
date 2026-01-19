@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from datetime import datetime
-from typing import Optional, Protocol
+from typing import List, Optional, Protocol
 from uuid import UUID
 
 # Use local compatibility stub until omnibase_core provides NodeResult
@@ -921,7 +921,8 @@ class ProtocolMemoryOptimizer(ProtocolMemoryOperations, Protocol):
             request: Retrieval optimization request with optimization parameters
 
         Returns:
-            NodeResult with RetrievalOptimizationResponse containing optimization results
+            NodeResult with RetrievalOptimizationResponse containing
+            optimization results
         """
         ...
 

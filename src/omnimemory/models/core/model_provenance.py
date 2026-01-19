@@ -13,15 +13,15 @@ class ModelProvenanceEntry(BaseModel):
 
     # Operation identification
     operation_id: UUID = Field(
-        description="Unique identifier for the operation that created this provenance entry",
+        description="Unique identifier for the operation that created this entry",
     )
     operation_type: str = Field(
-        description="Type of operation (store, retrieve, update, delete, migrate, etc.)",
+        description="Type of operation (store, retrieve, update, delete, migrate)",
     )
 
     # Source identification
     source_component: str = Field(
-        description="Component that performed the operation (memory_manager, intelligence_engine, etc.)",
+        description="Component that performed the operation (e.g., memory_manager)",
     )
     source_version: str | None = Field(
         default=None,
@@ -30,7 +30,7 @@ class ModelProvenanceEntry(BaseModel):
 
     # Actor identification
     actor_type: str = Field(
-        description="Type of actor that initiated the operation (user, system, agent, migration)",
+        description="Type of actor that initiated the operation (user, system, agent)",
     )
     actor_id: str | None = Field(
         default=None,

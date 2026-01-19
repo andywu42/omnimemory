@@ -8,7 +8,12 @@ All protocols use typing.Protocol for structural typing and avoid isinstance
 checks, supporting the ModelOnexContainer pattern for dependency injection.
 """
 
-from .base_protocols import (  # Base protocols; Effect node protocols (memory storage, retrieval, persistence); Compute node protocols (intelligence processing, semantic analysis); Reducer node protocols (consolidation, aggregation, optimization); Orchestrator node protocols (workflow, agent, memory coordination)
+# Base protocols
+# Effect node protocols (memory storage, retrieval, persistence)
+# Compute node protocols (intelligence processing, semantic analysis)
+# Reducer node protocols (consolidation, aggregation, optimization)
+# Orchestrator node protocols (workflow, agent, memory coordination)
+from .base_protocols import (
     ProtocolAgentCoordinator,
     ProtocolIntelligenceProcessor,
     ProtocolMemoryAggregator,

@@ -19,14 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..models.foundation import (
     ModelConfiguration,
-    ModelEventCollection,
     ModelMetadata,
     ModelOptionalStringList,
     ModelResultCollection,
     ModelStringList,
     ModelStructuredData,
-    convert_dict_to_metadata,
-    convert_list_to_string_list,
 )
 
 # === ENUMS ===

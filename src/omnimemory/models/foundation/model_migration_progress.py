@@ -16,12 +16,8 @@ from pydantic import BaseModel, Field, PrivateAttr, computed_field
 
 from omnimemory.enums import FileProcessingStatus, MigrationPriority, MigrationStatus
 
-from ...utils.error_sanitizer import ErrorSanitizer, SanitizationLevel
 from .model_progress_summary import ProgressSummaryResponse
 from .model_typed_collections import ModelConfiguration, ModelMetadata
-
-# Initialize error sanitizer for secure logging
-_error_sanitizer = ErrorSanitizer(level=SanitizationLevel.STANDARD)
 
 
 class BatchProcessingMetrics(BaseModel):
@@ -322,20 +318,33 @@ class MigrationProgressTracker(BaseModel):
                 # Track error types - extract from message format "ErrorType: message"
                 if error_message:
                     # Try to extract error type from "ErrorType: message" format
+                    error_type = "UnknownError"
                     if ": " in error_message:
                         potential_type = error_message.split(": ", 1)[0]
-                        # Validate it looks like an error class name
-                        # (PascalCase, ends with Error/Exception)
-                        if (
+                        # Validate it looks like an actual error class name:
+                        # - PascalCase (starts uppercase, contains lowercase)
+                        # - Alphanumeric (may contain underscores)
+                        # - Reasonable length (5+ chars to exclude "HTTP", "GET")
+                        # - Common endings: Error, Exception, Warning, Interrupt, Exit
+                        is_pascal_case = (
                             potential_type
                             and potential_type[0].isupper()
-                            and potential_type.replace("_", "").isalnum()
+                            and any(c.islower() for c in potential_type)
+                        )
+                        is_valid_identifier = (
+                            potential_type.replace("_", "").isalnum()
+                            if potential_type
+                            else False
+                        )
+                        is_reasonable_length = (
+                            len(potential_type) >= 5 if potential_type else False
+                        )
+                        if (
+                            is_pascal_case
+                            and is_valid_identifier
+                            and is_reasonable_length
                         ):
                             error_type = potential_type
-                        else:
-                            error_type = "UnknownError"
-                    else:
-                        error_type = "UnknownError"
                     self.error_summary[error_type] = (
                         self.error_summary.get(error_type, 0) + 1
                     )
@@ -393,12 +402,9 @@ class MigrationProgressTracker(BaseModel):
                 [b for b in self.metrics.batch_metrics if b.end_time is None]
             ),
             recent_errors=(
-                [
-                    _error_sanitizer.sanitize_error_message(
-                        str(e), level=SanitizationLevel.STRICT
-                    )
-                    for e in list(self.error_summary.keys())[-5:]
-                ]
+                # Error type keys are safe strings (e.g., "ValueError", "TypeError")
+                # No sanitization needed for error type names
+                list(self.error_summary.keys())[-5:]
                 if self.error_summary
                 else []
             ),

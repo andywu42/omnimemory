@@ -8,16 +8,18 @@ from .enum_error_code import OmniMemoryErrorCode
 
 # Keep backward compatibility during migration
 EnumErrorCode = OmniMemoryErrorCode
-from .enum_intelligence_operation_type import EnumIntelligenceOperationType
-from .enum_memory_operation_type import EnumMemoryOperationType
-from .enum_memory_storage_type import EnumMemoryStorageType
-from .enum_migration_status import (
+from .enum_intelligence_operation_type import (  # noqa: E402
+    EnumIntelligenceOperationType,
+)
+from .enum_memory_operation_type import EnumMemoryOperationType  # noqa: E402
+from .enum_memory_storage_type import EnumMemoryStorageType  # noqa: E402
+from .enum_migration_status import (  # noqa: E402
     FileProcessingStatus,
     MigrationPriority,
     MigrationStatus,
 )
-from .enum_priority_level import EnumPriorityLevel
-from .enum_trust_level import EnumDecayFunction, EnumTrustLevel
+from .enum_priority_level import EnumPriorityLevel  # noqa: E402
+from .enum_trust_level import EnumDecayFunction, EnumTrustLevel  # noqa: E402
 
 __all__ = [
     "OmniMemoryErrorCode",

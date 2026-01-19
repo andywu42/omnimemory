@@ -17,8 +17,6 @@ try:
 except (ImportError, ModuleNotFoundError):
     from ..compat.onex_error import OnexError as BaseOnexError
 
-from ..models.foundation import ModelMetadata
-
 # Type alias for field values in validation errors
 # Supports common field types that can fail validation
 FieldValueType = (
@@ -184,7 +182,7 @@ class OmniMemoryError(BaseOnexError):
         self,
         error_code: OmniMemoryErrorCode,
         message: str,
-        context: ModelMetadata | None = None,
+        context: dict[str, object] | None = None,
         correlation_id: UUID | None = None,
         cause: Exception | None = None,
         recovery_hint: str | None = None,
@@ -197,7 +195,7 @@ class OmniMemoryError(BaseOnexError):
         Args:
             error_code: Specific error code from OmniMemoryErrorCode
             message: Human-readable error message
-            context: Additional error context information
+            context: Additional error context as dict (enhanced with category info)
             correlation_id: Request correlation ID for tracing
             cause: Underlying exception that caused this error
             recovery_hint: Suggestion for error recovery
@@ -257,9 +255,9 @@ class OmniMemoryError(BaseOnexError):
         """Get suggested backoff factor for retries."""
         return self.category_info.default_backoff_factor if self.category_info else 1.0
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | int | float | bool | dict[str, object] | None]:
         """Convert error to dictionary for serialization."""
-        base_dict = {
+        base_dict: dict[str, str | int | float | bool | dict[str, object] | None] = {
             "error_code": self.omnimemory_error_code.value,
             "message": self.message,
             "context": self.context,

@@ -9,20 +9,21 @@ from __future__ import annotations
 
 __all__ = [
     "RetryConfig",
-    "RetryAttempt",
-    "RetryResult",
-    "RetryStats",
+    "RetryAttemptInfo",
+    "RetryStatistics",
+    "RetryManager",
     "is_retryable_exception",
-    "execute_with_retry",
+    "retry_with_backoff",
     "retry_decorator",
+    "default_retry_manager",
 ]
 
 import asyncio
 import functools
 import logging
 import random
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -237,7 +238,8 @@ async def retry_with_backoff(
                 # Sanitize error message to prevent information disclosure
                 sanitized_error = _error_sanitizer.sanitize_error_message(str(e))
                 logger.warning(
-                    f"Attempt {attempt}/{config.max_attempts} failed with {type(e).__name__}: {sanitized_error} "
+                    f"Attempt {attempt}/{config.max_attempts} failed with "
+                    f"{type(e).__name__}: {sanitized_error} "
                     f"(correlation_id: {correlation_id})"
                 )
                 continue

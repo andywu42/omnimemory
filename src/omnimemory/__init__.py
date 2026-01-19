@@ -15,13 +15,16 @@ Architecture:
     - Effect Nodes: Memory storage, retrieval, and persistence operations
     - Compute Nodes: Intelligence processing, semantic analysis, pattern recognition
     - Reducer Nodes: Memory consolidation, aggregation, and optimization
-    - Orchestrator Nodes: Workflow coordination, agent coordination, system orchestration
+    - Orchestrator Nodes: Workflow coordination, agent coordination,
+      system orchestration
 
 Bootstrap:
     OmniMemory requires explicit initialization via the bootstrap() function:
 
     >>> from omnimemory import bootstrap, BootstrapResult
-    >>> from omnimemory.models.config import ModelMemoryServiceConfig, ModelFilesystemConfig
+    >>> from omnimemory.models.config import (
+    ...     ModelMemoryServiceConfig, ModelFilesystemConfig
+    ... )
     >>> from pathlib import Path
     >>>
     >>> config = ModelMemoryServiceConfig(
@@ -54,7 +57,13 @@ from .bootstrap import (
 from .models import core, foundation, intelligence, memory, service
 
 # Import protocol definitions
-from .protocols import (  # Base protocols; Effect node protocols (memory storage, retrieval, persistence); Compute node protocols (intelligence processing, semantic analysis); Reducer node protocols (consolidation, aggregation, optimization); Orchestrator node protocols (workflow, agent, memory coordination); Data models; Enums; Error handling
+# - Base protocols
+# - Effect node protocols (memory storage, retrieval, persistence)
+# - Compute node protocols (intelligence processing, semantic analysis)
+# - Reducer node protocols (consolidation, aggregation, optimization)
+# - Orchestrator node protocols (workflow, agent, memory coordination)
+# - Data models, Enums, Error handling
+from .protocols import (
     AccessLevel,
     BaseMemoryRequest,
     BaseMemoryResponse,

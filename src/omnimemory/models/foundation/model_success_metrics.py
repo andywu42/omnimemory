@@ -67,7 +67,7 @@ class ModelConfidenceScore(BaseModel):
         description="Confidence score as a decimal between 0.0 and 1.0",
     )
     measurement_basis: str = Field(
-        description="Basis for confidence measurement (e.g., 'data_quality', 'algorithm_certainty')",
+        description="Basis for confidence measurement (e.g., 'data_quality')",
     )
     contributing_factors: list[str] = Field(
         default_factory=list,
@@ -83,7 +83,7 @@ class ModelConfidenceScore(BaseModel):
         description="Sample size used for confidence calculation",
     )
     calculation_method: str = Field(
-        description="Method used to calculate confidence (e.g., 'statistical', 'heuristic', 'ml_based')",
+        description="Confidence calculation method (e.g., 'statistical')",
     )
     measured_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

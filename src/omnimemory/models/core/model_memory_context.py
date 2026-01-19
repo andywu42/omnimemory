@@ -15,7 +15,7 @@ from ..foundation.model_user import ModelUser
 
 
 class ModelMemoryContext(BaseModel):
-    """Context information for memory operations following ONEX standards with typed models."""
+    """Context for memory operations following ONEX standards with typed models."""
 
     correlation_id: UUID = Field(
         description="Unique correlation identifier for tracing operations across nodes",

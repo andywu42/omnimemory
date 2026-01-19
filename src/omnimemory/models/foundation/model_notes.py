@@ -22,7 +22,7 @@ class ModelNote(BaseModel):
         description="Content of the note",
     )
     category: str = Field(
-        description="Category or type of note (e.g., 'debug', 'performance', 'user_feedback')",
+        description="Category or type of note (e.g., 'debug', 'performance')",
     )
     severity: EnumSeverity = Field(
         default=EnumSeverity.INFO,
@@ -96,7 +96,7 @@ class ModelNotesCollection(BaseModel):
         description="List of notes in this collection",
     )
     collection_type: str = Field(
-        description="Type of notes collection (e.g., 'memory_operation', 'debug_session', 'user_feedback')",
+        description="Type of notes collection (e.g., 'memory_operation')",
     )
     title: str | None = Field(
         default=None,

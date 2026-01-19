@@ -4,24 +4,16 @@ Tests for health manager utilities following ONEX standards.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
 
 from omnimemory.models.foundation.model_health_response import (
-    ModelCircuitBreakerStats,
     ModelCircuitBreakerStatsCollection,
     ModelRateLimitedHealthCheckResponse,
 )
 from omnimemory.utils.concurrency import CircuitBreaker, CircuitBreakerState
-from omnimemory.utils.health_manager import (
-    HealthManager,
-    HealthStatus,
-    ResourceHealthCheck,
-    SystemHealth,
-)
+from omnimemory.utils.health_manager import HealthManager, HealthStatus, SystemHealth
 
 
 class TestHealthManager:

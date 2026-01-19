@@ -15,7 +15,7 @@ class ModelOperationMetadata(BaseModel):
 
     # Operation identification
     operation_type: str = Field(
-        description="Type of operation performed (e.g., 'memory_store', 'semantic_search')"
+        description="Type of operation (e.g., 'memory_store', 'semantic_search')"
     )
     operation_version: str = Field(
         default="1.0.0", description="Version of the operation implementation"

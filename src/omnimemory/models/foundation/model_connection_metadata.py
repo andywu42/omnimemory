@@ -6,7 +6,7 @@ in connection pooling, ensuring type safety and validation.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 

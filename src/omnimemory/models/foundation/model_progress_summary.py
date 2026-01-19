@@ -56,5 +56,5 @@ class ProgressSummaryResponse(BaseModel):
 
     performance_metrics: dict[str, float] = Field(
         default_factory=dict,
-        description="Performance metrics for the migration (e.g., latency_ms, throughput)",
+        description="Performance metrics (e.g., latency_ms, throughput)",
     )

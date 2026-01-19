@@ -60,7 +60,9 @@ class ModelPostgresConfig(BaseModel):
     # SSL configuration
     ssl_mode: str = Field(
         default="prefer",
-        description="SSL mode (disable, allow, prefer, require, verify-ca, verify-full)",
+        description=(
+            "SSL mode (disable, allow, prefer, require, verify-ca, verify-full)"
+        ),
     )
 
     # Schema configuration

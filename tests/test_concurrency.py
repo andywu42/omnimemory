@@ -5,8 +5,7 @@ Tests for concurrency utilities following ONEX standards.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
-from uuid import uuid4
+from unittest.mock import Mock
 
 import pytest
 
@@ -245,7 +244,6 @@ class TestRetryDecorator:
                 raise ValueError("Not yet")
             return "success"
 
-        start_time = asyncio.get_event_loop().time()
         await timing_operation()
 
         # Check that delays increased exponentially

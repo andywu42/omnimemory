@@ -24,30 +24,24 @@ import asyncio
 import concurrent.futures
 import functools
 import threading
-import time
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar, Union
-
-# Type variable for generic function return types
-F = TypeVar("F", bound=Callable[..., Any])
-
 from uuid import uuid4
 
 import structlog
 from pydantic import BaseModel, Field
 
-from ..models.foundation.model_connection_metadata import (
-    ConnectionMetadata,
-    ConnectionPoolStats,
-    SemaphoreMetrics,
-)
+from ..models.foundation.model_connection_metadata import ConnectionMetadata
 from .error_sanitizer import SanitizationLevel
 from .error_sanitizer import sanitize_error as _base_sanitize_error
 from .observability import OperationType, correlation_context, trace_operation
+
+# Type variable for generic function return types
+F = TypeVar("F", bound=Callable[..., Any])
 
 logger = structlog.get_logger(__name__)
 
@@ -509,7 +503,8 @@ class AsyncConnectionPool:
                 current_retry = _retry_count
 
                 try:
-                    # Use iterative retry loop instead of recursion to prevent stack overflow
+                    # Use iterative retry loop instead of recursion
+                    # to prevent stack overflow
                     while current_retry <= max_retries:
                         try:
                             # Try to get existing connection first
@@ -521,7 +516,7 @@ class AsyncConnectionPool:
                                     connection_id=connection_id,
                                 )
                             except asyncio.QueueEmpty:
-                                # No available connections, check if we can create new one
+                                # No available connections, create new if possible
                                 async with self._lock:
                                     total_connections = (
                                         len(self._active) + self._available.qsize()
@@ -537,7 +532,7 @@ class AsyncConnectionPool:
                                             total_connections=total_connections + 1,
                                         )
                                     else:
-                                        # Pool is at capacity, wait for available connection
+                                        # Pool at capacity, wait for connection
                                         self._metrics.pool_exhaustions += 1
                                         self._metrics.last_exhaustion = datetime.now(
                                             timezone.utc
@@ -576,9 +571,11 @@ class AsyncConnectionPool:
                                         connection_id=connection_id,
                                         max_retries=max_retries,
                                     )
-                                    raise RuntimeError(
-                                        f"Failed to acquire valid connection after {max_retries} attempts"
+                                    msg = (
+                                        "Failed to acquire valid connection "
+                                        f"after {max_retries} attempts"
                                     )
+                                    raise RuntimeError(msg)
 
                                 # Increment retry counter and continue the loop
                                 current_retry += 1
@@ -587,8 +584,8 @@ class AsyncConnectionPool:
                             # Connection is valid, break out of retry loop
                             break
 
-                        except Exception as e:
-                            # Handle unexpected exceptions during connection acquisition
+                        except Exception:
+                            # Handle unexpected exceptions in connection acquisition
                             if connection:
                                 await self._destroy_connection(connection)
                             raise
@@ -629,10 +626,10 @@ class AsyncConnectionPool:
                     )
                     raise
                 finally:
-                    # Return connection to pool with shielded cleanup to prevent resource leaks
+                    # Return connection to pool with shielded cleanup
                     if connection:
                         try:
-                            # Shield the cleanup operation to ensure it completes even if cancelled
+                            # Shield cleanup to ensure completion if cancelled
                             await asyncio.shield(
                                 self._return_connection(connection_id, connection)
                             )
@@ -1077,7 +1074,7 @@ class CircuitBreaker:
                         # Re-raise as TimeoutError for consistent handling
                         raise
                 else:
-                    # No timeout - run sync function in executor to avoid blocking event loop
+                    # No timeout - run in executor to avoid blocking
                     result = await loop.run_in_executor(_shared_executor, bound_func)
 
             self.record_success()
@@ -1168,8 +1165,7 @@ class ConnectionPool:
         """
         connection_id = str(uuid4())
         connection = None
-        effective_timeout = timeout or self.timeout
-        last_error: Optional[Exception] = None
+        # Note: timeout parameter reserved for future wait-for-connection logic
 
         try:
             # Iterative retry loop to prevent recursion/stack overflow
@@ -1195,7 +1191,6 @@ class ConnectionPool:
 
                 except (ConnectionError, OSError) as e:
                     # Connection creation failed, retry if attempts remain
-                    last_error = e
                     if attempt < max_retries - 1:
                         logger.debug(
                             "connection_creation_retry",

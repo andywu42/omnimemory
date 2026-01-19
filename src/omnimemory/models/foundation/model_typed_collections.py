@@ -13,8 +13,7 @@ All models follow ONEX standards with:
 
 from __future__ import annotations
 
-from typing import Iterator, List, Optional, Union
-from uuid import UUID
+from typing import Iterator, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

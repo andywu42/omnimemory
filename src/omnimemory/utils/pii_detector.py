@@ -166,7 +166,12 @@ class PIIDetector:
         serial_code = r"\d{4}"
 
         # Combine with word boundaries
-        return rf"\b{invalid_areas}{area_code}{invalid_group}{group_code}{invalid_serial}{serial_code}\b"
+        pattern_parts = (
+            rf"\b{invalid_areas}{area_code}"
+            rf"{invalid_group}{group_code}"
+            rf"{invalid_serial}{serial_code}\b"
+        )
+        return pattern_parts
 
     def _initialize_patterns(self) -> Dict[PIIType, List[PIIPatternConfig]]:
         """Initialize regex patterns for different PII types using configuration.
@@ -206,8 +211,8 @@ class PIIDetector:
                     mask_template="***-**-****",
                 ),
                 PIIPatternConfig(
-                    # Improved SSN validation: excludes invalid area codes and sequences
-                    # Broken down for readability: (?!invalid_areas)AAA(?!00)GG(?!0000)SSSS
+                    # Improved SSN validation: excludes invalid area codes
+                    # Format: (?!invalid_areas)AAA(?!00)GG(?!0000)SSSS
                     pattern=self._build_ssn_validation_pattern(),
                     confidence=self.config.reduced_confidence,
                     mask_template="*********",
@@ -215,7 +220,11 @@ class PIIDetector:
             ],
             PIIType.CREDIT_CARD: [
                 PIIPatternConfig(
-                    pattern=r"\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b|\b6011\d{12}\b",
+                    # Visa, MasterCard, Amex, Discover patterns
+                    pattern=(
+                        r"\b4\d{15}\b|\b5[1-5]\d{14}\b"
+                        r"|\b3[47]\d{13}\b|\b6011\d{12}\b"
+                    ),
                     confidence=self.config.medium_confidence,
                     mask_template="****-****-****-****",
                 )
@@ -324,7 +333,8 @@ class PIIDetector:
         # Check content length against configuration limit
         if len(content) > self.config.max_text_length:
             raise ValueError(
-                f"Content length {len(content)} exceeds maximum allowed {self.config.max_text_length}"
+                f"Content length {len(content)} exceeds maximum "
+                f"allowed {self.config.max_text_length}"
             )
 
         matches: List[PIIMatch] = []
@@ -332,10 +342,11 @@ class PIIDetector:
         sanitized_content = content
 
         # Adjust confidence thresholds based on sensitivity using configuration
+        # low: 0.95 stricter, medium: 0.75 balanced, high: 0.60 permissive
         confidence_threshold = {
-            "low": self.config.medium_high_confidence,  # 0.95 - stricter for low sensitivity
-            "medium": self.config.reduced_confidence,  # 0.75 - balanced
-            "high": self.config.low_confidence,  # 0.60 - more permissive for high sensitivity
+            "low": self.config.medium_high_confidence,
+            "medium": self.config.reduced_confidence,
+            "high": self.config.low_confidence,
         }.get(sensitivity_level, self.config.reduced_confidence)
 
         # Scan for each PII type
@@ -387,7 +398,7 @@ class PIIDetector:
         )
 
     def _deduplicate_matches(self, matches: List[PIIMatch]) -> List[PIIMatch]:
-        """Remove overlapping or duplicate matches, keeping the highest confidence ones."""
+        """Remove overlapping/duplicate matches, keep highest confidence."""
         if not matches:
             return matches
 

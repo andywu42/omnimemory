@@ -13,7 +13,10 @@ except ImportError:
     from enum import Enum
 
     class EnumSeverity(str, Enum):
-        """Fallback severity levels (use omnibase_core.enums.EnumLogLevel in production)."""
+        """Fallback severity levels.
+
+        Use omnibase_core.enums.EnumLogLevel in production.
+        """
 
         CRITICAL = "critical"
         ERROR = "error"
