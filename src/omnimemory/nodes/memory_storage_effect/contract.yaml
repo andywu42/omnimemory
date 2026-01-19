@@ -144,6 +144,25 @@ infrastructure:
     # - redis
     # - pinecone
 
+# === ENUM DEFINITIONS ===
+# These enums MUST match exactly with the Pydantic Literal types in the models
+enums:
+  operation:
+    description: "Storage operation to perform"
+    values:
+      - store      # Create a new snapshot in storage
+      - retrieve   # Fetch an existing snapshot by ID
+      - delete     # Remove a snapshot from storage
+      - update     # Modify an existing snapshot
+      - list       # Query snapshots with optional filtering
+  status:
+    description: "Operation result status"
+    values:
+      - success
+      - error
+      - not_found
+      - permission_denied
+
 # === VALIDATION RULES ===
 validation_rules:
   strict_typing_enabled: true
@@ -151,8 +170,8 @@ validation_rules:
   output_validation_enabled: true
   performance_validation_enabled: true
   constraint_definitions:
-    operation: "Literal enum [store, retrieve, delete, update, list]"
-    status: "Literal enum [success, error, not_found, permission_denied]"
+    operation: "Literal['store', 'retrieve', 'delete', 'update', 'list'] - must match enums.operation.values"
+    status: "Literal['success', 'error', 'not_found', 'permission_denied'] - must match enums.status.values"
     snapshot_id: "string type for snapshot identifier (UUID)"
     snapshot: "ModelMemorySnapshot for storage operations"
     metadata: "dict type for additional operation metadata"

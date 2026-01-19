@@ -88,12 +88,12 @@ def sample_snapshot_with_id() -> ModelMemorySnapshot:
     """Create a sample memory snapshot with enriched metadata fields populated.
 
     This fixture creates a snapshot with additional optional fields populated,
-    including namespace, subject_key, and tags. The name "with_id" refers to
-    having all optional identifier fields populated (not a deterministic UUID).
+    including namespace, subject_key, and tags. The "with_id" suffix indicates
+    that all optional identifier metadata fields are populated.
 
     Note:
-        The snapshot_id uses uuid4() for uniqueness. Use this fixture when
-        testing scenarios that require the optional metadata fields.
+        The snapshot_id uses uuid4() for uniqueness (random, not fixed).
+        Use this fixture when testing scenarios that require optional metadata.
 
     Returns:
         A valid ModelMemorySnapshot instance with optional metadata populated.
