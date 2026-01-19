@@ -11,10 +11,11 @@ Tests only the components that don't depend on omnibase_core:
 import sys
 import traceback
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 
 def validate_protocol_definitions() -> Dict[str, Any]:
     """Validate protocol definitions structure."""
@@ -22,14 +23,16 @@ def validate_protocol_definitions() -> Dict[str, Any]:
 
     try:
         # Import protocols directly without going through __init__
-        sys.path.insert(0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols"))
+        sys.path.insert(
+            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
+        )
 
         import base_protocols
 
         # Check that protocols exist as classes
         protocols_found = []
         for name in dir(base_protocols):
-            if name.startswith('Protocol') and not name.startswith('_'):
+            if name.startswith("Protocol") and not name.startswith("_"):
                 protocols_found.append(name)
 
         print(f"✅ Found {len(protocols_found)} protocol definitions")
@@ -38,7 +41,7 @@ def validate_protocol_definitions() -> Dict[str, Any]:
         return {
             "success": True,
             "protocols_count": len(protocols_found),
-            "protocols": protocols_found
+            "protocols": protocols_found,
         }
 
     except Exception as e:
@@ -46,21 +49,28 @@ def validate_protocol_definitions() -> Dict[str, Any]:
         traceback.print_exc()
         return {"success": False, "error": str(e)}
 
+
 def validate_data_model_definitions() -> Dict[str, Any]:
     """Validate data model definitions."""
     print("🔍 Testing data model definitions...")
 
     try:
         # Import data models directly
-        sys.path.insert(0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols"))
+        sys.path.insert(
+            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
+        )
 
         import data_models
 
         # Check for key model classes
         models_found = []
         key_models = [
-            'BaseMemoryRequest', 'BaseMemoryResponse', 'MemoryRecord',
-            'UserContext', 'StoragePreferences', 'SearchFilters'
+            "BaseMemoryRequest",
+            "BaseMemoryResponse",
+            "MemoryRecord",
+            "UserContext",
+            "StoragePreferences",
+            "SearchFilters",
         ]
 
         for model_name in key_models:
@@ -68,23 +78,24 @@ def validate_data_model_definitions() -> Dict[str, Any]:
                 models_found.append(model_name)
 
         # Test basic model creation (using simple types to avoid omnibase_core)
-        from uuid import uuid4
         from datetime import datetime, timezone
-        from typing import Optional, Dict, List, Any
+        from typing import Any, Dict, List, Optional
+        from uuid import uuid4
+
         from pydantic import BaseModel, Field
 
         # Create a test model similar to our structure
         class TestMemoryModel(BaseModel):
             """Test model to verify Pydantic patterns work."""
+
             memory_id: str = Field(default_factory=lambda: str(uuid4()))
             content: str = Field(max_length=1000)
-            created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+            created_at: datetime = Field(
+                default_factory=lambda: datetime.now(timezone.utc)
+            )
             metadata: Optional[Dict[str, Any]] = None
 
-        test_instance = TestMemoryModel(
-            content="Test content",
-            metadata={"test": True}
-        )
+        test_instance = TestMemoryModel(content="Test content", metadata={"test": True})
 
         print(f"✅ Found {len(models_found)} key model classes")
         print(f"   Models: {', '.join(models_found)}")
@@ -94,7 +105,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
             "success": True,
             "models_count": len(models_found),
             "models": models_found,
-            "test_model_id": test_instance.memory_id
+            "test_model_id": test_instance.memory_id,
         }
 
     except Exception as e:
@@ -102,21 +113,26 @@ def validate_data_model_definitions() -> Dict[str, Any]:
         traceback.print_exc()
         return {"success": False, "error": str(e)}
 
+
 def validate_error_model_definitions() -> Dict[str, Any]:
     """Validate error model definitions."""
     print("🔍 Testing error model definitions...")
 
     try:
         # Import error models directly
-        sys.path.insert(0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols"))
+        sys.path.insert(
+            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
+        )
 
         import error_models
 
         # Check for key error classes
         errors_found = []
         key_errors = [
-            'OmniMemoryError', 'OmniMemoryErrorCode',
-            'ValidationError', 'StorageError'
+            "OmniMemoryError",
+            "OmniMemoryErrorCode",
+            "ValidationError",
+            "StorageError",
         ]
 
         for error_name in key_errors:
@@ -129,13 +145,14 @@ def validate_error_model_definitions() -> Dict[str, Any]:
         return {
             "success": True,
             "errors_count": len(errors_found),
-            "errors": errors_found
+            "errors": errors_found,
         }
 
     except Exception as e:
         print(f"❌ Error model validation failed: {str(e)}")
         traceback.print_exc()
         return {"success": False, "error": str(e)}
+
 
 def validate_contract_specification() -> Dict[str, Any]:
     """Validate contract.yaml structure."""
@@ -148,11 +165,11 @@ def validate_contract_specification() -> Dict[str, Any]:
         if not contract_path.exists():
             return {"success": False, "error": "contract.yaml not found"}
 
-        with open(contract_path, 'r') as f:
+        with open(contract_path, "r") as f:
             contract = yaml.safe_load(f)
 
         # Validate contract structure
-        required_sections = ['contract', 'architecture', 'protocols', 'data_models']
+        required_sections = ["contract", "architecture", "protocols", "data_models"]
         missing_sections = []
 
         for section in required_sections:
@@ -162,29 +179,34 @@ def validate_contract_specification() -> Dict[str, Any]:
         if missing_sections:
             return {
                 "success": False,
-                "error": f"Missing contract sections: {missing_sections}"
+                "error": f"Missing contract sections: {missing_sections}",
             }
 
         # Count protocols and data models
-        protocols_count = len(contract.get('protocols', {}).get('memory_protocols', {}))
-        data_models_count = len(contract.get('data_models', {}).get('core_models', []))
+        protocols_count = len(contract.get("protocols", {}).get("memory_protocols", {}))
+        data_models_count = len(contract.get("data_models", {}).get("core_models", []))
 
         print(f"✅ Contract validation successful")
-        print(f"   Architecture: {contract.get('contract', {}).get('architecture', {}).get('pattern', 'Unknown')}")
+        print(
+            f"   Architecture: {contract.get('contract', {}).get('architecture', {}).get('pattern', 'Unknown')}"
+        )
         print(f"   Protocols: {protocols_count}")
         print(f"   Data models: {data_models_count}")
 
         return {
             "success": True,
-            "architecture": contract.get('contract', {}).get('architecture', {}).get('pattern'),
+            "architecture": contract.get("contract", {})
+            .get("architecture", {})
+            .get("pattern"),
             "protocols_count": protocols_count,
-            "data_models_count": data_models_count
+            "data_models_count": data_models_count,
         }
 
     except Exception as e:
         print(f"❌ Contract validation failed: {str(e)}")
         traceback.print_exc()
         return {"success": False, "error": str(e)}
+
 
 def validate_project_structure() -> Dict[str, Any]:
     """Validate overall project structure."""
@@ -195,12 +217,12 @@ def validate_project_structure() -> Dict[str, Any]:
 
         # Check for expected directories and files
         expected_structure = {
-            'src/omnimemory': 'Main package directory',
-            'src/omnimemory/protocols': 'Protocol definitions',
-            'src/omnimemory/core': 'Core implementation',
-            'contract.yaml': 'ONEX contract specification',
-            'pyproject.toml': 'Project configuration',
-            'tests': 'Test directory'
+            "src/omnimemory": "Main package directory",
+            "src/omnimemory/protocols": "Protocol definitions",
+            "src/omnimemory/core": "Core implementation",
+            "contract.yaml": "ONEX contract specification",
+            "pyproject.toml": "Project configuration",
+            "tests": "Test directory",
         }
 
         found_items = {}
@@ -214,7 +236,9 @@ def validate_project_structure() -> Dict[str, Any]:
                 missing_items.append(item)
 
         print(f"✅ Project structure validation")
-        print(f"   Found: {len(found_items)} / {len(expected_structure)} expected items")
+        print(
+            f"   Found: {len(found_items)} / {len(expected_structure)} expected items"
+        )
         if missing_items:
             print(f"   Missing: {', '.join(missing_items)}")
 
@@ -222,13 +246,14 @@ def validate_project_structure() -> Dict[str, Any]:
             "success": len(missing_items) == 0,
             "found_count": len(found_items),
             "total_count": len(expected_structure),
-            "missing_items": missing_items
+            "missing_items": missing_items,
         }
 
     except Exception as e:
         print(f"❌ Project structure validation failed: {str(e)}")
         traceback.print_exc()
         return {"success": False, "error": str(e)}
+
 
 def main() -> int:
     """Run isolated foundation validation."""
@@ -239,11 +264,11 @@ def main() -> int:
     results = {}
 
     # Run validation tests
-    results['project_structure'] = validate_project_structure()
-    results['contract'] = validate_contract_specification()
-    results['protocols'] = validate_protocol_definitions()
-    results['data_models'] = validate_data_model_definitions()
-    results['error_models'] = validate_error_model_definitions()
+    results["project_structure"] = validate_project_structure()
+    results["contract"] = validate_contract_specification()
+    results["protocols"] = validate_protocol_definitions()
+    results["data_models"] = validate_data_model_definitions()
+    results["error_models"] = validate_error_model_definitions()
 
     print("\n📊 Validation Results:")
     print("=" * 30)
@@ -252,7 +277,7 @@ def main() -> int:
     failed = 0
 
     for test_name, result in results.items():
-        if result.get('success', False):
+        if result.get("success", False):
             print(f"✅ {test_name}: PASS")
             passed += 1
         else:
@@ -270,6 +295,7 @@ def main() -> int:
         print(f"\n⚠️  {failed} validation issues found")
         print("   Some foundation components need attention")
         return min(failed, 1)  # Return 1 for any failures
+
 
 if __name__ == "__main__":
     sys.exit(main())

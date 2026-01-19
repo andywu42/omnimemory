@@ -17,6 +17,20 @@ Architecture:
     - Reducer Nodes: Memory consolidation, aggregation, and optimization
     - Orchestrator Nodes: Workflow coordination, agent coordination, system orchestration
 
+Bootstrap:
+    OmniMemory requires explicit initialization via the bootstrap() function:
+
+    >>> from omnimemory import bootstrap, BootstrapResult
+    >>> from omnimemory.models.config import ModelMemoryServiceConfig, ModelFilesystemConfig
+    >>> from pathlib import Path
+    >>>
+    >>> config = ModelMemoryServiceConfig(
+    ...     filesystem=ModelFilesystemConfig(base_path=Path("/data/memory"))
+    ... )
+    >>> result = await bootstrap(config)
+    >>> if result.success:
+    ...     print(f"Initialized: {result.initialized_backends}")
+
 Usage:
     >>> from omnimemory.models import core, memory, intelligence
     >>> # Use domain-specific models for memory operations
@@ -26,59 +40,57 @@ __version__ = "0.1.0"
 __author__ = "OmniNode-ai"
 __email__ = "contact@omninode.ai"
 
-# Import ONEX-compliant model domains
-from .models import (
-    core,
-    memory,
-    intelligence,
-    service,
-    foundation,
+# Import bootstrap functions
+from .bootstrap import (
+    BootstrapError,
+    BootstrapResult,
+    bootstrap,
+    get_bootstrap_result,
+    is_bootstrapped,
+    shutdown,
 )
 
+# Import ONEX-compliant model domains
+from .models import core, foundation, intelligence, memory, service
+
 # Import protocol definitions
-from .protocols import (
-    # Base protocols
-    ProtocolMemoryBase,
-    ProtocolMemoryOperations,
-
-    # Effect node protocols (memory storage, retrieval, persistence)
-    ProtocolMemoryStorage,
-    ProtocolMemoryRetrieval,
-    ProtocolMemoryPersistence,
-
-    # Compute node protocols (intelligence processing, semantic analysis)
-    ProtocolIntelligenceProcessor,
-    ProtocolSemanticAnalyzer,
-    ProtocolPatternRecognition,
-
-    # Reducer node protocols (consolidation, aggregation, optimization)
-    ProtocolMemoryConsolidator,
-    ProtocolMemoryAggregator,
-    ProtocolMemoryOptimizer,
-
-    # Orchestrator node protocols (workflow, agent, memory coordination)
-    ProtocolWorkflowCoordinator,
-    ProtocolAgentCoordinator,
-    ProtocolMemoryOrchestrator,
-
-    # Data models
+from .protocols import (  # Base protocols; Effect node protocols (memory storage, retrieval, persistence); Compute node protocols (intelligence processing, semantic analysis); Reducer node protocols (consolidation, aggregation, optimization); Orchestrator node protocols (workflow, agent, memory coordination); Data models; Enums; Error handling
+    AccessLevel,
     BaseMemoryRequest,
     BaseMemoryResponse,
+    ContentType,
+    MemoryPriority,
     MemoryRecord,
     MemoryStoreRequest,
     MemoryStoreResponse,
-
-    # Enums
-    OperationStatus,
-    ContentType,
-    MemoryPriority,
-    AccessLevel,
-
-    # Error handling
     OmniMemoryError,
     OmniMemoryErrorCode,
-    ValidationError,
+    OperationStatus,
+    ProtocolAgentCoordinator,
+    ProtocolIntelligenceProcessor,
+    ProtocolMemoryAggregator,
+    ProtocolMemoryBase,
+    ProtocolMemoryConsolidator,
+    ProtocolMemoryOperations,
+    ProtocolMemoryOptimizer,
+    ProtocolMemoryOrchestrator,
+    ProtocolMemoryPersistence,
+    ProtocolMemoryRetrieval,
+    ProtocolMemoryStorage,
+    ProtocolPatternRecognition,
+    ProtocolSemanticAnalyzer,
+    ProtocolWorkflowCoordinator,
     SystemError,
+    ValidationError,
+)
+
+# Import settings for environment-based configuration
+from .settings import (
+    FilesystemSettings,
+    PostgresSettings,
+    QdrantSettings,
+    SettingsMemoryService,
+    load_settings,
 )
 
 __all__ = [
@@ -86,54 +98,58 @@ __all__ = [
     "__version__",
     "__author__",
     "__email__",
-
+    # Bootstrap functions
+    "bootstrap",
+    "shutdown",
+    "is_bootstrapped",
+    "get_bootstrap_result",
+    "BootstrapResult",
+    "BootstrapError",
     # ONEX model domains
     "core",
     "memory",
     "intelligence",
     "service",
     "foundation",
-
     # Base protocols
     "ProtocolMemoryBase",
     "ProtocolMemoryOperations",
-
     # Effect node protocols
     "ProtocolMemoryStorage",
     "ProtocolMemoryRetrieval",
     "ProtocolMemoryPersistence",
-
     # Compute node protocols
     "ProtocolIntelligenceProcessor",
     "ProtocolSemanticAnalyzer",
     "ProtocolPatternRecognition",
-
     # Reducer node protocols
     "ProtocolMemoryConsolidator",
     "ProtocolMemoryAggregator",
     "ProtocolMemoryOptimizer",
-
     # Orchestrator node protocols
     "ProtocolWorkflowCoordinator",
     "ProtocolAgentCoordinator",
     "ProtocolMemoryOrchestrator",
-
     # Data models
     "BaseMemoryRequest",
     "BaseMemoryResponse",
     "MemoryRecord",
     "MemoryStoreRequest",
     "MemoryStoreResponse",
-
     # Enums
     "OperationStatus",
     "ContentType",
     "MemoryPriority",
     "AccessLevel",
-
     # Error handling
     "OmniMemoryError",
     "OmniMemoryErrorCode",
     "ValidationError",
     "SystemError",
+    # Settings for environment-based configuration
+    "load_settings",
+    "SettingsMemoryService",
+    "FilesystemSettings",
+    "PostgresSettings",
+    "QdrantSettings",
 ]

@@ -21,17 +21,22 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
 
+import structlog
+
+from omnimemory.models.core.model_memory_metadata import ModelMemoryMetadata
+
 # ONEX-compliant model imports - using available models
 from omnimemory.models.core.model_memory_request import ModelMemoryRequest
 from omnimemory.models.core.model_memory_response import ModelMemoryResponse
-from omnimemory.models.core.model_memory_metadata import ModelMemoryMetadata
 from omnimemory.models.core.model_processing_metrics import ModelProcessingMetrics
+from omnimemory.models.intelligence.model_intelligence_analysis import (
+    ModelIntelligenceAnalysis,
+)
+from omnimemory.models.intelligence.model_pattern_recognition_result import (
+    ModelPatternRecognitionResult,
+)
 from omnimemory.models.memory.model_memory_item import ModelMemoryItem
 from omnimemory.models.memory.model_memory_query import ModelMemoryQuery
-from omnimemory.models.intelligence.model_intelligence_analysis import ModelIntelligenceAnalysis
-from omnimemory.models.intelligence.model_pattern_recognition_result import ModelPatternRecognitionResult
-
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -72,7 +77,7 @@ class ONEXArchitectureDemo:
             relevance_score=0.9,
             quality_score=0.85,
             processing_complete=True,
-            indexed=True
+            indexed=True,
         )
 
         # Create memory request with ONEX compliance
@@ -87,7 +92,7 @@ class ONEXArchitectureDemo:
             timeout_seconds=30,
             retry_count=3,
             created_at=datetime.now(timezone.utc),
-            metadata={"demo": True, "node_type": "effect"}
+            metadata={"demo": True, "node_type": "effect"},
         )
 
         print(f"📝 Created memory store request: {memory_item.item_id}")
@@ -104,11 +109,13 @@ class ONEXArchitectureDemo:
             memory_usage_mb=2.5,
             cpu_usage_percent=15.0,
             success_count=1,
-            error_count=0
+            error_count=0,
         )
 
         self.processed_memories.append(memory_item.item_id)
-        print(f"✅ Memory stored successfully in {processing_metrics.execution_time_ms}ms")
+        print(
+            f"✅ Memory stored successfully in {processing_metrics.execution_time_ms}ms"
+        )
 
     async def demo_compute_node_operations(self) -> None:
         """Demonstrate COMPUTE node - intelligence processing."""
@@ -120,10 +127,12 @@ class ONEXArchitectureDemo:
             timestamp=datetime.now(timezone.utc),
             raw_data="Process this intelligence data using ONEX patterns",
             processing_type="semantic_analysis",
-            metadata={"demo": True, "node_type": "compute"}
+            metadata={"demo": True, "node_type": "compute"},
         )
 
-        print(f"🧠 Processing intelligence data: {intelligence_request.processing_type}")
+        print(
+            f"🧠 Processing intelligence data: {intelligence_request.processing_type}"
+        )
 
         # Simulate async intelligence processing (COMPUTE pattern)
         await asyncio.sleep(0.2)
@@ -139,16 +148,18 @@ class ONEXArchitectureDemo:
             processed_data={
                 "semantic_features": ["onex", "patterns", "architecture"],
                 "confidence_score": 0.92,
-                "processing_method": "semantic_analysis"
+                "processing_method": "semantic_analysis",
             },
             insights=[
                 "ONEX patterns detected",
                 "Architecture demonstration context",
-                "High semantic coherence"
-            ]
+                "High semantic coherence",
+            ],
         )
 
-        print(f"✅ Intelligence processed in {intelligence_response.execution_time_ms}ms")
+        print(
+            f"✅ Intelligence processed in {intelligence_response.execution_time_ms}ms"
+        )
         print(f"📊 Generated {len(intelligence_response.insights)} insights")
 
     async def demo_reducer_node_operations(self) -> None:
@@ -160,13 +171,14 @@ class ONEXArchitectureDemo:
         # Simulate memory consolidation patterns
         consolidation_tasks = []
         for memory_id in self.processed_memories:
+
             async def consolidate_memory(mem_id: UUID) -> dict:
                 await asyncio.sleep(0.05)  # Simulate consolidation work
                 return {
                     "memory_id": mem_id,
                     "consolidated": True,
                     "optimization_applied": True,
-                    "storage_efficiency": 0.85
+                    "storage_efficiency": 0.85,
                 }
 
             consolidation_tasks.append(consolidate_memory(memory_id))
@@ -190,7 +202,7 @@ class ONEXArchitectureDemo:
             ("coordinate_nodes", 0.15),
             ("monitor_execution", 0.1),
             ("aggregate_results", 0.08),
-            ("finalize_workflow", 0.05)
+            ("finalize_workflow", 0.05),
         ]
 
         workflow_results = []
@@ -199,12 +211,14 @@ class ONEXArchitectureDemo:
             print(f"  ⚙️  {step_name}")
             await asyncio.sleep(duration)
 
-            workflow_results.append({
-                "step": step_name,
-                "status": "completed",
-                "duration_ms": int(duration * 1000),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            workflow_results.append(
+                {
+                    "step": step_name,
+                    "status": "completed",
+                    "duration_ms": int(duration * 1000),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
         total_workflow_time = sum(r["duration_ms"] for r in workflow_results)
         print(f"✅ Workflow orchestrated in {total_workflow_time}ms")
@@ -228,7 +242,7 @@ class ONEXArchitectureDemo:
                     "operation_id": operation_id,
                     "status": "success",
                     "correlation_id": str(self.demo_correlation_id),
-                    "processing_time_ms": int((0.1 + operation_id * 0.02) * 1000)
+                    "processing_time_ms": int((0.1 + operation_id * 0.02) * 1000),
                 }
 
             except Exception as e:
@@ -236,13 +250,13 @@ class ONEXArchitectureDemo:
                     "async_operation_failed",
                     operation_id=operation_id,
                     error=str(e),
-                    correlation_id=str(self.demo_correlation_id)
+                    correlation_id=str(self.demo_correlation_id),
                 )
                 return {
                     "operation_id": operation_id,
                     "status": "error",
                     "error_message": str(e),
-                    "correlation_id": str(self.demo_correlation_id)
+                    "correlation_id": str(self.demo_correlation_id),
                 }
 
         # Execute operations concurrently
@@ -250,8 +264,12 @@ class ONEXArchitectureDemo:
         operations = [async_memory_operation(i) for i in range(1, 6)]
         results = await asyncio.gather(*operations, return_exceptions=True)
 
-        successful_ops = [r for r in results if isinstance(r, dict) and r["status"] == "success"]
-        failed_ops = [r for r in results if isinstance(r, dict) and r["status"] == "error"]
+        successful_ops = [
+            r for r in results if isinstance(r, dict) and r["status"] == "success"
+        ]
+        failed_ops = [
+            r for r in results if isinstance(r, dict) and r["status"] == "error"
+        ]
 
         print(f"✅ {len(successful_ops)} operations succeeded")
         print(f"❌ {len(failed_ops)} operations failed (expected for demo)")
@@ -278,7 +296,7 @@ class ONEXArchitectureDemo:
                 "onex_demo_failed",
                 error=str(e),
                 error_type=type(e).__name__,
-                correlation_id=str(self.demo_correlation_id)
+                correlation_id=str(self.demo_correlation_id),
             )
             print(f"\n❌ ONEX Demo failed: {e}")
             raise
@@ -287,6 +305,7 @@ class ONEXArchitectureDemo:
             total_time = time.time() - start_time
             print(f"\n✅ ONEX Demo completed in {total_time:.2f} seconds")
             print("=" * 60)
+
 
 async def main() -> None:
     """Main entry point for the ONEX architecture demonstration."""
@@ -306,7 +325,7 @@ if __name__ == "__main__":
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer()
+            structlog.processors.JSONRenderer(),
         ],
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),

@@ -5,24 +5,26 @@ Validation script for advanced architecture improvements.
 This script validates the implementation without requiring external dependencies.
 """
 
+import importlib.util
 import os
 import sys
-import importlib.util
 from typing import List, Tuple
+
 
 def validate_file_syntax(file_path: str) -> Tuple[bool, str]:
     """Validate Python file syntax."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             source = f.read()
 
         # Compile to check syntax
-        compile(source, file_path, 'exec')
+        compile(source, file_path, "exec")
         return True, "✅ Syntax valid"
     except SyntaxError as e:
         return False, f"❌ Syntax error: {e}"
     except Exception as e:
         return False, f"❌ Error: {e}"
+
 
 def validate_architecture_improvements() -> List[Tuple[str, bool, str]]:
     """Validate all architecture improvement files."""
@@ -35,11 +37,9 @@ def validate_architecture_improvements() -> List[Tuple[str, bool, str]]:
         f"{base_path}/utils/concurrency.py",
         f"{base_path}/utils/health_manager.py",
         f"{base_path}/utils/__init__.py",
-
         # Model files
         f"{base_path}/models/foundation/model_migration_progress.py",
         f"{base_path}/models/foundation/__init__.py",
-
         # Examples
         "examples/advanced_architecture_demo.py",
     ]
@@ -54,6 +54,7 @@ def validate_architecture_improvements() -> List[Tuple[str, bool, str]]:
             results.append((file_path, False, "❌ File not found"))
 
     return results
+
 
 def validate_key_features():
     """Validate that key features are implemented."""
@@ -74,20 +75,23 @@ def validate_key_features():
         "Observability - Distributed Tracing",
         "Health Checks - Dependency Aggregation",
         "Health Checks - Failure Isolation",
-        "Health Checks - Circuit Breaker Integration"
+        "Health Checks - Circuit Breaker Integration",
     ]
 
     for feature in features:
         print(f"✅ {feature}")
 
+
 def check_model_completeness():
     """Check that models are complete and follow ONEX patterns."""
     print("\n=== Model Completeness Check ===")
 
-    migration_model_path = "src/omnimemory/models/foundation/model_migration_progress.py"
+    migration_model_path = (
+        "src/omnimemory/models/foundation/model_migration_progress.py"
+    )
 
     if os.path.exists(migration_model_path):
-        with open(migration_model_path, 'r') as f:
+        with open(migration_model_path, "r") as f:
             content = f.read()
 
         required_classes = [
@@ -97,7 +101,7 @@ def check_model_completeness():
             "BatchProcessingMetrics",
             "FileProcessingInfo",
             "MigrationProgressMetrics",
-            "MigrationProgressTracker"
+            "MigrationProgressTracker",
         ]
 
         for cls in required_classes:
@@ -121,6 +125,7 @@ def check_model_completeness():
     else:
         print("❌ Migration progress model not found")
 
+
 def validate_integration_patterns():
     """Validate integration patterns are correctly implemented."""
     print("\n=== Integration Pattern Validation ===")
@@ -128,14 +133,14 @@ def validate_integration_patterns():
     utils_init_path = "src/omnimemory/utils/__init__.py"
 
     if os.path.exists(utils_init_path):
-        with open(utils_init_path, 'r') as f:
+        with open(utils_init_path, "r") as f:
             content = f.read()
 
         required_imports = [
             "from .resource_manager import",
             "from .observability import",
             "from .concurrency import",
-            "from .health_manager import"
+            "from .health_manager import",
         ]
 
         for import_stmt in required_imports:
@@ -145,6 +150,7 @@ def validate_integration_patterns():
                 print(f"❌ {import_stmt.split()[1]} import missing")
     else:
         print("❌ Utils __init__.py not found")
+
 
 def main():
     """Main validation function."""
@@ -187,6 +193,7 @@ def main():
     else:
         print("❌ Some validations failed - please review output above")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

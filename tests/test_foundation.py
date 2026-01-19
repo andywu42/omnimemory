@@ -9,33 +9,29 @@ patterns, protocols, and error handling.
 from __future__ import annotations
 
 import asyncio
-import pytest
 from datetime import datetime
 from typing import Dict
 from uuid import UUID, uuid4
 
-from omnimemory import (
-    # Protocols
-    ProtocolMemoryBase,
-    ProtocolMemoryStorage,
+import pytest
 
-    # Data models
-    MemoryRecord,
+from omnimemory import (  # Protocols; Data models; Error handling
+    AccessLevel,
     ContentType,
     MemoryPriority,
-    AccessLevel,
+    MemoryRecord,
     MemoryStoreRequest,
     MemoryStoreResponse,
-
-    # Error handling
     OmniMemoryError,
     OmniMemoryErrorCode,
-    ValidationError,
+    ProtocolMemoryBase,
+    ProtocolMemoryStorage,
     SystemError,
+    ValidationError,
 )
 
 # Use compat modules until omnibase_core components are available
-from omnimemory.compat import NodeResult, ModelOnexContainer
+from omnimemory.compat import ModelOnexContainer, NodeResult
 
 
 class MockMemoryStorageNode:
@@ -64,7 +60,7 @@ class MockMemoryStorageNode:
     async def _apply_configuration(self, config: Dict[str, str]) -> None:
         """Mock configuration application."""
         pass
-    
+
     async def store_memory(
         self,
         request: MemoryStoreRequest,
@@ -85,14 +81,14 @@ class MockMemoryStorageNode:
                 duplicate_detected=False,
                 storage_size_bytes=len(request.memory.content),
             )
-            
+
             return NodeResult.success(
                 value=response,
                 provenance=["mock_storage.store_memory"],
                 trust_score=1.0,
                 metadata={"service": "mock_storage"},
             )
-        
+
         except Exception as e:
             return NodeResult.failure(
                 error=SystemError(
@@ -126,11 +122,13 @@ class TestFoundationArchitecture:
     def test_container_initialization(self, container: ModelOnexContainer) -> None:
         """Test that the ONEX container initializes properly."""
         assert container is not None
-        assert hasattr(container, 'register_singleton')
-        assert hasattr(container, 'register_transient')
-        assert hasattr(container, 'resolve')
+        assert hasattr(container, "register_singleton")
+        assert hasattr(container, "register_transient")
+        assert hasattr(container, "resolve")
 
-    def test_container_node_registration_resolution(self, container: ModelOnexContainer) -> None:
+    def test_container_node_registration_resolution(
+        self, container: ModelOnexContainer
+    ) -> None:
         """Test ONEX node registration and resolution functionality."""
         # Register mock storage node
         container.register_singleton(ProtocolMemoryStorage, MockMemoryStorageNode)
@@ -144,7 +142,10 @@ class TestFoundationArchitecture:
     def test_memory_record_validation(self, sample_memory_record: MemoryRecord) -> None:
         """Test memory record creation and validation."""
         assert sample_memory_record.memory_id is not None
-        assert sample_memory_record.content == "This is a test memory record for ONEX validation"
+        assert (
+            sample_memory_record.content
+            == "This is a test memory record for ONEX validation"
+        )
         assert sample_memory_record.content_type == ContentType.TEXT
         assert sample_memory_record.priority == MemoryPriority.NORMAL
         assert sample_memory_record.source_agent == "test_agent"
@@ -155,7 +156,9 @@ class TestFoundationArchitecture:
         assert sample_memory_record.created_at is not None
         assert sample_memory_record.updated_at is not None
 
-    def test_memory_store_request_creation(self, sample_memory_record: MemoryRecord) -> None:
+    def test_memory_store_request_creation(
+        self, sample_memory_record: MemoryRecord
+    ) -> None:
         """Test memory store request creation and validation."""
         request = MemoryStoreRequest(
             memory=sample_memory_record,
@@ -248,15 +251,16 @@ class TestFoundationArchitecture:
         Skips gracefully if contract.yaml doesn't exist.
         """
         # Verify contract.yaml can be loaded
-        import yaml
         from pathlib import Path
+
+        import yaml
 
         # Use __file__ relative path for CWD independence
         contract_path = Path(__file__).parent.parent / "contract.yaml"
         if not contract_path.exists():
             pytest.skip(f"contract.yaml not found at {contract_path}")
 
-        with open(contract_path, 'r') as f:
+        with open(contract_path, "r") as f:
             contract_data = yaml.safe_load(f)
 
         # Verify contract structure

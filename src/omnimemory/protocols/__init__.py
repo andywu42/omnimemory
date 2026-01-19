@@ -8,102 +8,81 @@ All protocols use typing.Protocol for structural typing and avoid isinstance
 checks, supporting the ModelOnexContainer pattern for dependency injection.
 """
 
-from .base_protocols import (
-    # Base protocols
-    ProtocolMemoryBase,
-    ProtocolMemoryOperations,
-    
-    # Effect node protocols (memory storage, retrieval, persistence)
-    ProtocolMemoryStorage,
-    ProtocolMemoryRetrieval, 
-    ProtocolMemoryPersistence,
-    
-    # Compute node protocols (intelligence processing, semantic analysis)
-    ProtocolIntelligenceProcessor,
-    ProtocolSemanticAnalyzer,
-    ProtocolPatternRecognition,
-    
-    # Reducer node protocols (consolidation, aggregation, optimization)
-    ProtocolMemoryConsolidator,
-    ProtocolMemoryAggregator,
-    ProtocolMemoryOptimizer,
-    
-    # Orchestrator node protocols (workflow, agent, memory coordination)
-    ProtocolWorkflowCoordinator,
+from .base_protocols import (  # Base protocols; Effect node protocols (memory storage, retrieval, persistence); Compute node protocols (intelligence processing, semantic analysis); Reducer node protocols (consolidation, aggregation, optimization); Orchestrator node protocols (workflow, agent, memory coordination)
     ProtocolAgentCoordinator,
+    ProtocolIntelligenceProcessor,
+    ProtocolMemoryAggregator,
+    ProtocolMemoryBase,
+    ProtocolMemoryConsolidator,
+    ProtocolMemoryOperations,
+    ProtocolMemoryOptimizer,
     ProtocolMemoryOrchestrator,
+    ProtocolMemoryPersistence,
+    ProtocolMemoryRetrieval,
+    ProtocolMemoryStorage,
+    ProtocolPatternRecognition,
+    ProtocolSemanticAnalyzer,
+    ProtocolWorkflowCoordinator,
 )
-
-from .data_models import (
-    # Core data models
+from .data_models import (  # Core data models; Request/Response models; Enums
+    AccessLevel,
     BaseMemoryRequest,
     BaseMemoryResponse,
+    ContentType,
+    IndexingStatus,
+    MemoryPriority,
     MemoryRecord,
-    UserContext,
-    StoragePreferences,
-    SearchFilters,
-    SearchResult,
-    
-    # Request/Response models
+    MemoryRetrieveRequest,
+    MemoryRetrieveResponse,
     MemoryStoreRequest,
     MemoryStoreResponse,
-    MemoryRetrieveRequest, 
-    MemoryRetrieveResponse,
+    OperationStatus,
+    SearchFilters,
+    SearchResult,
     SemanticSearchRequest,
     SemanticSearchResponse,
+    StoragePreferences,
     TemporalSearchRequest,
     TemporalSearchResponse,
-    
-    # Enums
-    OperationStatus,
-    ContentType,
-    MemoryPriority,
-    AccessLevel,
-    IndexingStatus,
+    UserContext,
 )
-
-from .error_models import (
-    # Error handling
-    OmniMemoryError,
-    ValidationError,
-    StorageError,
-    RetrievalError,
-    ProcessingError,
+from .error_models import (  # Error handling; Error codes
     CoordinationError,
-    SystemError,
-    
-    # Error codes
+    OmniMemoryError,
     OmniMemoryErrorCode,
+    ProcessingError,
+    RetrievalError,
+    StorageError,
+    SystemError,
+    ValidationError,
 )
+from .secrets_provider import ProtocolSecretsProvider
 
 __all__ = [
     # Base protocols
     "ProtocolMemoryBase",
     "ProtocolMemoryOperations",
-    
     # Effect node protocols
     "ProtocolMemoryStorage",
     "ProtocolMemoryRetrieval",
     "ProtocolMemoryPersistence",
-    
-    # Compute node protocols  
+    # Compute node protocols
     "ProtocolIntelligenceProcessor",
     "ProtocolSemanticAnalyzer",
     "ProtocolPatternRecognition",
-    
     # Reducer node protocols
-    "ProtocolMemoryConsolidator", 
+    "ProtocolMemoryConsolidator",
     "ProtocolMemoryAggregator",
     "ProtocolMemoryOptimizer",
-    
     # Orchestrator node protocols
     "ProtocolWorkflowCoordinator",
-    "ProtocolAgentCoordinator", 
+    "ProtocolAgentCoordinator",
     "ProtocolMemoryOrchestrator",
-    
+    # Infrastructure protocols
+    "ProtocolSecretsProvider",
     # Data models
     "BaseMemoryRequest",
-    "BaseMemoryResponse", 
+    "BaseMemoryResponse",
     "MemoryRecord",
     "UserContext",
     "StoragePreferences",
@@ -112,23 +91,21 @@ __all__ = [
     "MemoryStoreRequest",
     "MemoryStoreResponse",
     "MemoryRetrieveRequest",
-    "MemoryRetrieveResponse", 
+    "MemoryRetrieveResponse",
     "SemanticSearchRequest",
     "SemanticSearchResponse",
     "TemporalSearchRequest",
     "TemporalSearchResponse",
-    
     # Enums
     "OperationStatus",
-    "ContentType", 
+    "ContentType",
     "MemoryPriority",
     "AccessLevel",
     "IndexingStatus",
-    
     # Error handling
     "OmniMemoryError",
     "ValidationError",
-    "StorageError", 
+    "StorageError",
     "RetrievalError",
     "ProcessingError",
     "CoordinationError",

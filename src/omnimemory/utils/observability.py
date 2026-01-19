@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import time
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -23,21 +23,21 @@ from enum import Enum
 from typing import AsyncGenerator, Callable, Dict, Optional, TypeVar, Union
 
 # Type variable for generic function types
-F = TypeVar('F', bound=Callable[..., object])
+F = TypeVar("F", bound=Callable[..., object])
 
 # Type alias for metadata values - supports common serializable types
 # This replaces Any with explicit types for type safety
 MetadataValue = Union[str, int, float, bool, None]
 
+import structlog
 from pydantic import BaseModel, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
-import structlog
-
-from .error_sanitizer import sanitize_error as _base_sanitize_error, SanitizationLevel
-
+from .error_sanitizer import SanitizationLevel
+from .error_sanitizer import sanitize_error as _base_sanitize_error
 
 # === SECURITY VALIDATION FUNCTIONS ===
+
 
 def validate_correlation_id(correlation_id: str) -> bool:
     """
@@ -54,7 +54,7 @@ def validate_correlation_id(correlation_id: str) -> bool:
 
     # Allow UUIDs (with or without hyphens) and alphanumeric strings up to 64 chars
     # This prevents injection while allowing reasonable correlation ID formats
-    pattern = r'^[a-zA-Z0-9\-_]{1,64}$'
+    pattern = r"^[a-zA-Z0-9\-_]{1,64}$"
     return re.match(pattern, correlation_id) is not None
 
 
@@ -72,7 +72,7 @@ def sanitize_metadata_value(value: object) -> MetadataValue:
     """
     if isinstance(value, str):
         # Remove potential injection patterns and limit length
-        sanitized = re.sub(r'[<>"\'\\\n\r\t]', '', value)
+        sanitized = re.sub(r'[<>"\'\\\n\r\t]', "", value)
         return sanitized[:1000]  # Limit string length
     elif isinstance(value, bool):
         # Check bool before int since bool is a subclass of int
@@ -100,27 +100,35 @@ def _sanitize_error(error: Exception) -> str:
     Returns:
         Safe error message without sensitive information
     """
-    return _base_sanitize_error(error, context="observability", level=SanitizationLevel.STANDARD)
+    return _base_sanitize_error(
+        error, context="observability", level=SanitizationLevel.STANDARD
+    )
 
 
 # Context variables for correlation tracking
-correlation_id_var: ContextVar[Optional[str]] = ContextVar('correlation_id', default=None)
-request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
-operation_var: ContextVar[Optional[str]] = ContextVar('operation', default=None)
+correlation_id_var: ContextVar[Optional[str]] = ContextVar(
+    "correlation_id", default=None
+)
+request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
+operation_var: ContextVar[Optional[str]] = ContextVar("operation", default=None)
 
 logger = structlog.get_logger(__name__)
 
+
 class TraceLevel(Enum):
     """Trace level enumeration for different types of operations."""
+
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
 
+
 class OperationType(Enum):
     """Operation type enumeration for categorizing operations."""
+
     MEMORY_STORE = "memory_store"
     MEMORY_RETRIEVE = "memory_retrieve"
     MEMORY_SEARCH = "memory_search"
@@ -130,9 +138,11 @@ class OperationType(Enum):
     CLEANUP = "cleanup"
     EXTERNAL_API = "external_api"
 
+
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for operations."""
+
     start_time: float
     end_time: Optional[float] = None
     duration: Optional[float] = None
@@ -142,8 +152,10 @@ class PerformanceMetrics:
     success: Optional[bool] = None
     error_type: Optional[str] = None
 
+
 class CorrelationContext(BaseModel):
     """Context information for correlation tracking."""
+
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     request_id: Optional[str] = Field(default=None)
     user_id: Optional[str] = Field(default=None)
@@ -152,6 +164,7 @@ class CorrelationContext(BaseModel):
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
     created_at: datetime = Field(default_factory=datetime.now)
+
 
 class ObservabilityManager:
     """
@@ -176,7 +189,7 @@ class ObservabilityManager:
         user_id: Optional[str] = None,
         operation: Optional[str] = None,
         trace_level: TraceLevel = TraceLevel.INFO,
-        **metadata
+        **metadata,
     ) -> AsyncGenerator[CorrelationContext, None]:
         """
         Async context manager for correlation tracking.
@@ -195,8 +208,7 @@ class ObservabilityManager:
 
         # Sanitize metadata values
         sanitized_metadata = {
-            key: sanitize_metadata_value(value)
-            for key, value in metadata.items()
+            key: sanitize_metadata_value(value) for key, value in metadata.items()
         }
 
         # Create context
@@ -207,7 +219,7 @@ class ObservabilityManager:
             operation=operation,
             parent_correlation_id=correlation_id_var.get(),
             trace_level=trace_level,
-            metadata=sanitized_metadata
+            metadata=sanitized_metadata,
         )
 
         # Set context variables
@@ -224,7 +236,7 @@ class ObservabilityManager:
                 user_id=context.user_id,
                 operation=context.operation,
                 trace_level=context.trace_level.value,
-                metadata=context.metadata
+                metadata=context.metadata,
             )
 
             yield context
@@ -234,7 +246,7 @@ class ObservabilityManager:
                 "correlation_context_error",
                 correlation_id=context.correlation_id,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
         finally:
@@ -247,7 +259,7 @@ class ObservabilityManager:
             self._logger.info(
                 "correlation_context_ended",
                 correlation_id=context.correlation_id,
-                operation=context.operation
+                operation=context.operation,
             )
 
     @asynccontextmanager
@@ -256,7 +268,7 @@ class ObservabilityManager:
         operation_name: str,
         operation_type: OperationType,
         trace_performance: bool = True,
-        **additional_context
+        **additional_context,
     ) -> AsyncGenerator[str, None]:
         """
         Async context manager for operation tracing.
@@ -273,12 +285,12 @@ class ObservabilityManager:
         # Initialize performance metrics if requested
         if trace_performance:
             import psutil
+
             process = psutil.Process()
             start_memory = process.memory_info().rss / 1024 / 1024  # MB
 
             metrics = PerformanceMetrics(
-                start_time=time.time(),
-                memory_usage_start=start_memory
+                start_time=time.time(), memory_usage_start=start_memory
             )
             self._active_traces[trace_id] = metrics
 
@@ -289,7 +301,7 @@ class ObservabilityManager:
                 correlation_id=correlation_id,
                 operation_name=operation_name,
                 operation_type=operation_type.value,
-                **additional_context
+                **additional_context,
             )
 
             yield trace_id
@@ -312,7 +324,7 @@ class ObservabilityManager:
                 operation_type=operation_type.value,
                 error=_sanitize_error(e),
                 error_type=type(e).__name__,
-                **additional_context
+                **additional_context,
             )
             raise
         finally:
@@ -324,6 +336,7 @@ class ObservabilityManager:
 
                 if metrics.memory_usage_start:
                     import psutil
+
                     process = psutil.Process()
                     end_memory = process.memory_info().rss / 1024 / 1024  # MB
                     metrics.memory_usage_end = end_memory
@@ -339,7 +352,7 @@ class ObservabilityManager:
                     memory_delta=metrics.memory_delta,
                     success=metrics.success,
                     error_type=metrics.error_type,
-                    **additional_context
+                    **additional_context,
                 )
 
                 # Clean up completed trace
@@ -351,31 +364,24 @@ class ObservabilityManager:
             "correlation_id": correlation_id_var.get(),
             "request_id": request_id_var.get(),
             "user_id": user_id_var.get(),
-            "operation": operation_var.get()
+            "operation": operation_var.get(),
         }
 
     def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
         """Get current performance metrics for active traces."""
         return self._active_traces.copy()
 
-    def log_with_context(
-        self,
-        level: str,
-        message: str,
-        **additional_fields
-    ):
+    def log_with_context(self, level: str, message: str, **additional_fields):
         """Log a message with current correlation context."""
         context = self.get_current_context()
 
         log_method = getattr(self._logger, level.lower(), self._logger.info)
-        log_method(
-            message,
-            **context,
-            **additional_fields
-        )
+        log_method(message, **context, **additional_fields)
+
 
 # Global observability manager instance
 observability_manager = ObservabilityManager()
+
 
 # Convenience functions for common patterns
 @asynccontextmanager
@@ -384,7 +390,7 @@ async def correlation_context(
     request_id: Optional[str] = None,
     user_id: Optional[str] = None,
     operation: Optional[str] = None,
-    **metadata
+    **metadata,
 ):
     """Convenience function for correlation context management."""
     async with observability_manager.correlation_context(
@@ -392,15 +398,14 @@ async def correlation_context(
         request_id=request_id,
         user_id=user_id,
         operation=operation,
-        **metadata
+        **metadata,
     ) as ctx:
         yield ctx
 
+
 @asynccontextmanager
 async def trace_operation(
-    operation_name: str,
-    operation_type: OperationType | str,
-    **context
+    operation_name: str, operation_type: OperationType | str, **context
 ):
     """Convenience function for operation tracing."""
     if isinstance(operation_type, str):
@@ -412,26 +417,29 @@ async def trace_operation(
             operation_type = OperationType.EXTERNAL_API
 
     async with observability_manager.trace_operation(
-        operation_name=operation_name,
-        operation_type=operation_type,
-        **context
+        operation_name=operation_name, operation_type=operation_type, **context
     ) as trace_id:
         yield trace_id
+
 
 def get_correlation_id() -> Optional[str]:
     """Get current correlation ID from context."""
     return correlation_id_var.get()
 
+
 def get_request_id() -> Optional[str]:
     """Get current request ID from context."""
     return request_id_var.get()
+
 
 def log_with_correlation(level: str, message: str, **fields):
     """Log a message with correlation context."""
     observability_manager.log_with_context(level, message, **fields)
 
+
 def inject_correlation_context(func: F) -> F:
     """Decorator to inject correlation context into function logs."""
+
     @functools.wraps(func)
     def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
@@ -439,29 +447,27 @@ def inject_correlation_context(func: F) -> F:
             f"function_called_{func.__name__}",
             **context,
             args_count=len(args),
-            kwargs_keys=list(kwargs.keys())
+            kwargs_keys=list(kwargs.keys()),
         )
         try:
             result = func(*args, **kwargs)
-            logger.info(
-                f"function_completed_{func.__name__}",
-                **context,
-                success=True
-            )
+            logger.info(f"function_completed_{func.__name__}", **context, success=True)
             return result
         except Exception as e:
             logger.error(
                 f"function_failed_{func.__name__}",
                 **context,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
+
     return wrapper  # type: ignore[return-value]
 
 
 def inject_correlation_context_async(func: F) -> F:
     """Async decorator to inject correlation context into function logs."""
+
     @functools.wraps(func)
     async def wrapper(*args: object, **kwargs: object) -> object:
         context = observability_manager.get_current_context()
@@ -469,14 +475,12 @@ def inject_correlation_context_async(func: F) -> F:
             f"async_function_called_{func.__name__}",
             **context,
             args_count=len(args),
-            kwargs_keys=list(kwargs.keys())
+            kwargs_keys=list(kwargs.keys()),
         )
         try:
             result = await func(*args, **kwargs)
             logger.info(
-                f"async_function_completed_{func.__name__}",
-                **context,
-                success=True
+                f"async_function_completed_{func.__name__}", **context, success=True
             )
             return result
         except Exception as e:
@@ -484,7 +488,8 @@ def inject_correlation_context_async(func: F) -> F:
                 f"async_function_failed_{func.__name__}",
                 **context,
                 error=_sanitize_error(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise
+
     return wrapper  # type: ignore[return-value]
