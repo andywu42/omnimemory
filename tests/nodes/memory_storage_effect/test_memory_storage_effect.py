@@ -85,14 +85,16 @@ def sample_snapshot() -> ModelMemorySnapshot:
 
 @pytest.fixture
 def sample_snapshot_with_id() -> ModelMemorySnapshot:
-    """Create a sample memory snapshot with enriched metadata fields populated.
+    """Create a sample memory snapshot with enriched identifier metadata fields.
 
-    This fixture creates a snapshot with additional optional fields populated,
-    including namespace, subject_key, and tags. The "with_id" suffix indicates
-    that all optional identifier metadata fields are populated.
+    This fixture creates a snapshot with additional optional identifier-related
+    fields populated: namespace, subject_key, and tags. The "with_id" suffix
+    indicates that all optional identifier and metadata fields are populated,
+    NOT that the snapshot_id is deterministic or fixed.
 
     Note:
-        The snapshot_id uses uuid4() for uniqueness (random, not fixed).
+        The snapshot_id is randomly generated using uuid4() for uniqueness.
+        Each test invocation receives a different snapshot_id.
         Use this fixture when testing scenarios that require optional metadata.
 
     Returns:
@@ -958,6 +960,81 @@ class TestAdapterLifecycle:
 
         assert response.status == "success"
         assert adapter.is_initialized
+
+    @pytest.mark.asyncio
+    async def test_concurrent_initialization_is_safe(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that concurrent initialization calls are handled safely.
+
+        Given: An uninitialized adapter
+        When: Multiple coroutines call initialize() concurrently
+        Then: Only one initialization occurs, all calls succeed
+        """
+        import asyncio
+
+        config = HandlerFileSystemAdapterConfig(base_path=tmp_path)
+        adapter = HandlerFileSystemAdapter(config)
+        initialization_count = 0
+        original_initialize = adapter._handler.initialize
+
+        async def counting_initialize(*args: object, **kwargs: object) -> object:
+            nonlocal initialization_count
+            initialization_count += 1
+            return await original_initialize(*args, **kwargs)
+
+        # Monkey-patch to count actual handler initializations
+        adapter._handler.initialize = counting_initialize  # type: ignore[method-assign]
+
+        # Launch multiple concurrent initialization calls
+        tasks = [adapter.initialize() for _ in range(10)]
+        await asyncio.gather(*tasks)
+
+        # Verify only one actual initialization occurred
+        assert adapter.is_initialized
+        assert initialization_count == 1, (
+            f"Expected exactly 1 initialization, got {initialization_count}"
+        )
+        assert adapter.snapshots_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_execute_with_initialization(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that concurrent execute calls with auto-init are safe.
+
+        Given: An uninitialized adapter
+        When: Multiple coroutines call execute() concurrently
+        Then: Initialization happens once, all operations succeed
+        """
+        import asyncio
+
+        config = HandlerFileSystemAdapterConfig(base_path=tmp_path)
+        adapter = HandlerFileSystemAdapter(config)
+
+        # Launch multiple concurrent execute calls that will trigger init
+        snapshots = [create_unique_snapshot() for _ in range(5)]
+        tasks = [
+            adapter.execute(
+                ModelMemoryStorageRequest(operation="store", snapshot=s)
+            )
+            for s in snapshots
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # All operations should succeed
+        assert all(r.status == "success" for r in results)
+        assert adapter.is_initialized
+
+        # Verify all snapshots were stored
+        list_response = await adapter.execute(
+            ModelMemoryStorageRequest(operation="list")
+        )
+        assert list_response.status == "success"
+        assert list_response.snapshot_ids is not None
+        assert len(list_response.snapshot_ids) == 5
 
 
 # =============================================================================

@@ -52,19 +52,18 @@ __all__ = [
 def _is_not_found_infra_error(error: InfraConnectionError) -> bool:
     """Check if an InfraConnectionError indicates a "not found" condition.
 
-    This helper encapsulates the detection of "not found" errors from the
-    filesystem handler. The filesystem handler (omnibase_infra) raises
-    InfraConnectionError with SERVICE_UNAVAILABLE error code for all filesystem
-    errors, including "not found" scenarios. It does not use RESOURCE_NOT_FOUND
-    or set __cause__ to FileNotFoundError.
+    This helper uses a prioritized detection strategy to identify "not found"
+    errors from the filesystem handler:
 
-    The handler uses explicit existence checks before raising errors, so the
-    only way to distinguish "not found" from other errors is by message content.
-    This is a known limitation documented here as a single point of maintenance.
+    Detection Priority:
+        1. Check __cause__ for FileNotFoundError (standard Python exception)
+        2. Check error_code for RESOURCE_NOT_FOUND variants
+        3. Fall back to message pattern matching (fragile, last resort)
 
-    Handler message patterns for "not found":
-        - "File not found: {name}" (read_file, delete_file)
-        - "Directory not found: {name}" (list_directory)
+    The filesystem handler (omnibase_infra) currently uses SERVICE_UNAVAILABLE
+    error code for all filesystem errors. This function provides forward
+    compatibility by checking structured attributes before falling back to
+    message parsing.
 
     Args:
         error: The InfraConnectionError to check.
@@ -73,16 +72,59 @@ def _is_not_found_infra_error(error: InfraConnectionError) -> bool:
         True if the error indicates a resource was not found, False otherwise.
 
     Note:
-        This approach is fragile and depends on message format stability in
-        omnibase_infra. If the handler changes its message format, this
-        function must be updated. A future improvement would be for the
-        handler to use RESOURCE_NOT_FOUND error code or structured metadata.
+        Priority 1 and 2 are preferred as they use structured data. Priority 3
+        (message matching) is fragile and depends on message format stability
+        in omnibase_infra. This is documented as a single point of maintenance.
+    """
+    # Priority 1: Check the underlying cause chain for FileNotFoundError
+    cause: BaseException | None = error.__cause__
+    while cause is not None:
+        if isinstance(cause, FileNotFoundError):
+            return True
+        cause = cause.__cause__
+
+    # Priority 2: Check error_code attribute for RESOURCE_NOT_FOUND variants
+    # InfraConnectionError inherits error_code from ModelOnexError
+    error_code = getattr(error, "error_code", None)
+    if error_code is not None:
+        # Check both enum value and string representation
+        error_code_str = str(error_code).upper()
+        if any(
+            pattern in error_code_str
+            for pattern in ("RESOURCE_NOT_FOUND", "NOT_FOUND", "FILE_NOT_FOUND")
+        ):
+            return True
+
+    # Priority 3: Fall back to message pattern matching (fragile, last resort)
+    # Handler message patterns: "File not found: {name}", "Directory not found: {name}"
+    message = str(error).lower()
+    return "not found:" in message
+
+
+def _is_permission_denied_infra_error(error: InfraConnectionError) -> bool:
+    """Check if an InfraConnectionError indicates a permission denied condition.
+
+    This helper encapsulates the detection of permission errors from the
+    filesystem handler. Similar to _is_not_found_infra_error, this uses
+    message content detection since the handler uses SERVICE_UNAVAILABLE
+    for all filesystem errors.
+
+    Handler message patterns for permission errors:
+        - "permission denied" (OS-level permission errors)
+        - "access denied" (Windows-style permission errors)
+
+    Args:
+        error: The InfraConnectionError to check.
+
+    Returns:
+        True if the error indicates a permission was denied, False otherwise.
+
+    Note:
+        This approach is fragile and depends on message format stability.
+        See _is_not_found_infra_error for detailed rationale.
     """
     message = str(error).lower()
-    # Check for patterns used by handler_filesystem.py:
-    # - "file not found:" (read_file, delete_file operations)
-    # - "directory not found:" (list_directory operation)
-    return "not found:" in message
+    return "permission denied" in message or "access denied" in message
 
 
 class HandlerFileSystemAdapterConfig(BaseModel):
@@ -259,6 +301,19 @@ class HandlerFileSystemAdapter:
                     raise RuntimeError(
                         f"Failed to create snapshots directory "
                         f"'{self._snapshots_path}': {error_msg}"
+                    )
+
+                # Defense-in-depth: Verify directory actually exists on filesystem
+                # This guards against handler bugs or edge cases where success is
+                # reported but the directory was not actually created
+                if not self._snapshots_path.exists():
+                    raise RuntimeError(
+                        f"Directory creation reported success but "
+                        f"'{self._snapshots_path}' does not exist on filesystem"
+                    )
+                if not self._snapshots_path.is_dir():
+                    raise RuntimeError(
+                        f"Path '{self._snapshots_path}' exists but is not a directory"
                     )
 
                 self._initialized = True
@@ -736,12 +791,22 @@ class HandlerFileSystemAdapter:
                 error_message=f"I/O error deleting snapshot: {e}",
             )
         except InfraConnectionError as e:
-            # Handler raises InfraConnectionError for file not found
-            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            # Handler raises InfraConnectionError for various filesystem errors
+            # Use helpers to detect specific conditions (see helper function docs)
             if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
+                )
+            if _is_permission_denied_infra_error(e):
+                logger.warning(
+                    "Permission denied deleting snapshot %s: %s",
+                    request.snapshot_id,
+                    e,
+                )
+                return ModelMemoryStorageResponse(
+                    status="permission_denied",
+                    error_message=f"Permission denied deleting {file_path}: {e}",
                 )
             logger.warning(
                 "Infrastructure error deleting snapshot %s: %s",
