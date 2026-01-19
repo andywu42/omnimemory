@@ -13,7 +13,7 @@ Technical Debt Notes:
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Dict, Type, TypeVar
+from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
@@ -31,14 +31,14 @@ class ModelOnexContainer:
 
     def __init__(self) -> None:
         """Initialize the container with empty registries."""
-        self._singletons: Dict[Type[Any], Any] = {}
-        self._singleton_factories: Dict[Type[Any], Callable[..., Any]] = {}
-        self._transient_factories: Dict[Type[Any], Callable[..., Any]] = {}
+        self._singletons: dict[type[Any], Any] = {}
+        self._singleton_factories: dict[type[Any], Callable[..., Any]] = {}
+        self._transient_factories: dict[type[Any], Callable[..., Any]] = {}
 
     def register_singleton(
         self,
-        interface: Type[T],
-        implementation: Type[T] | Callable[..., T],
+        interface: type[T],
+        implementation: type[T] | Callable[..., T],
     ) -> None:
         """
         Register a singleton service.
@@ -49,17 +49,13 @@ class ModelOnexContainer:
             interface: The interface/protocol type to register
             implementation: The implementation class or factory function
         """
-        if callable(implementation) and isinstance(implementation, type):
-            # It's a class, create a factory
-            self._singleton_factories[interface] = implementation
-        else:
-            # It's already a factory function
-            self._singleton_factories[interface] = implementation
+        # Both classes and factory functions are stored directly as factories
+        self._singleton_factories[interface] = implementation
 
     def register_transient(
         self,
-        interface: Type[T],
-        implementation: Type[T] | Callable[..., T],
+        interface: type[T],
+        implementation: type[T] | Callable[..., T],
     ) -> None:
         """
         Register a transient service.
@@ -70,10 +66,8 @@ class ModelOnexContainer:
             interface: The interface/protocol type to register
             implementation: The implementation class or factory function
         """
-        if callable(implementation) and isinstance(implementation, type):
-            self._transient_factories[interface] = implementation
-        else:
-            self._transient_factories[interface] = implementation
+        # Both classes and factory functions are stored directly as factories
+        self._transient_factories[interface] = implementation
 
     def _create_instance(self, factory: Callable[..., T]) -> T:
         """
@@ -108,7 +102,7 @@ class ModelOnexContainer:
         # Default: call without arguments
         return factory()
 
-    def resolve(self, interface: Type[T]) -> T:
+    def resolve(self, interface: type[T]) -> T:
         """
         Resolve a registered service.
 
@@ -142,7 +136,7 @@ class ModelOnexContainer:
 
         raise KeyError(f"No registration found for {interface}")
 
-    def is_registered(self, interface: Type[Any]) -> bool:
+    def is_registered(self, interface: type[Any]) -> bool:
         """
         Check if an interface is registered.
 

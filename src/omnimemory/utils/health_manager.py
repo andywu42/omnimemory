@@ -15,7 +15,7 @@ import os
 import time
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Awaitable, Callable, Dict, List, Optional, Union
+from typing import Awaitable, Callable
 
 # Optional psutil import for resource metrics - gracefully degrade if unavailable
 _PSUTIL_AVAILABLE = False
@@ -53,7 +53,7 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._requests: Dict[str, List[float]] = {}
+        self._requests: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
 
     async def is_allowed(self, identifier: str) -> bool:
@@ -185,7 +185,7 @@ class HealthCheckConfig(BaseModel):
     critical: bool = Field(
         default=True, description="Whether failure affects overall health"
     )
-    circuit_breaker_config: Optional[CircuitBreakerConfig] = Field(default=None)
+    circuit_breaker_config: CircuitBreakerConfig | None = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
 
@@ -196,7 +196,7 @@ class HealthCheckResult(BaseModel):
     status: HealthStatus = Field(description="Health status")
     latency_ms: float = Field(description="Check latency in milliseconds")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    error_message: Optional[str] = Field(default=None)
+    error_message: str | None = Field(default=None)
     metadata: HealthCheckMetadata = Field(default_factory=HealthCheckMetadata)
 
     def to_dependency_status(self) -> ModelDependencyStatus:
@@ -222,10 +222,10 @@ class HealthCheckManager:
     """
 
     def __init__(self):
-        self._health_checks: Dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
-        self._configs: Dict[str, HealthCheckConfig] = {}
-        self._circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
-        self._last_results: Dict[str, HealthCheckResult] = {}
+        self._health_checks: dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
+        self._configs: dict[str, HealthCheckConfig] = {}
+        self._circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
+        self._last_results: dict[str, HealthCheckResult] = {}
         self._results_lock = asyncio.Lock()  # Prevent race conditions on metric updates
         self._rate_limiter = RateLimiter(
             max_requests=30, window_seconds=60
@@ -362,7 +362,7 @@ class HealthCheckManager:
 
                     return result
 
-    async def check_all_dependencies(self) -> List[HealthCheckResult]:
+    async def check_all_dependencies(self) -> list[HealthCheckResult]:
         """
         Perform health checks for all registered dependencies.
 
@@ -370,7 +370,7 @@ class HealthCheckManager:
         individual dependency failures don't crash the overall health check.
 
         Returns:
-            List[HealthCheckResult]: Results for all dependencies
+            list[HealthCheckResult]: Results for all dependencies
         """
         if not self._health_checks:
             return []
@@ -523,7 +523,7 @@ class HealthCheckManager:
             )
 
     def calculate_overall_status(
-        self, results: List[HealthCheckResult]
+        self, results: list[HealthCheckResult]
     ) -> HealthStatus:
         """
         Calculate overall system health based on dependency results.
@@ -736,38 +736,81 @@ async def create_redis_health_check(
 
 
 async def create_pinecone_health_check(
-    api_key: str, environment: str
+    api_key: str | None = None, environment: str | None = None
 ) -> Callable[[], Awaitable[HealthCheckResult]]:
-    """Create a Pinecone health check function."""
+    """Create a Pinecone health check function.
+
+    Args:
+        api_key: Pinecone API key. If None, check is skipped with UNKNOWN status.
+        environment: Pinecone environment/region. If None, check is skipped.
+
+    Returns:
+        Async function that performs Pinecone health check.
+    """
 
     async def check_pinecone() -> HealthCheckResult:
         config = HealthCheckConfig(
             name="pinecone", dependency_type=DependencyType.VECTOR_DB
         )
 
+        # If credentials not configured, return UNKNOWN status
+        if not api_key or not environment:
+            return HealthCheckResult(
+                config=config,
+                status=HealthStatus.UNKNOWN,
+                latency_ms=0.0,
+                error_message="Pinecone not configured (missing api_key/env)",
+            )
+
         try:
-            # Simple connection test - adapt based on Pinecone client
-            # For now, return healthy as a placeholder
+            # Attempt to import and initialize Pinecone client
+            try:
+                from pinecone import Pinecone
+            except ImportError:
+                return HealthCheckResult(
+                    config=config,
+                    status=HealthStatus.UNKNOWN,
+                    latency_ms=0.0,
+                    error_message="Pinecone client library not installed",
+                )
+
+            # Create client and test connectivity by listing indexes
+            start_time = time.time()
+            pc = Pinecone(api_key=api_key)
+
+            # List indexes to verify connectivity - this is a lightweight API call
+            indexes = pc.list_indexes()
+            latency_ms = (time.time() - start_time) * 1000
+
+            index_count = len(indexes.names()) if indexes else 0
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.HEALTHY,
-                latency_ms=0.0,
-                metadata={"environment": environment},
+                latency_ms=latency_ms,
+                metadata=HealthCheckMetadata(
+                    connection_url=f"pinecone://{environment or 'default'}",
+                    performance_metrics={"index_count": float(index_count)},
+                ),
             )
         except Exception as e:
+            # Calculate latency if start_time was set
+            try:
+                latency_ms = (time.time() - start_time) * 1000
+            except NameError:
+                latency_ms = 0.0
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
-                latency_ms=0.0,
+                latency_ms=latency_ms,
                 error_message=_sanitize_error(e),
             )
 
     return check_pinecone
 
 
-# Type alias for health check result values - replaces Dict[str, Any]
-HealthCheckResultValue = Union[str, int, float, bool, None]
-HealthCheckResultDict = Dict[str, HealthCheckResultValue]
+# Type alias for health check result values - replaces dict[str, Any]
+HealthCheckResultValue = str | int | float | bool | None
+HealthCheckResultDict = dict[str, HealthCheckResultValue]
 
 
 # === TEST-COMPATIBLE INTERFACES ===
@@ -777,41 +820,41 @@ HealthCheckResultDict = Dict[str, HealthCheckResultValue]
 class HealthCheckDetails(BaseModel):
     """Strongly typed health check details with rate-limit and circuit tracking."""
 
-    message: Optional[str] = Field(
+    message: str | None = Field(
         default=None, description="Human-readable status message"
     )
-    error: Optional[str] = Field(default=None, description="Error message if unhealthy")
-    version: Optional[str] = Field(default=None, description="Service version")
-    connection_url: Optional[str] = Field(default=None, description="Connection URL")
-    last_check: Optional[str] = Field(default=None, description="Last check timestamp")
-    latency_ms: Optional[float] = Field(
+    error: str | None = Field(default=None, description="Error message if unhealthy")
+    version: str | None = Field(default=None, description="Service version")
+    connection_url: str | None = Field(default=None, description="Connection URL")
+    last_check: str | None = Field(default=None, description="Last check timestamp")
+    latency_ms: float | None = Field(
         default=None, description="Latency in milliseconds"
     )
     # Rate limiting state
     rate_limit_active: bool = Field(
         default=False, description="Whether rate limiting is currently active"
     )
-    rate_limit_remaining: Optional[int] = Field(
+    rate_limit_remaining: int | None = Field(
         default=None, description="Remaining requests in current window"
     )
-    rate_limit_reset_time: Optional[float] = Field(
+    rate_limit_reset_time: float | None = Field(
         default=None, description="Time when rate limit resets (epoch)"
     )
     # Circuit breaker state
     circuit_open: bool = Field(
         default=False, description="Whether circuit breaker is open"
     )
-    circuit_state: Optional[str] = Field(
+    circuit_state: str | None = Field(
         default=None, description="Current circuit breaker state"
     )
-    circuit_failure_count: Optional[int] = Field(
+    circuit_failure_count: int | None = Field(
         default=None, description="Number of failures recorded"
     )
     # Result details
-    result_type: Optional[str] = Field(
+    result_type: str | None = Field(
         default=None, description="Type of result (success/error/timeout)"
     )
-    extra: Dict[str, str] = Field(
+    extra: dict[str, str] = Field(
         default_factory=dict, description="Additional string details"
     )
 
@@ -824,7 +867,7 @@ class ResourceHealthCheck(BaseModel):
     details: HealthCheckDetails = Field(
         default_factory=HealthCheckDetails, description="Additional details"
     )
-    correlation_id: Optional[str] = Field(
+    correlation_id: str | None = Field(
         default=None, description="Correlation ID for tracking"
     )
 
@@ -838,7 +881,7 @@ class SystemHealth(BaseModel):
     """Overall system health status."""
 
     overall_status: HealthStatus = Field(description="Overall system health status")
-    resource_statuses: Dict[str, ResourceHealthCheck] = Field(
+    resource_statuses: dict[str, ResourceHealthCheck] = Field(
         default_factory=dict, description="Health status of individual resources"
     )
     timestamp: datetime = Field(
@@ -881,9 +924,9 @@ class HealthManager:
         self.rate_limit_window = rate_limit_window
         self.max_checks_per_window = max_checks_per_window
 
-        self.health_checks: Dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
-        self.circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
-        self._check_counts: Dict[str, List[float]] = {}
+        self.health_checks: dict[str, Callable[[], Awaitable[HealthCheckResult]]] = {}
+        self.circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
+        self._check_counts: dict[str, list[float]] = {}
         self._rate_limiter = RateLimiter(
             max_requests=max_checks_per_window, window_seconds=int(rate_limit_window)
         )
@@ -903,7 +946,7 @@ class HealthManager:
         logger.info("health_check_registered", resource_name=name)
 
     async def check_resource_health(
-        self, name: str, correlation_id: Optional[str] = None
+        self, name: str, correlation_id: str | None = None
     ) -> ResourceHealthCheck:
         """
         Check health of a specific resource.
@@ -1057,8 +1100,8 @@ class HealthManager:
             )
 
     async def check_multiple_resources(
-        self, names: List[str]
-    ) -> Dict[str, ResourceHealthCheck]:
+        self, names: list[str]
+    ) -> dict[str, ResourceHealthCheck]:
         """
         Check health of multiple resources in parallel.
 
@@ -1066,7 +1109,7 @@ class HealthManager:
             names: List of resource names to check
 
         Returns:
-            Dict mapping resource names to health check results
+            dict mapping resource names to health check results
         """
         tasks = [self.check_resource_health(name) for name in names]
         results = await asyncio.gather(*tasks, return_exceptions=True)

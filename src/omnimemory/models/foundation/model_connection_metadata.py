@@ -5,7 +5,7 @@ This module provides strongly typed replacements for Dict[str, Any] patterns
 in connection pooling, ensuring type safety and validation.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -17,7 +17,8 @@ class ConnectionMetadata(BaseModel):
     connection_id: str = Field(description="Unique identifier for this connection")
 
     created_at: datetime = Field(
-        default_factory=datetime.now, description="When this connection was created"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When this connection was created",
     )
 
     last_used_at: Optional[datetime] = Field(

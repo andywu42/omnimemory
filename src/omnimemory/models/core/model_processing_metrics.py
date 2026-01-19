@@ -104,17 +104,21 @@ class ModelProcessingMetrics(BaseModel):
                 "other": 100.0,
             }
 
-        # Calculate percentages
-        validation_pct = (self.validation_time_ms / total_accounted) * 100
-        computation_pct = (self.computation_time_ms / total_accounted) * 100
-        storage_pct = (self.storage_time_ms / total_accounted) * 100
-        serialization_pct = (self.serialization_time_ms / total_accounted) * 100
+        # Calculate percentages based on total processing time, not just accounted time
+        # This allows "other" to capture untracked overhead
+        total = (
+            self.processing_time_ms if self.processing_time_ms > 0 else total_accounted
+        )
 
-        # Account for any untracked time
+        validation_pct = (self.validation_time_ms / total) * 100
+        computation_pct = (self.computation_time_ms / total) * 100
+        storage_pct = (self.storage_time_ms / total) * 100
+        serialization_pct = (self.serialization_time_ms / total) * 100
+
+        # "other" = untracked time (framework overhead, context switching, etc.)
         other_pct = max(
             0.0,
-            100.0
-            - (validation_pct + computation_pct + storage_pct + serialization_pct),
+            ((total - total_accounted) / total) * 100,
         )
 
         return {

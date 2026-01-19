@@ -1411,7 +1411,7 @@ class CorrelationContext(BaseModel):
     parent_correlation_id: Optional[str] = Field(default=None)
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ObservabilityManager:

@@ -55,6 +55,9 @@ def validate_data_models() -> Dict[str, Any]:
     print("🔍 Testing data model imports...")
 
     try:
+        # Test basic model creation
+        from uuid import uuid4
+
         from omnimemory.protocols.data_models import (  # noqa: F401
             AccessLevel,
             BaseMemoryRequest,
@@ -70,21 +73,24 @@ def validate_data_models() -> Dict[str, Any]:
             UserContext,
         )
 
-        # Test basic model creation
-        user_context = UserContext(user_id="test-user", session_id="test-session")
+        user_context = UserContext(
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            session_id=uuid4(),
+        )
 
         memory_record = MemoryRecord(
             content="Test memory content",
             content_type=ContentType.TEXT,
-            priority=MemoryPriority.MEDIUM,
-            access_level=AccessLevel.PRIVATE,
-            user_context=user_context,
+            priority=MemoryPriority.NORMAL,
+            access_level=AccessLevel.RESTRICTED,
+            source_agent="test-agent",
         )
 
         print("✅ Data model imports and creation successful")
         return {
             "success": True,
-            "user_id": user_context.user_id,
+            "user_id": str(user_context.user_id),
             "memory_id": str(memory_record.memory_id),
         }
 
@@ -101,28 +107,27 @@ def validate_error_handling() -> Dict[str, Any]:
     try:
         from omnimemory.protocols.error_models import (  # noqa: F401
             OmniMemoryError,
-            OmniMemoryErrorCode,
             StorageError,
             ValidationError,
         )
 
         # Test error creation and chaining
         base_error = ValidationError(
-            error_code=OmniMemoryErrorCode.VALIDATION_FAILED,
             message="Test validation error",
-            details={"field": "content", "issue": "too_long"},
+            field_name="content",
+            validation_rule="max_length",
         )
 
         chained_error = StorageError(
-            error_code=OmniMemoryErrorCode.STORAGE_UNAVAILABLE,
             message="Storage system down",
+            storage_system="postgres",
             cause=base_error,
         )
 
         print("✅ Error handling validation successful")
         return {
             "success": True,
-            "base_error_code": base_error.error_code.value,
+            "base_error_code": base_error.omnimemory_error_code.value,
             "chained_error_has_cause": chained_error.cause is not None,
         }
 

@@ -4,7 +4,15 @@ Qdrant vector storage configuration model following ONEX standards.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 
 class ModelQdrantConfig(BaseModel):
@@ -103,3 +111,10 @@ class ModelQdrantConfig(BaseModel):
                 f"distance_metric must be one of: {', '.join(sorted(valid_metrics))}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_grpc_configuration(self) -> "ModelQdrantConfig":
+        """Validate gRPC configuration consistency."""
+        if self.prefer_grpc and self.grpc_port is None:
+            raise ValueError("grpc_port must be specified when prefer_grpc is True")
+        return self

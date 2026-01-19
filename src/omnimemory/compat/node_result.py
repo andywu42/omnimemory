@@ -15,7 +15,7 @@ These are documented exceptions to the zero-Any policy for compat modules.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, List, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional, TypeVar
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -34,7 +34,7 @@ class NodeResult(Generic[T]):
     error: Optional[Exception] = None
     error_message: Optional[str] = None
     is_success: bool = True
-    provenance: List[str] = field(default_factory=list)
+    provenance: list[str] = field(default_factory=list)
     trust_score: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -47,9 +47,9 @@ class NodeResult(Generic[T]):
     def success(
         cls,
         value: T,
-        provenance: Optional[List[str]] = None,
+        provenance: list[str] | None = None,
         trust_score: float = 1.0,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **extra_metadata: Any,
     ) -> NodeResult[T]:
         """
@@ -82,9 +82,9 @@ class NodeResult(Generic[T]):
         cls,
         error: Optional[Exception] = None,
         error_message: Optional[str] = None,
-        provenance: Optional[List[str]] = None,
+        provenance: list[str] | None = None,
         trust_score: float = 0.0,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **extra_metadata: Any,
     ) -> NodeResult[T]:
         """

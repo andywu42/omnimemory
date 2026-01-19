@@ -13,8 +13,10 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src and protocols paths to Python path (consolidated at top of file)
+_base_path = Path(__file__).parent
+sys.path.insert(0, str(_base_path / "src"))
+sys.path.insert(0, str(_base_path / "src" / "omnimemory" / "protocols"))
 
 
 def validate_protocol_definitions() -> Dict[str, Any]:
@@ -23,10 +25,7 @@ def validate_protocol_definitions() -> Dict[str, Any]:
 
     try:
         # Import protocols directly without going through __init__
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
+        # (paths already added at module level)
         import base_protocols
 
         # Check that protocols exist as classes
@@ -55,11 +54,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
     print("🔍 Testing data model definitions...")
 
     try:
-        # Import data models directly
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
+        # Import data models directly (paths already added at module level)
         import data_models
 
         # Check for key model classes
@@ -119,11 +114,7 @@ def validate_error_model_definitions() -> Dict[str, Any]:
     print("🔍 Testing error model definitions...")
 
     try:
-        # Import error models directly
-        sys.path.insert(
-            0, str(Path(__file__).parent / "src" / "omnimemory" / "protocols")
-        )
-
+        # Import error models directly (paths already added at module level)
         import error_models
 
         # Check for key error classes
