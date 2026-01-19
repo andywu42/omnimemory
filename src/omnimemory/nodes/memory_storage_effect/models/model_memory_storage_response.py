@@ -20,7 +20,7 @@ Example:
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
 from pydantic import BaseModel, Field
@@ -36,15 +36,15 @@ class ModelMemoryStorageResponse(BaseModel):
     the operation outcome, while optional fields carry operation-specific results.
 
     Attributes:
-        status: Operation status indicating success, error, or not_found.
+        status: Operation status indicating success, error, not_found, or permission_denied.
         snapshot: The retrieved or stored memory snapshot (for retrieve/store/update).
         snapshot_ids: List of snapshot identifiers (for list operations).
         error_message: Detailed error information when status is "error".
     """
 
-    status: str = Field(
+    status: Literal["success", "error", "not_found", "permission_denied"] = Field(
         ...,
-        description="Operation status: success, error, not_found",
+        description="Operation status: success, error, not_found, permission_denied",
     )
     snapshot: Optional[ModelMemorySnapshot] = Field(
         default=None,

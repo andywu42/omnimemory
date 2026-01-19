@@ -40,7 +40,6 @@ from omnimemory.nodes.memory_storage_effect import (
     HandlerFileSystemAdapter,
     HandlerFileSystemAdapterConfig,
     ModelMemoryStorageRequest,
-    ModelMemoryStorageResponse,
 )
 
 
@@ -86,13 +85,18 @@ def sample_snapshot() -> ModelMemorySnapshot:
 
 @pytest.fixture
 def sample_snapshot_with_id() -> ModelMemorySnapshot:
-    """Create a sample memory snapshot with enriched test metadata.
+    """Create a sample memory snapshot with enriched metadata fields populated.
 
-    This fixture creates a snapshot with additional test-friendly fields
-    including namespace, subject_key, and tags for richer test scenarios.
+    This fixture creates a snapshot with additional optional fields populated,
+    including namespace, subject_key, and tags. The name "with_id" refers to
+    having all optional identifier fields populated (not a deterministic UUID).
+
+    Note:
+        The snapshot_id uses uuid4() for uniqueness. Use this fixture when
+        testing scenarios that require the optional metadata fields.
 
     Returns:
-        A valid ModelMemorySnapshot instance with test metadata populated.
+        A valid ModelMemorySnapshot instance with optional metadata populated.
     """
     subject = ModelSubjectRef(
         subject_type=EnumSubjectType.AGENT,
@@ -1290,3 +1294,94 @@ class TestPerOperationValidation:
             ModelMemoryStorageRequest(
                 operation="invalid_op",  # type: ignore[arg-type]
             )
+
+
+# =============================================================================
+# Security Validation Tests
+# =============================================================================
+
+
+class TestSecurityValidation:
+    """Tests for security validations."""
+
+    @pytest.mark.asyncio
+    async def test_retrieve_path_traversal_rejected(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that path traversal in snapshot_id is rejected.
+
+        Given: A malicious snapshot_id with path traversal
+        When: Executing a retrieve operation
+        Then: Response status is 'error' with appropriate message
+        """
+        malicious_ids = [
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32",
+            "valid/../../../etc/passwd",
+            "snapshot_id/../../secret",
+        ]
+        for malicious_id in malicious_ids:
+            response = await adapter.execute(
+                ModelMemoryStorageRequest(
+                    operation="retrieve",
+                    snapshot_id=malicious_id,
+                )
+            )
+            assert response.status == "error", (
+                f"Path traversal should be rejected: {malicious_id}"
+            )
+            assert (
+                "path" in response.error_message.lower()
+                or "invalid" in response.error_message.lower()
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_path_traversal_rejected(
+        self,
+        adapter: HandlerFileSystemAdapter,
+    ) -> None:
+        """Test that path traversal in snapshot_id is rejected for delete.
+
+        Given: A malicious snapshot_id with path traversal
+        When: Executing a delete operation
+        Then: Response status is 'error' with appropriate message
+        """
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="delete",
+                snapshot_id="../../../etc/passwd",
+            )
+        )
+        assert response.status == "error"
+
+    @pytest.mark.asyncio
+    async def test_store_file_size_limit_enforced(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Test that file size limit is enforced during store.
+
+        Given: A snapshot that exceeds the configured file size limit
+        When: Executing a store operation
+        Then: Response status is 'error' with file size message
+        """
+        # Create adapter with very small file size limit
+        config = HandlerFileSystemAdapterConfig(
+            base_path=tmp_path,
+            max_file_size=100,  # Very small limit
+        )
+        adapter = HandlerFileSystemAdapter(config)
+
+        # Create a snapshot (will serialize to more than 100 bytes)
+        snapshot = create_unique_snapshot()
+
+        response = await adapter.execute(
+            ModelMemoryStorageRequest(
+                operation="store",
+                snapshot=snapshot,
+            )
+        )
+
+        assert response.status == "error"
+        assert "size" in response.error_message.lower()

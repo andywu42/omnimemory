@@ -34,6 +34,7 @@ import logging
 import uuid
 from pathlib import Path
 
+from omnibase_infra.errors.error_infra import InfraConnectionError
 from omnibase_infra.handlers.handler_filesystem import HandlerFileSystem
 from pydantic import BaseModel, Field, ValidationError
 
@@ -140,6 +141,36 @@ class HandlerFileSystemAdapter:
     def is_initialized(self) -> bool:
         """Check if the adapter has been initialized."""
         return self._initialized
+
+    def _validate_snapshot_id(self, snapshot_id: str) -> str | None:
+        """Validate snapshot_id for path traversal attacks.
+
+        This method checks that the snapshot_id does not contain characters
+        or sequences that could be used to escape the snapshots directory.
+
+        Args:
+            snapshot_id: The snapshot identifier to validate.
+
+        Returns:
+            None if valid, error message string if invalid.
+
+        Example:
+            >>> error = self._validate_snapshot_id("my-snapshot-123")
+            >>> assert error is None  # Valid
+            >>> error = self._validate_snapshot_id("../../../etc/passwd")
+            >>> assert error is not None  # Invalid - path traversal
+        """
+        if not snapshot_id:
+            return "snapshot_id cannot be empty"
+        if "/" in snapshot_id or "\\" in snapshot_id:
+            return "snapshot_id contains invalid path characters"
+        if ".." in snapshot_id:
+            return "snapshot_id contains path traversal sequence"
+        # Verify resolved path is within snapshots directory
+        file_path = (self._snapshots_path / f"{snapshot_id}.json").resolve()
+        if not str(file_path).startswith(str(self._snapshots_path.resolve())):
+            return "snapshot_id resolves outside allowed directory"
+        return None
 
     async def initialize(self) -> None:
         """Initialize the handler and create directories.
@@ -278,14 +309,46 @@ class HandlerFileSystemAdapter:
                 error_message="snapshot is required for store operation",
             )
 
-        snapshot_id = request.snapshot.snapshot_id
+        snapshot_id = str(request.snapshot.snapshot_id)
+
+        # Validate snapshot_id for path traversal attacks
+        validation_error = self._validate_snapshot_id(snapshot_id)
+        if validation_error:
+            logger.warning(
+                "Invalid snapshot_id rejected in store operation: %s - %s",
+                snapshot_id,
+                validation_error,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Invalid snapshot_id: {validation_error}",
+            )
+
+        # Serialize snapshot and check file size limit
+        content = request.snapshot.model_dump_json(indent=2)
+        content_bytes = content.encode("utf-8")
+        if len(content_bytes) > self._config.max_file_size:
+            logger.warning(
+                "Snapshot %s exceeds max file size: %d > %d bytes",
+                snapshot_id,
+                len(content_bytes),
+                self._config.max_file_size,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=(
+                    f"Snapshot exceeds maximum file size of "
+                    f"{self._config.max_file_size} bytes"
+                ),
+            )
+
         file_path = self._snapshots_path / f"{snapshot_id}.json"
 
         envelope = self._build_envelope(
             operation="filesystem.write_file",
             payload={
                 "path": str(file_path),
-                "content": request.snapshot.model_dump_json(indent=2),
+                "content": content,
             },
         )
 
@@ -339,6 +402,19 @@ class HandlerFileSystemAdapter:
             return ModelMemoryStorageResponse(
                 status="error",
                 error_message="snapshot_id is required for retrieve operation",
+            )
+
+        # Validate snapshot_id for path traversal attacks
+        validation_error = self._validate_snapshot_id(request.snapshot_id)
+        if validation_error:
+            logger.warning(
+                "Invalid snapshot_id rejected in retrieve operation: %s - %s",
+                request.snapshot_id,
+                validation_error,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Invalid snapshot_id: {validation_error}",
             )
 
         file_path = self._snapshots_path / f"{request.snapshot_id}.json"
@@ -411,25 +487,24 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"I/O error retrieving snapshot: {e}",
             )
-        except Exception as e:
-            # Check for "not found" patterns in wrapped exceptions
-            error_msg = str(e).lower()
-            if "not found" in error_msg or "file not found" in error_msg:
+        except InfraConnectionError as e:
+            # Handler raises InfraConnectionError for file not found
+            error_str = str(e).lower()
+            if "not found" in error_str or "file not found" in error_str:
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
                 )
-            if "permission" in error_msg:
-                logger.warning(
-                    "Permission error retrieving snapshot %s: %s",
-                    request.snapshot_id,
-                    e,
-                )
-                return ModelMemoryStorageResponse(
-                    status="permission_denied",
-                    error_message=f"Permission denied reading {file_path}: {e}",
-                )
-            # Log unexpected exceptions for debugging
+            logger.exception(
+                "Infrastructure error retrieving snapshot %s: %s",
+                request.snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Retrieve failed: {e}",
+            )
+        except Exception as e:
             logger.exception(
                 "Unexpected error retrieving snapshot %s: %s",
                 request.snapshot_id,
@@ -455,6 +530,19 @@ class HandlerFileSystemAdapter:
             return ModelMemoryStorageResponse(
                 status="error",
                 error_message="snapshot_id is required for delete operation",
+            )
+
+        # Validate snapshot_id for path traversal attacks
+        validation_error = self._validate_snapshot_id(request.snapshot_id)
+        if validation_error:
+            logger.warning(
+                "Invalid snapshot_id rejected in delete operation: %s - %s",
+                request.snapshot_id,
+                validation_error,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Invalid snapshot_id: {validation_error}",
             )
 
         file_path = self._snapshots_path / f"{request.snapshot_id}.json"
@@ -531,25 +619,24 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"I/O error deleting snapshot: {e}",
             )
-        except Exception as e:
-            # Check for "not found" patterns in wrapped exceptions
-            error_msg = str(e).lower()
-            if "not found" in error_msg or "file not found" in error_msg:
+        except InfraConnectionError as e:
+            # Handler raises InfraConnectionError for file not found
+            error_str = str(e).lower()
+            if "not found" in error_str or "file not found" in error_str:
                 return ModelMemoryStorageResponse(
                     status="not_found",
                     error_message=f"Snapshot {request.snapshot_id} not found",
                 )
-            if "permission" in error_msg:
-                logger.warning(
-                    "Permission error deleting snapshot %s: %s",
-                    request.snapshot_id,
-                    e,
-                )
-                return ModelMemoryStorageResponse(
-                    status="permission_denied",
-                    error_message=f"Permission denied deleting {file_path}: {e}",
-                )
-            # Log unexpected exceptions for debugging
+            logger.exception(
+                "Infrastructure error deleting snapshot %s: %s",
+                request.snapshot_id,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"Delete failed: {e}",
+            )
+        except Exception as e:
             logger.exception(
                 "Unexpected error deleting snapshot %s: %s",
                 request.snapshot_id,
@@ -683,29 +770,26 @@ class HandlerFileSystemAdapter:
                 status="error",
                 error_message=f"I/O error listing snapshots: {e}",
             )
-        except Exception as e:
-            # Check for common error patterns in wrapped exceptions
-            error_msg = str(e).lower()
-            if "not found" in error_msg or "no such" in error_msg:
+        except InfraConnectionError as e:
+            # Handler raises InfraConnectionError for directory not found
+            error_str = str(e).lower()
+            if "not found" in error_str or "no such" in error_str:
                 return ModelMemoryStorageResponse(
                     status="error",
                     error_message=(
                         f"Snapshots directory not found: {self._snapshots_path}"
                     ),
                 )
-            if "permission" in error_msg:
-                logger.warning(
-                    "Permission error listing snapshots directory %s: %s",
-                    self._snapshots_path,
-                    e,
-                )
-                return ModelMemoryStorageResponse(
-                    status="permission_denied",
-                    error_message=(
-                        f"Permission denied listing {self._snapshots_path}: {e}"
-                    ),
-                )
-            # Log unexpected exceptions for debugging
+            logger.exception(
+                "Infrastructure error listing snapshots in %s: %s",
+                self._snapshots_path,
+                e,
+            )
+            return ModelMemoryStorageResponse(
+                status="error",
+                error_message=f"List failed: {e}",
+            )
+        except Exception as e:
             logger.exception(
                 "Unexpected error listing snapshots in %s: %s",
                 self._snapshots_path,
