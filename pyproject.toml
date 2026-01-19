@@ -19,7 +19,7 @@ httpx = "^0.28.0"
 pydantic = "^2.10.0"
 
 # FastAPI web framework for production API
-fastapi = "^0.115.0"
+fastapi = "^0.120.1"
 uvicorn = {extras = ["standard"], version = "^0.32.0"}
 
 # Memory and storage components

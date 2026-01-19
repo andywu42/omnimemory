@@ -31,13 +31,9 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from omnibase_infra.handlers.handler_filesystem import HandlerFileSystem
 from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    from omnibase_core.models.omnimemory import ModelMemorySnapshot
 
 from ..models import ModelMemoryStorageRequest, ModelMemoryStorageResponse
 
