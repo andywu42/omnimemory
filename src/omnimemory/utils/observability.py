@@ -76,7 +76,7 @@ import re
 import threading
 import time
 import uuid
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -105,6 +105,345 @@ import structlog
 from pydantic import BaseModel, Field
 
 from ..models.foundation.model_typed_collections import ModelMetadata
+
+# === LABEL VALIDATION UTILITIES ===
+
+
+class LabelValidationError(Exception):
+    """Exception raised when label validation fails.
+
+    Attributes:
+        metric_name: Name of the metric where validation failed
+        missing_labels: Set of required labels that were not provided
+        extra_labels: Set of unexpected labels that were provided
+        expected_labels: Set of labels that were expected
+        provided_labels: Set of labels that were actually provided
+    """
+
+    def __init__(
+        self,
+        metric_name: str,
+        missing_labels: set[str],
+        extra_labels: set[str],
+        expected_labels: set[str],
+        provided_labels: set[str],
+    ) -> None:
+        self.metric_name = metric_name
+        self.missing_labels = missing_labels
+        self.extra_labels = extra_labels
+        self.expected_labels = expected_labels
+        self.provided_labels = provided_labels
+
+        # Build error message
+        errors = []
+        if missing_labels:
+            errors.append(f"missing required labels: {sorted(missing_labels)}")
+        if extra_labels:
+            errors.append(f"unexpected extra labels: {sorted(extra_labels)}")
+
+        message = (
+            f"Label validation failed for metric '{metric_name}': {'; '.join(errors)}. "
+            f"Expected labels: {sorted(expected_labels)}, got: {sorted(provided_labels)}"
+        )
+        super().__init__(message)
+
+
+def validate_metric_labels(
+    labels: Dict[str, str],
+    required_labels: set[str],
+    allowed_labels: Optional[set[str]] = None,
+    metric_name: str = "unknown",
+    strict: bool = True,
+) -> None:
+    """Validate labels against required and allowed sets.
+
+    This is a standalone utility function for label validation that can be used
+    outside of metric operations. It enforces that:
+    1. All required labels are present
+    2. No unexpected labels are provided (if strict=True)
+
+    Args:
+        labels: Dictionary of label key-value pairs to validate
+        required_labels: Set of label names that MUST be present
+        allowed_labels: Set of all allowed label names. If None, defaults to
+                       required_labels (no extra labels allowed). Pass a superset
+                       of required_labels to allow optional labels.
+        metric_name: Name of metric for error messages (default: "unknown")
+        strict: If True, raise exception on validation failure.
+               If False, only log warnings for extra labels. (default: True)
+
+    Raises:
+        LabelValidationError: If strict=True and validation fails
+        ValueError: If required_labels is empty
+
+    Example:
+        # Strict validation - must have exactly these labels
+        validate_metric_labels(
+            labels={"operation": "store", "status": "success"},
+            required_labels={"operation", "status"},
+            metric_name="my_counter"
+        )
+
+        # Allow optional labels
+        validate_metric_labels(
+            labels={"operation": "store", "region": "us-east"},
+            required_labels={"operation"},
+            allowed_labels={"operation", "region", "zone"},
+            metric_name="my_counter"
+        )
+
+        # Warn-only mode (log warnings but don't raise)
+        validate_metric_labels(
+            labels={"operation": "store", "unknown": "value"},
+            required_labels={"operation"},
+            metric_name="my_counter",
+            strict=False  # Will log warning for "unknown" but not raise
+        )
+    """
+    if not required_labels:
+        raise ValueError("required_labels must not be empty")
+
+    # Default allowed_labels to required_labels if not specified
+    if allowed_labels is None:
+        allowed_labels = required_labels
+
+    provided = set(labels.keys())
+    missing = required_labels - provided
+    extra = provided - allowed_labels
+
+    if missing or extra:
+        if strict:
+            raise LabelValidationError(
+                metric_name=metric_name,
+                missing_labels=missing,
+                extra_labels=extra,
+                expected_labels=allowed_labels,
+                provided_labels=provided,
+            )
+        else:
+            # Non-strict mode: log warnings but don't raise
+            _label_logger = structlog.get_logger("omnimemory.label_validation")
+            if missing:
+                _label_logger.error(
+                    "label_validation_missing_required",
+                    metric_name=metric_name,
+                    missing_labels=sorted(missing),
+                    provided_labels=sorted(provided),
+                    required_labels=sorted(required_labels),
+                )
+            if extra:
+                _label_logger.warning(
+                    "label_validation_unexpected_extra",
+                    metric_name=metric_name,
+                    extra_labels=sorted(extra),
+                    provided_labels=sorted(provided),
+                    allowed_labels=sorted(allowed_labels),
+                )
+
+
+# === STRUCTURED LOG SCHEMA VALIDATION ===
+
+
+class StructuredLogEntry(BaseModel):
+    """Pydantic model for validating structured log entries.
+
+    This model enforces the log schema documented at the module level.
+    All handler operation log events MUST conform to this schema for
+    downstream ingestion by ELK, Datadog, or other log aggregators.
+
+    Required fields (ALWAYS present):
+        correlation_id: Unique request correlation identifier
+        operation: Operation name (e.g., "store", "retrieve", "delete")
+        handler: Handler name (e.g., "filesystem", "postgresql")
+        status: Operation status, one of "success" or "failure"
+        latency_ms: Operation latency in milliseconds (rounded to 2 decimal places)
+        timestamp: ISO8601 timestamp in UTC (format: YYYY-MM-DDTHH:MM:SS.sssZ)
+
+    Optional fields (only present on failure):
+        error_type: Exception class name (e.g., "ValueError", "IOError")
+        error_message: Sanitized error message (PII-safe)
+
+    Example (success):
+        entry = StructuredLogEntry(
+            correlation_id="abc123-def456",
+            operation="store",
+            handler="filesystem",
+            status="success",
+            latency_ms=45.23,
+            timestamp="2025-01-19T12:34:56.789Z"
+        )
+
+    Example (failure):
+        entry = StructuredLogEntry(
+            correlation_id="abc123-def456",
+            operation="store",
+            handler="filesystem",
+            status="failure",
+            latency_ms=102.5,
+            timestamp="2025-01-19T12:34:56.789Z",
+            error_type="IOError",
+            error_message="Permission denied"
+        )
+    """
+
+    correlation_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9\-_]+$",
+        description="Unique request correlation identifier",
+    )
+    operation: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_]+$",
+        description="Operation name (e.g., store, retrieve, delete)",
+    )
+    handler: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description="Handler name (e.g., filesystem, postgresql)",
+    )
+    status: Literal["success", "failure"] = Field(
+        ...,
+        description="Operation status (success or failure)",
+    )
+    latency_ms: float = Field(
+        ...,
+        ge=0,
+        description="Operation latency in milliseconds",
+    )
+    timestamp: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$",
+        description="ISO8601 timestamp in UTC (YYYY-MM-DDTHH:MM:SS.sssZ)",
+    )
+
+    # Optional fields (only on failure)
+    error_type: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description="Exception class name (only on failure)",
+    )
+    error_message: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description="Sanitized error message (only on failure, PII-safe)",
+    )
+
+    model_config = {
+        "extra": "forbid",  # Reject unexpected fields
+        "str_strip_whitespace": True,
+    }
+
+
+def validate_log_entry(
+    log_data: Dict[str, object],
+    raise_on_error: bool = True,
+) -> Optional[StructuredLogEntry]:
+    """Validate a log entry against the structured log schema.
+
+    This function validates that a log entry dictionary conforms to the
+    expected schema for OmniMemory handler operations. It can be used to:
+    1. Validate log entries before emission
+    2. Validate log entries during testing
+    3. Validate log entries during log aggregation/parsing
+
+    Args:
+        log_data: Dictionary containing log entry fields
+        raise_on_error: If True, raise ValidationError on schema violation.
+                       If False, return None on validation failure. (default: True)
+
+    Returns:
+        StructuredLogEntry if validation succeeds, None if raise_on_error=False
+        and validation fails
+
+    Raises:
+        pydantic.ValidationError: If raise_on_error=True and validation fails
+
+    Example:
+        # Validate and get typed object
+        entry = validate_log_entry({
+            "correlation_id": "abc123",
+            "operation": "store",
+            "handler": "filesystem",
+            "status": "success",
+            "latency_ms": 45.23,
+            "timestamp": "2025-01-19T12:34:56.789Z"
+        })
+
+        # Check without raising
+        entry = validate_log_entry(log_data, raise_on_error=False)
+        if entry is None:
+            print("Log entry is invalid")
+    """
+    from pydantic import ValidationError
+
+    try:
+        return StructuredLogEntry.model_validate(log_data)
+    except ValidationError:
+        if raise_on_error:
+            raise
+        return None
+
+
+def create_validated_log_entry(
+    correlation_id: str,
+    operation: str,
+    handler: str,
+    status: Literal["success", "failure"],
+    latency_ms: float,
+    error_type: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> StructuredLogEntry:
+    """Create a validated log entry with automatic timestamp generation.
+
+    This is a convenience function for creating log entries that:
+    1. Automatically generates an ISO8601 UTC timestamp
+    2. Validates all fields against the schema
+    3. Returns a typed StructuredLogEntry object
+
+    Args:
+        correlation_id: Unique request correlation identifier
+        operation: Operation name (e.g., "store", "retrieve", "delete")
+        handler: Handler name (e.g., "filesystem", "postgresql")
+        status: Operation status ("success" or "failure")
+        latency_ms: Operation latency in milliseconds
+        error_type: Exception class name (only for failures)
+        error_message: Sanitized error message (only for failures)
+
+    Returns:
+        Validated StructuredLogEntry object
+
+    Raises:
+        pydantic.ValidationError: If any field fails validation
+
+    Example:
+        entry = create_validated_log_entry(
+            correlation_id="abc123",
+            operation="store",
+            handler="filesystem",
+            status="success",
+            latency_ms=45.23
+        )
+    """
+    # Generate ISO8601 timestamp in UTC with millisecond precision
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    return StructuredLogEntry(
+        correlation_id=correlation_id,
+        operation=operation,
+        handler=handler,
+        status=status,
+        latency_ms=round(latency_ms, 2),
+        timestamp=timestamp,
+        error_type=error_type,
+        error_message=error_message,
+    )
+
 
 # Optional psutil import for memory tracking - gracefully degrade if unavailable
 _PSUTIL_AVAILABLE = False
@@ -220,6 +559,10 @@ DEFAULT_LATENCY_BUCKETS: Tuple[float, ...] = (
 # Default maximum number of unique label combinations per metric
 # This prevents unbounded memory growth from high-cardinality labels
 DEFAULT_MAX_METRIC_ENTRIES: int = 10000
+
+# Default maximum number of active traces in ObservabilityManager
+# This prevents unbounded memory growth from long-running or abandoned traces
+DEFAULT_MAX_ACTIVE_TRACES: int = 1000
 
 
 @dataclass
@@ -706,9 +1049,17 @@ class MetricsRegistry:
     Provides a central place to access all metrics for the OmniMemory system.
     This is a singleton-like registry that holds all metrics instances.
 
-    Thread-safety: Uses double-checked locking pattern to ensure safe initialization
-    across multiple threads. The _initialized flag is checked inside the lock to
-    prevent race conditions during first access.
+    Thread-safety:
+    - Uses double-checked locking pattern for safe singleton initialization
+    - Uses instance-level RLock (_instance_lock) for operations across multiple metrics
+    - The _initialized flag is checked inside the lock to prevent race conditions
+    - get_all_metrics() and reset() are protected by locks for consistency
+    - RLock is used to allow reentrant access (e.g., nested metric operations)
+
+    Lock hierarchy (to prevent deadlocks):
+    1. _class_lock: Acquired first for singleton creation/destruction
+    2. _instance_lock: Acquired second for multi-metric operations
+    3. Individual metric locks: Acquired last for single-metric operations
 
     Example:
         registry = MetricsRegistry()
@@ -717,7 +1068,11 @@ class MetricsRegistry:
     """
 
     _instance: Optional["MetricsRegistry"] = None
-    _lock = threading.Lock()
+    _class_lock = (
+        threading.Lock()
+    )  # Class-level lock for singleton creation/destruction
+    _instance_lock: threading.RLock  # Instance-level lock for multi-metric operations
+    _initialized: bool  # Flag to track initialization state
 
     def __new__(cls) -> "MetricsRegistry":
         """Singleton pattern for metrics registry with double-checked locking.
@@ -739,11 +1094,14 @@ class MetricsRegistry:
             return instance
 
         # Slow path: need to create or initialize
-        with cls._lock:
+        with cls._class_lock:
             # Double-check after acquiring lock
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance._initialized = False
+                # Create instance-level RLock for multi-metric operations
+                # RLock allows reentrant access from the same thread
+                cls._instance._instance_lock = threading.RLock()
 
             # Initialize inside the lock to prevent concurrent initialization
             if not cls._instance._initialized:
@@ -757,7 +1115,7 @@ class MetricsRegistry:
         pass
 
     def _do_initialize(self) -> None:
-        """Perform actual initialization (called under lock from __new__).
+        """Perform actual initialization (called under class lock from __new__).
 
         This method is only called once, under the class lock, ensuring
         thread-safe initialization of all metrics.
@@ -790,35 +1148,43 @@ class MetricsRegistry:
         self._initialized = True
 
     def get_all_metrics(self) -> Dict[str, Dict[str, object]]:
-        """Get snapshot of all metrics for reporting."""
-        return {
-            "memory_operation_total": {
-                "type": "counter",
-                "values": {
-                    str(k): v for k, v in self.memory_operation_total.get_all().items()
+        """Get snapshot of all metrics for reporting.
+
+        Thread-safety: This method acquires the instance lock to ensure a
+        consistent snapshot across all metrics. Without this lock, concurrent
+        reset() calls could result in partially stale data.
+        """
+        with self._instance_lock:
+            return {
+                "memory_operation_total": {
+                    "type": "counter",
+                    "values": {
+                        str(k): v
+                        for k, v in self.memory_operation_total.get_all().items()
+                    },
                 },
-            },
-            "memory_storage_latency_ms": {
-                "type": "histogram",
-                "values": {
-                    str(k): v
-                    for k, v in self.memory_storage_latency_ms.get_all().items()
+                "memory_storage_latency_ms": {
+                    "type": "histogram",
+                    "values": {
+                        str(k): v
+                        for k, v in self.memory_storage_latency_ms.get_all().items()
+                    },
                 },
-            },
-            "memory_retrieval_latency_ms": {
-                "type": "histogram",
-                "values": {
-                    str(k): v
-                    for k, v in self.memory_retrieval_latency_ms.get_all().items()
+                "memory_retrieval_latency_ms": {
+                    "type": "histogram",
+                    "values": {
+                        str(k): v
+                        for k, v in self.memory_retrieval_latency_ms.get_all().items()
+                    },
                 },
-            },
-            "handler_health_status": {
-                "type": "gauge",
-                "values": {
-                    str(k): v for k, v in self.handler_health_status.get_all().items()
+                "handler_health_status": {
+                    "type": "gauge",
+                    "values": {
+                        str(k): v
+                        for k, v in self.handler_health_status.get_all().items()
+                    },
                 },
-            },
-        }
+            }
 
     @classmethod
     def reset(cls) -> None:
@@ -828,11 +1194,10 @@ class MetricsRegistry:
         code may lead to inconsistent state if other code holds references to
         metric objects.
 
-        Thread-safety: This method clears all data from the existing instance
-        rather than setting _instance to None. This ensures:
-        1. Existing references to the registry remain valid
-        2. Existing references to individual metrics remain valid
-        3. All metric data is atomically cleared (each metric's lock is acquired)
+        Thread-safety: This method acquires both the class lock and instance lock:
+        1. Class lock prevents concurrent singleton modifications
+        2. Instance lock prevents concurrent get_all_metrics() from seeing partial state
+        3. Individual metric locks ensure atomic clearing of each metric
 
         The instance itself is preserved, only the data is cleared.
         """
@@ -852,12 +1217,14 @@ class MetricsRegistry:
                 stacklevel=2,
             )
 
-        with cls._lock:
+        with cls._class_lock:
             if cls._instance is not None and cls._instance._initialized:
-                # Clear all metrics data from the existing instance
-                # This preserves references while resetting state
-                # Note: We do NOT set _instance = None to avoid orphaning references
-                cls._instance._clear_all_metrics()
+                # Acquire instance lock to prevent concurrent get_all_metrics()
+                with cls._instance._instance_lock:
+                    # Clear all metrics data from the existing instance
+                    # This preserves references while resetting state
+                    # Note: We do NOT set _instance = None to avoid orphaning references
+                    cls._instance._clear_all_metrics()
 
     @classmethod
     def _reset_instance_for_testing(cls) -> None:
@@ -869,21 +1236,28 @@ class MetricsRegistry:
 
         For most tests, use reset() instead which preserves references.
 
-        Thread-safety: This method is safe against concurrent access but will
-        invalidate any references obtained before the reset completes.
+        Thread-safety: This method acquires both class lock and instance lock:
+        1. Class lock prevents concurrent singleton modifications
+        2. Instance lock ensures atomic clearing before instance destruction
+        It will invalidate any references obtained before the reset completes.
         """
-        with cls._lock:
+        with cls._class_lock:
             if cls._instance is not None and cls._instance._initialized:
                 # Clear metrics first to help any stale references
-                cls._instance._clear_all_metrics()
+                with cls._instance._instance_lock:
+                    cls._instance._clear_all_metrics()
             # Reset the instance - next access will create a new one
             cls._instance = None
 
     def _clear_all_metrics(self) -> None:
-        """Clear all data from metrics (called by reset under lock).
+        """Clear all data from metrics atomically.
 
-        Thread-safety: This method must be called while holding cls._lock.
-        It acquires each metric's individual lock to safely clear the data.
+        Thread-safety: This method must be called while holding both:
+        1. cls._class_lock (for singleton protection)
+        2. self._instance_lock (for multi-metric operation atomicity)
+
+        It acquires each metric's individual lock to safely clear the data,
+        ensuring no metric operation is in progress during the clear.
         """
         # Clear counter values
         with self.memory_operation_total._lock:
@@ -963,10 +1337,33 @@ class ObservabilityManager:
     - Distributed tracing support
     - Performance monitoring
     - Enhanced logging with context
+
+    Thread-safety:
+        All trace storage operations are protected by a lock to ensure
+        thread-safe access to the active traces dictionary.
+
+    Memory bounds:
+        Active traces are stored in a bounded OrderedDict with LRU eviction.
+        When max_active_traces is reached, the oldest trace is evicted to
+        make room for new traces. This prevents unbounded memory growth from
+        long-running or abandoned traces.
     """
 
-    def __init__(self):
-        self._active_traces: Dict[str, PerformanceMetrics] = {}
+    def __init__(
+        self,
+        max_active_traces: int = DEFAULT_MAX_ACTIVE_TRACES,
+    ) -> None:
+        """Initialize the observability manager.
+
+        Args:
+            max_active_traces: Maximum number of active traces to store.
+                              When this limit is reached, the oldest trace
+                              is evicted. Default is 1000.
+        """
+        self.max_active_traces = max_active_traces
+        # Use OrderedDict for bounded storage with LRU eviction
+        self._active_traces: "OrderedDict[str, PerformanceMetrics]" = OrderedDict()
+        self._traces_lock = threading.Lock()
         self._logger = structlog.get_logger(__name__)
 
     @asynccontextmanager
@@ -1103,7 +1500,20 @@ class ObservabilityManager:
             metrics = PerformanceMetrics(
                 start_time=time.time(), memory_usage_start=start_memory
             )
-            self._active_traces[trace_id] = metrics
+            # Add trace with bounded storage (evict oldest if at capacity)
+            with self._traces_lock:
+                # Evict oldest traces if at capacity
+                while len(self._active_traces) >= self.max_active_traces:
+                    evicted_id, evicted_metrics = self._active_traces.popitem(
+                        last=False
+                    )
+                    self._logger.warning(
+                        "trace_evicted_due_to_capacity",
+                        evicted_trace_id=evicted_id,
+                        evicted_duration=evicted_metrics.duration,
+                        max_active_traces=self.max_active_traces,
+                    )
+                self._active_traces[trace_id] = metrics
 
         try:
             self._logger.info(
@@ -1117,15 +1527,19 @@ class ObservabilityManager:
 
             yield trace_id
 
-            # Mark as successful
-            if trace_performance and trace_id in self._active_traces:
-                self._active_traces[trace_id].success = True
+            # Mark as successful (thread-safe)
+            if trace_performance:
+                with self._traces_lock:
+                    if trace_id in self._active_traces:
+                        self._active_traces[trace_id].success = True
 
         except Exception as e:
-            # Mark as failed and log error
-            if trace_performance and trace_id in self._active_traces:
-                self._active_traces[trace_id].success = False
-                self._active_traces[trace_id].error_type = type(e).__name__
+            # Mark as failed and log error (thread-safe)
+            if trace_performance:
+                with self._traces_lock:
+                    if trace_id in self._active_traces:
+                        self._active_traces[trace_id].success = False
+                        self._active_traces[trace_id].error_type = type(e).__name__
 
             self._logger.error(
                 "operation_failed",
@@ -1139,58 +1553,69 @@ class ObservabilityManager:
             )
             raise
         finally:
-            # Complete performance metrics if requested
-            if trace_performance and trace_id in self._active_traces:
-                metrics = self._active_traces[trace_id]
-                metrics.end_time = time.time()
-                metrics.duration = metrics.end_time - metrics.start_time
+            # Complete performance metrics if requested (thread-safe)
+            metrics = None
+            if trace_performance:
+                # Get trace reference under lock
+                with self._traces_lock:
+                    if trace_id in self._active_traces:
+                        metrics = self._active_traces[trace_id]
 
-                if metrics.memory_usage_start is not None:
-                    # Only track memory delta if psutil is available
-                    if _PSUTIL_AVAILABLE and psutil is not None:
-                        try:
-                            process = psutil.Process()
-                            end_memory = process.memory_info().rss / 1024 / 1024  # MB
-                            metrics.memory_usage_end = end_memory
-                            metrics.memory_delta = (
-                                end_memory - metrics.memory_usage_start
-                            )
-                        except (
-                            psutil.NoSuchProcess,
-                            psutil.AccessDenied,
-                            psutil.ZombieProcess,
-                            psutil.Error,
-                            OSError,
-                            AttributeError,
-                        ) as e:
-                            # Gracefully handle all psutil errors:
-                            # - NoSuchProcess: process terminated
-                            # - AccessDenied: insufficient permissions
-                            # - ZombieProcess: process is zombie state
-                            # - Error: base psutil exception
-                            # - OSError: OS-level errors
-                            # - AttributeError: corrupted psutil module
-                            self._logger.debug(
-                                "psutil_memory_tracking_unavailable",
-                                reason=type(e).__name__,
-                                phase="end",
-                            )
+                # Process metrics outside lock (I/O operations)
+                if metrics is not None:
+                    metrics.end_time = time.time()
+                    metrics.duration = metrics.end_time - metrics.start_time
 
-                self._logger.info(
-                    "operation_completed",
-                    trace_id=trace_id,
-                    correlation_id=correlation_id,
-                    operation_name=operation_name,
-                    operation_type=operation_type.value,
-                    duration=metrics.duration,
-                    memory_delta=metrics.memory_delta,
-                    success=metrics.success,
-                    error_type=metrics.error_type,
-                    **additional_context,
-                )
+                    if metrics.memory_usage_start is not None:
+                        # Only track memory delta if psutil is available
+                        if _PSUTIL_AVAILABLE and psutil is not None:
+                            try:
+                                process = psutil.Process()
+                                end_memory = (
+                                    process.memory_info().rss / 1024 / 1024
+                                )  # MB
+                                metrics.memory_usage_end = end_memory
+                                metrics.memory_delta = (
+                                    end_memory - metrics.memory_usage_start
+                                )
+                            except (
+                                psutil.NoSuchProcess,
+                                psutil.AccessDenied,
+                                psutil.ZombieProcess,
+                                psutil.Error,
+                                OSError,
+                                AttributeError,
+                            ) as e:
+                                # Gracefully handle all psutil errors:
+                                # - NoSuchProcess: process terminated
+                                # - AccessDenied: insufficient permissions
+                                # - ZombieProcess: process is zombie state
+                                # - Error: base psutil exception
+                                # - OSError: OS-level errors
+                                # - AttributeError: corrupted psutil module
+                                self._logger.debug(
+                                    "psutil_memory_tracking_unavailable",
+                                    reason=type(e).__name__,
+                                    phase="end",
+                                )
 
-                # Clean up completed trace
-                del self._active_traces[trace_id]
+                    self._logger.info(
+                        "operation_completed",
+                        trace_id=trace_id,
+                        correlation_id=correlation_id,
+                        operation_name=operation_name,
+                        operation_type=operation_type.value,
+                        duration=metrics.duration,
+                        memory_delta=metrics.memory_delta,
+                        success=metrics.success,
+                        error_type=metrics.error_type,
+                        **additional_context,
+                    )
+
+                    # Clean up completed trace under lock
+                    with self._traces_lock:
+                        if trace_id in self._active_traces:
+                            del self._active_traces[trace_id]
 
     def get_current_context(self) -> Dict[str, Optional[str]]:
         """Get current correlation context."""
@@ -1202,8 +1627,9 @@ class ObservabilityManager:
         }
 
     def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
-        """Get current performance metrics for active traces."""
-        return self._active_traces.copy()
+        """Get current performance metrics for active traces (thread-safe)."""
+        with self._traces_lock:
+            return dict(self._active_traces)
 
     def log_with_context(self, level: str, message: str, **additional_fields):
         """Log a message with current correlation context."""
@@ -1393,6 +1819,13 @@ class HandlerObservabilityWrapper:
     - Emits single structured log event per operation
     - Ensures no PII in log output
 
+    Configuration Options:
+        validate_log_schema: If True, validates all log entries against the
+                            StructuredLogEntry schema before emission. This catches
+                            schema violations early but has a small performance cost.
+                            Default is False for backwards compatibility.
+                            RECOMMENDED for development and testing.
+
     Example usage:
         ```python
         wrapper = HandlerObservabilityWrapper(handler_name="filesystem")
@@ -1406,6 +1839,15 @@ class HandlerObservabilityWrapper:
                 result = await do_storage(request)
                 return result
         ```
+
+    Example with schema validation:
+        ```python
+        # Enable schema validation (recommended for development)
+        wrapper = HandlerObservabilityWrapper(
+            handler_name="filesystem",
+            validate_log_schema=True
+        )
+        ```
     """
 
     # Pattern for valid handler names: alphanumeric, underscore, hyphen, max 64 chars
@@ -1415,6 +1857,7 @@ class HandlerObservabilityWrapper:
         self,
         handler_name: str,
         registry: Optional[MetricsRegistry] = None,
+        validate_log_schema: bool = False,
     ) -> None:
         """Initialize the wrapper.
 
@@ -1423,6 +1866,9 @@ class HandlerObservabilityWrapper:
                          Must be a non-empty string containing only alphanumeric
                          characters, underscores, and hyphens (max 64 characters).
             registry: Optional metrics registry (defaults to current singleton)
+            validate_log_schema: If True, validate log entries against the
+                                StructuredLogEntry schema before emission.
+                                Default is False for backwards compatibility.
 
         Raises:
             ValueError: If handler_name is not a valid string or doesn't match
@@ -1446,6 +1892,7 @@ class HandlerObservabilityWrapper:
 
         self.handler_name = handler_name
         self._custom_registry = registry
+        self._validate_log_schema = validate_log_schema
         self._logger = structlog.get_logger(f"omnimemory.handler.{handler_name}")
 
         # Set initial health status to healthy
@@ -1617,6 +2064,10 @@ class HandlerObservabilityWrapper:
             format is ISO8601 compliant with millisecond precision and 'Z' suffix
             indicating UTC timezone.
 
+            If validate_log_schema=True was set in __init__, each log entry is
+            validated against the StructuredLogEntry Pydantic model before emission.
+            This catches schema violations early during development.
+
         Args:
             metrics: Captured metrics for the operation
         """
@@ -1645,6 +2096,21 @@ class HandlerObservabilityWrapper:
                 log_data["error_type"] = metrics.error_type
             if metrics.error_message is not None:
                 log_data["error_message"] = metrics.error_message
+
+        # Validate against StructuredLogEntry schema if enabled
+        # This catches schema violations early during development/testing
+        if self._validate_log_schema:
+            try:
+                StructuredLogEntry.model_validate(log_data)
+            except Exception as validation_error:
+                # Log validation failure but still emit the log event
+                # This prevents observability failures from breaking the application
+                self._logger.warning(
+                    "omnimemory.handler.log_schema_validation_failed",
+                    error=str(validation_error),
+                    handler=self.handler_name,
+                    operation=metrics.operation,
+                )
 
         # Log at appropriate level based on status
         if metrics.status == "success":

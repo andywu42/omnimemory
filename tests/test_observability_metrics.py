@@ -11,6 +11,7 @@ import threading
 import uuid
 
 import pytest
+from pydantic import ValidationError
 
 from omnimemory.utils.observability import (
     Counter,
@@ -18,8 +19,13 @@ from omnimemory.utils.observability import (
     HandlerMetrics,
     HandlerObservabilityWrapper,
     Histogram,
+    LabelValidationError,
     MetricsRegistry,
+    StructuredLogEntry,
     _get_safe_content_metadata,
+    create_validated_log_entry,
+    validate_log_entry,
+    validate_metric_labels,
 )
 
 
@@ -680,3 +686,381 @@ class TestGetHandlerStatsFiltering:
             assert key[2] == "store"
         for key in success_stats["operation_counts"].keys():
             assert key[2] == "success"
+
+
+class TestLabelValidationError:
+    """Tests for LabelValidationError exception."""
+
+    def test_error_with_missing_labels(self) -> None:
+        """Test error message includes missing labels."""
+        error = LabelValidationError(
+            metric_name="test_metric",
+            missing_labels={"status", "handler"},
+            extra_labels=set(),
+            expected_labels={"operation", "status", "handler"},
+            provided_labels={"operation"},
+        )
+        assert "test_metric" in str(error)
+        assert "missing required labels" in str(error)
+        assert "handler" in str(error)
+        assert "status" in str(error)
+
+    def test_error_with_extra_labels(self) -> None:
+        """Test error message includes extra labels."""
+        error = LabelValidationError(
+            metric_name="test_metric",
+            missing_labels=set(),
+            extra_labels={"unknown", "extra"},
+            expected_labels={"operation"},
+            provided_labels={"operation", "unknown", "extra"},
+        )
+        assert "unexpected extra labels" in str(error)
+        assert "unknown" in str(error)
+        assert "extra" in str(error)
+
+    def test_error_with_both_missing_and_extra(self) -> None:
+        """Test error message includes both missing and extra labels."""
+        error = LabelValidationError(
+            metric_name="test_metric",
+            missing_labels={"status"},
+            extra_labels={"extra"},
+            expected_labels={"operation", "status"},
+            provided_labels={"operation", "extra"},
+        )
+        assert "missing required labels" in str(error)
+        assert "unexpected extra labels" in str(error)
+
+    def test_error_attributes(self) -> None:
+        """Test error attributes are accessible."""
+        error = LabelValidationError(
+            metric_name="test_metric",
+            missing_labels={"a"},
+            extra_labels={"b"},
+            expected_labels={"a", "c"},
+            provided_labels={"b", "c"},
+        )
+        assert error.metric_name == "test_metric"
+        assert error.missing_labels == {"a"}
+        assert error.extra_labels == {"b"}
+        assert error.expected_labels == {"a", "c"}
+        assert error.provided_labels == {"b", "c"}
+
+
+class TestValidateMetricLabels:
+    """Tests for validate_metric_labels() function."""
+
+    def test_valid_labels_exact_match(self) -> None:
+        """Test validation passes with exact label match."""
+        validate_metric_labels(
+            labels={"operation": "store", "status": "success"},
+            required_labels={"operation", "status"},
+            metric_name="test_counter",
+        )  # Should not raise
+
+    def test_missing_required_labels_strict(self) -> None:
+        """Test strict mode raises on missing required labels."""
+        with pytest.raises(LabelValidationError) as exc_info:
+            validate_metric_labels(
+                labels={"operation": "store"},
+                required_labels={"operation", "status"},
+                metric_name="test_counter",
+                strict=True,
+            )
+        assert exc_info.value.missing_labels == {"status"}
+
+    def test_extra_labels_strict(self) -> None:
+        """Test strict mode raises on extra labels."""
+        with pytest.raises(LabelValidationError) as exc_info:
+            validate_metric_labels(
+                labels={"operation": "store", "unknown": "value"},
+                required_labels={"operation"},
+                metric_name="test_counter",
+                strict=True,
+            )
+        assert exc_info.value.extra_labels == {"unknown"}
+
+    def test_allowed_labels_superset(self) -> None:
+        """Test allowed_labels can be a superset of required_labels."""
+        validate_metric_labels(
+            labels={"operation": "store", "region": "us-east"},
+            required_labels={"operation"},
+            allowed_labels={"operation", "region", "zone"},
+            metric_name="test_counter",
+        )  # Should not raise - region is allowed
+
+    def test_allowed_labels_rejects_unknown(self) -> None:
+        """Test extra labels not in allowed set are rejected."""
+        with pytest.raises(LabelValidationError) as exc_info:
+            validate_metric_labels(
+                labels={"operation": "store", "unknown": "value"},
+                required_labels={"operation"},
+                allowed_labels={"operation", "region"},
+                metric_name="test_counter",
+            )
+        assert "unknown" in exc_info.value.extra_labels
+
+    def test_non_strict_mode_logs_but_doesnt_raise(self) -> None:
+        """Test non-strict mode doesn't raise on issues."""
+        # Should not raise even with missing and extra labels
+        validate_metric_labels(
+            labels={"unknown": "value"},
+            required_labels={"operation"},
+            metric_name="test_counter",
+            strict=False,
+        )
+
+    def test_empty_required_labels_raises(self) -> None:
+        """Test empty required_labels raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            validate_metric_labels(
+                labels={"operation": "store"},
+                required_labels=set(),
+                metric_name="test_counter",
+            )
+        assert "required_labels must not be empty" in str(exc_info.value)
+
+
+class TestStructuredLogEntry:
+    """Tests for StructuredLogEntry Pydantic model."""
+
+    def test_valid_success_entry(self) -> None:
+        """Test valid success log entry."""
+        entry = StructuredLogEntry(
+            correlation_id="abc123-def456",
+            operation="store",
+            handler="filesystem",
+            status="success",
+            latency_ms=45.23,
+            timestamp="2025-01-19T12:34:56.789Z",
+        )
+        assert entry.correlation_id == "abc123-def456"
+        assert entry.operation == "store"
+        assert entry.handler == "filesystem"
+        assert entry.status == "success"
+        assert entry.latency_ms == 45.23
+        assert entry.error_type is None
+        assert entry.error_message is None
+
+    def test_valid_failure_entry(self) -> None:
+        """Test valid failure log entry with error fields."""
+        entry = StructuredLogEntry(
+            correlation_id="abc123",
+            operation="store",
+            handler="filesystem",
+            status="failure",
+            latency_ms=102.5,
+            timestamp="2025-01-19T12:34:56.789Z",
+            error_type="IOError",
+            error_message="Permission denied",
+        )
+        assert entry.status == "failure"
+        assert entry.error_type == "IOError"
+        assert entry.error_message == "Permission denied"
+
+    def test_invalid_correlation_id_pattern(self) -> None:
+        """Test correlation_id pattern validation."""
+        with pytest.raises(ValidationError):
+            StructuredLogEntry(
+                correlation_id="invalid<script>id",  # Invalid characters
+                operation="store",
+                handler="filesystem",
+                status="success",
+                latency_ms=45.0,
+                timestamp="2025-01-19T12:34:56.789Z",
+            )
+
+    def test_invalid_status_value(self) -> None:
+        """Test status must be 'success' or 'failure'."""
+        with pytest.raises(ValidationError):
+            StructuredLogEntry(
+                correlation_id="abc123",
+                operation="store",
+                handler="filesystem",
+                status="unknown",  # Invalid
+                latency_ms=45.0,
+                timestamp="2025-01-19T12:34:56.789Z",
+            )
+
+    def test_invalid_timestamp_format(self) -> None:
+        """Test timestamp must match ISO8601 pattern."""
+        with pytest.raises(ValidationError):
+            StructuredLogEntry(
+                correlation_id="abc123",
+                operation="store",
+                handler="filesystem",
+                status="success",
+                latency_ms=45.0,
+                timestamp="2025-01-19 12:34:56",  # Wrong format
+            )
+
+    def test_negative_latency_rejected(self) -> None:
+        """Test negative latency_ms is rejected."""
+        with pytest.raises(ValidationError):
+            StructuredLogEntry(
+                correlation_id="abc123",
+                operation="store",
+                handler="filesystem",
+                status="success",
+                latency_ms=-10.0,
+                timestamp="2025-01-19T12:34:56.789Z",
+            )
+
+    def test_extra_fields_rejected(self) -> None:
+        """Test extra fields are rejected (extra='forbid')."""
+        with pytest.raises(ValidationError):
+            StructuredLogEntry(
+                correlation_id="abc123",
+                operation="store",
+                handler="filesystem",
+                status="success",
+                latency_ms=45.0,
+                timestamp="2025-01-19T12:34:56.789Z",
+                unknown_field="value",  # Should be rejected
+            )
+
+
+class TestValidateLogEntry:
+    """Tests for validate_log_entry() function."""
+
+    def test_valid_entry_returns_model(self) -> None:
+        """Test valid entry returns StructuredLogEntry."""
+        log_data = {
+            "correlation_id": "abc123",
+            "operation": "store",
+            "handler": "filesystem",
+            "status": "success",
+            "latency_ms": 45.23,
+            "timestamp": "2025-01-19T12:34:56.789Z",
+        }
+        entry = validate_log_entry(log_data)
+        assert isinstance(entry, StructuredLogEntry)
+        assert entry.correlation_id == "abc123"
+
+    def test_invalid_entry_raises_by_default(self) -> None:
+        """Test invalid entry raises ValidationError by default."""
+        log_data = {
+            "correlation_id": "abc123",
+            # Missing required fields
+        }
+        with pytest.raises(ValidationError):
+            validate_log_entry(log_data)
+
+    def test_invalid_entry_returns_none_when_not_raising(self) -> None:
+        """Test invalid entry returns None when raise_on_error=False."""
+        log_data = {"correlation_id": "abc123"}  # Missing fields
+        result = validate_log_entry(log_data, raise_on_error=False)
+        assert result is None
+
+
+class TestCreateValidatedLogEntry:
+    """Tests for create_validated_log_entry() function."""
+
+    def test_creates_success_entry(self) -> None:
+        """Test creating a success log entry."""
+        entry = create_validated_log_entry(
+            correlation_id="abc123",
+            operation="store",
+            handler="filesystem",
+            status="success",
+            latency_ms=45.23456,
+        )
+        assert entry.correlation_id == "abc123"
+        assert entry.operation == "store"
+        assert entry.handler == "filesystem"
+        assert entry.status == "success"
+        assert entry.latency_ms == 45.23  # Rounded to 2 decimal places
+        assert entry.error_type is None
+        assert entry.error_message is None
+
+    def test_creates_failure_entry(self) -> None:
+        """Test creating a failure log entry with error fields."""
+        entry = create_validated_log_entry(
+            correlation_id="abc123",
+            operation="store",
+            handler="filesystem",
+            status="failure",
+            latency_ms=102.5,
+            error_type="IOError",
+            error_message="Permission denied",
+        )
+        assert entry.status == "failure"
+        assert entry.error_type == "IOError"
+        assert entry.error_message == "Permission denied"
+
+    def test_auto_generates_timestamp(self) -> None:
+        """Test timestamp is auto-generated in correct format."""
+        entry = create_validated_log_entry(
+            correlation_id="abc123",
+            operation="store",
+            handler="filesystem",
+            status="success",
+            latency_ms=45.0,
+        )
+        # Timestamp should match ISO8601 pattern
+        assert entry.timestamp.endswith("Z")
+        assert "T" in entry.timestamp
+        assert len(entry.timestamp) == 24  # YYYY-MM-DDTHH:MM:SS.sssZ
+
+    def test_invalid_fields_raise(self) -> None:
+        """Test invalid fields raise ValidationError."""
+        with pytest.raises(ValidationError):
+            create_validated_log_entry(
+                correlation_id="invalid<>id",  # Invalid pattern
+                operation="store",
+                handler="filesystem",
+                status="success",
+                latency_ms=45.0,
+            )
+
+
+class TestHandlerObservabilityWrapperLogSchemaValidation:
+    """Tests for HandlerObservabilityWrapper log schema validation."""
+
+    def setup_method(self) -> None:
+        """Reset registry before each test."""
+        MetricsRegistry.reset()
+
+    def teardown_method(self) -> None:
+        """Reset registry after each test."""
+        MetricsRegistry.reset()
+
+    @pytest.mark.asyncio
+    async def test_wrapper_with_schema_validation_enabled(self) -> None:
+        """Test wrapper works with validate_log_schema=True."""
+        wrapper = HandlerObservabilityWrapper(
+            handler_name="test_handler",
+            validate_log_schema=True,
+        )
+
+        # Should work without issues
+        async with wrapper.observe_operation(
+            operation="store",
+            correlation_id="test-correlation-123",
+        ):
+            pass
+
+        # Verify metrics were recorded
+        registry = MetricsRegistry()
+        count = registry.memory_operation_total.get(
+            operation="store", status="success", handler="test_handler"
+        )
+        assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_wrapper_schema_validation_on_failure(self) -> None:
+        """Test schema validation works for failure cases."""
+        wrapper = HandlerObservabilityWrapper(
+            handler_name="test_handler",
+            validate_log_schema=True,
+        )
+
+        with pytest.raises(ValueError):
+            async with wrapper.observe_operation(operation="store"):
+                raise ValueError("Test error")
+
+        # Should still record metrics even with validation
+        registry = MetricsRegistry()
+        count = registry.memory_operation_total.get(
+            operation="store", status="failure", handler="test_handler"
+        )
+        assert count == 1
