@@ -128,3 +128,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "secrets: Tests for secrets provider",
     )
+    config.addinivalue_line(
+        "markers",
+        "benchmark: Performance benchmark tests",
+    )
