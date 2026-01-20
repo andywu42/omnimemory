@@ -5,13 +5,15 @@ Notes model following ONEX standards.
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...enums.enum_severity import EnumSeverity
 
 
 class ModelNote(BaseModel):
     """Individual note entry following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     note_id: UUID = Field(
         default_factory=uuid4,
@@ -22,7 +24,7 @@ class ModelNote(BaseModel):
         description="Content of the note",
     )
     category: str = Field(
-        description="Category or type of note (e.g., 'debug', 'performance', 'user_feedback')",
+        description="Category or type of note (e.g., 'debug', 'performance')",
     )
     severity: EnumSeverity = Field(
         default=EnumSeverity.INFO,
@@ -87,6 +89,8 @@ class ModelNote(BaseModel):
 class ModelNotesCollection(BaseModel):
     """Collection of notes following ONEX standards."""
 
+    model_config = ConfigDict(extra="forbid")
+
     collection_id: UUID = Field(
         default_factory=uuid4,
         description="Unique identifier for this notes collection",
@@ -96,7 +100,7 @@ class ModelNotesCollection(BaseModel):
         description="List of notes in this collection",
     )
     collection_type: str = Field(
-        description="Type of notes collection (e.g., 'memory_operation', 'debug_session', 'user_feedback')",
+        description="Type of notes collection (e.g., 'memory_operation')",
     )
     title: str | None = Field(
         default=None,
@@ -182,7 +186,7 @@ class ModelNotesCollection(BaseModel):
 
     def get_note_count_by_severity(self) -> dict[EnumSeverity, int]:
         """Get count of notes by severity level."""
-        counts = {}
+        counts: dict[EnumSeverity, int] = {}
         for note in self.get_active_notes():
             counts[note.severity] = counts.get(note.severity, 0) + 1
         return counts

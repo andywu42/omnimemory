@@ -4,24 +4,16 @@ Tests for health manager utilities following ONEX standards.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
 
 from omnimemory.models.foundation.model_health_response import (
-    ModelCircuitBreakerStats,
     ModelCircuitBreakerStatsCollection,
     ModelRateLimitedHealthCheckResponse,
 )
 from omnimemory.utils.concurrency import CircuitBreaker, CircuitBreakerState
-from omnimemory.utils.health_manager import (
-    HealthManager,
-    HealthStatus,
-    ResourceHealthCheck,
-    SystemHealth,
-)
+from omnimemory.utils.health_manager import HealthManager, HealthStatus, SystemHealth
 
 
 class TestHealthManager:
@@ -95,7 +87,11 @@ class TestHealthManager:
 
     @pytest.mark.asyncio
     async def test_get_system_health(self) -> None:
-        """Test getting overall system health."""
+        """Test getting overall system health.
+
+        When any resource is UNHEALTHY, the overall status should be UNHEALTHY.
+        DEGRADED is only for partial degradation (RATE_LIMITED, DEGRADED status).
+        """
         hm = HealthManager()
 
         async def healthy_check() -> dict[str, str]:
@@ -110,7 +106,8 @@ class TestHealthManager:
         system_health = await hm.get_system_health()
 
         assert isinstance(system_health, SystemHealth)
-        assert system_health.overall_status == HealthStatus.DEGRADED
+        # When any service is UNHEALTHY, overall status is UNHEALTHY
+        assert system_health.overall_status == HealthStatus.UNHEALTHY
         assert len(system_health.resource_statuses) == 2
 
         # Check individual statuses

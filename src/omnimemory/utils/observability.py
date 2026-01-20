@@ -111,34 +111,28 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import (
-    AsyncGenerator,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Callable, Literal, Optional, TypeVar
 
 # Type variable for generic function types
 F = TypeVar("F", bound=Callable[..., object])
 
 # Type alias for metadata values - supports common serializable types
 # This replaces Any with explicit types for type safety
-MetadataValue = Union[str, int, float, bool, None]
+MetadataValue = str | int | float | bool | None
 
-import structlog
-from pydantic import BaseModel, Field
+import structlog  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
-from ..models.foundation.model_typed_collections import ModelMetadata
+from ..models.foundation.model_typed_collections import (  # noqa: E402
+    ModelKeyValuePair,
+    ModelMetadata,
+)
 
 # === LABEL VALIDATION UTILITIES ===
 
@@ -185,9 +179,9 @@ class LabelValidationError(Exception):
 
 
 def validate_metric_labels(
-    labels: Dict[str, str],
+    labels: dict[str, str],
     required_labels: set[str],
-    allowed_labels: Optional[set[str]] = None,
+    allowed_labels: set[str] | None = None,
     metric_name: str = "unknown",
     strict: bool = True,
 ) -> None:
@@ -359,12 +353,12 @@ class StructuredLogEntry(BaseModel):
     )
 
     # Optional fields (only on failure)
-    error_type: Optional[str] = Field(
+    error_type: str | None = Field(
         default=None,
         max_length=256,
         description="Exception class name (only on failure)",
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         default=None,
         max_length=1000,
         description="Sanitized error message (only on failure, PII-safe)",
@@ -377,9 +371,9 @@ class StructuredLogEntry(BaseModel):
 
 
 def validate_log_entry(
-    log_data: Dict[str, object],
+    log_data: dict[str, object],
     raise_on_error: bool = True,
-) -> Optional[StructuredLogEntry]:
+) -> StructuredLogEntry | None:
     """Validate a log entry against the structured log schema.
 
     This function validates that a log entry dictionary conforms to the
@@ -432,8 +426,8 @@ def create_validated_log_entry(
     handler: str,
     status: Literal["success", "failure"],
     latency_ms: float,
-    error_type: Optional[str] = None,
-    error_message: Optional[str] = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
 ) -> StructuredLogEntry:
     """Create a validated log entry with automatic timestamp generation.
 
@@ -484,13 +478,13 @@ def create_validated_log_entry(
 # Optional psutil import for memory tracking - gracefully degrade if unavailable
 _PSUTIL_AVAILABLE = False
 try:
-    import psutil
+    import psutil  # type: ignore[import-untyped]
 
     _PSUTIL_AVAILABLE = True
 except ImportError:
     psutil = None  # type: ignore[assignment]
-from .error_sanitizer import SanitizationLevel
-from .error_sanitizer import sanitize_error as _base_sanitize_error
+from .error_sanitizer import SanitizationLevel  # noqa: E402
+from .error_sanitizer import sanitize_error as _base_sanitize_error  # noqa: E402
 
 # === SECURITY VALIDATION FUNCTIONS ===
 
@@ -562,12 +556,10 @@ def _sanitize_error(error: Exception) -> str:
 
 
 # Context variables for correlation tracking
-correlation_id_var: ContextVar[Optional[str]] = ContextVar(
-    "correlation_id", default=None
-)
-request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
-operation_var: ContextVar[Optional[str]] = ContextVar("operation", default=None)
+correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+operation_var: ContextVar[str | None] = ContextVar("operation", default=None)
 
 logger = structlog.get_logger(__name__)
 
@@ -577,7 +569,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Default histogram buckets for latency measurements (in milliseconds)
-DEFAULT_LATENCY_BUCKETS: Tuple[float, ...] = (
+DEFAULT_LATENCY_BUCKETS: tuple[float, ...] = (
     1.0,
     5.0,
     10.0,
@@ -655,7 +647,7 @@ class Counter:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
+        label_names: list[str],
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -676,10 +668,10 @@ class Counter:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], CounterValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], CounterValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -749,16 +741,16 @@ class Counter:
             self._values.move_to_end(key)
             return self._values[key].get()
 
-    def get_all(self) -> Dict[Tuple[str, ...], int]:
+    def get_all(self) -> dict[tuple[str, ...], int]:
         """Get all counter values with their labels."""
         with self._lock:
             return {k: v.get() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -767,8 +759,8 @@ class Counter:
 class HistogramValue:
     """Thread-safe histogram value with buckets."""
 
-    buckets: Tuple[float, ...]
-    bucket_counts: List[int] = field(default_factory=list)
+    buckets: tuple[float, ...]
+    bucket_counts: list[int] = field(default_factory=list)
     sum_value: float = 0.0
     count: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -789,7 +781,7 @@ class HistogramValue:
             # Always increment +Inf bucket
             self.bucket_counts[-1] += 1
 
-    def get_snapshot(self) -> Dict[str, Union[float, int, List[int]]]:
+    def get_snapshot(self) -> dict[str, float | int | list[int] | list[float]]:
         """Get a snapshot of histogram values."""
         with self._lock:
             return {
@@ -834,8 +826,8 @@ class Histogram:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
-        buckets: Tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
+        label_names: list[str],
+        buckets: tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -880,10 +872,10 @@ class Histogram:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], HistogramValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], HistogramValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -943,7 +935,7 @@ class Histogram:
         # Safe to call outside lock - value_holder is our reference
         value_holder.observe(value)
 
-    def get(self, **labels: str) -> Dict[str, Union[float, int, List[int]]]:
+    def get(self, **labels: str) -> dict[str, float | int | list[int] | list[float]]:
         """Get histogram snapshot for given labels."""
         key = self._labels_to_key(labels)
         with self._lock:
@@ -953,16 +945,18 @@ class Histogram:
             self._values.move_to_end(key)
             return self._values[key].get_snapshot()
 
-    def get_all(self) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int]]]]:
+    def get_all(
+        self,
+    ) -> dict[tuple[str, ...], dict[str, float | int | list[int] | list[float]]]:
         """Get all histogram values with their labels."""
         with self._lock:
             return {k: v.get_snapshot() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -1021,7 +1015,7 @@ class Gauge:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
+        label_names: list[str],
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -1042,10 +1036,10 @@ class Gauge:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], GaugeValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], GaugeValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -1115,16 +1109,16 @@ class Gauge:
             self._values.move_to_end(key)
             return self._values[key].get()
 
-    def get_all(self) -> Dict[Tuple[str, ...], float]:
+    def get_all(self) -> dict[tuple[str, ...], float]:
         """Get all gauge values with their labels."""
         with self._lock:
             return {k: v.get() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -1153,7 +1147,7 @@ class MetricsRegistry:
         registry.memory_storage_latency_ms.observe(45.2, operation="store")
     """
 
-    _instance: Optional["MetricsRegistry"] = None
+    _instance: MetricsRegistry | None = None
     _class_lock = (
         threading.Lock()
     )  # Class-level lock for singleton creation/destruction
@@ -1233,7 +1227,7 @@ class MetricsRegistry:
         # Mark as initialized AFTER all metrics are created
         self._initialized = True
 
-    def get_all_metrics(self) -> Dict[str, Dict[str, object]]:
+    def get_all_metrics(self) -> dict[str, dict[str, object]]:
         """Get snapshot of all metrics for reporting.
 
         Thread-safety: This method acquires the instance lock to ensure a
@@ -1392,26 +1386,26 @@ class PerformanceMetrics:
     """Performance metrics for operations."""
 
     start_time: float
-    end_time: Optional[float] = None
-    duration: Optional[float] = None
-    memory_usage_start: Optional[float] = None
-    memory_usage_end: Optional[float] = None
-    memory_delta: Optional[float] = None
-    success: Optional[bool] = None
-    error_type: Optional[str] = None
+    end_time: float | None = None
+    duration: float | None = None
+    memory_usage_start: float | None = None
+    memory_usage_end: float | None = None
+    memory_delta: float | None = None
+    success: bool | None = None
+    error_type: str | None = None
 
 
 class CorrelationContext(BaseModel):
     """Context information for correlation tracking."""
 
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    request_id: Optional[str] = Field(default=None)
-    user_id: Optional[str] = Field(default=None)
-    operation: Optional[str] = Field(default=None)
-    parent_correlation_id: Optional[str] = Field(default=None)
+    request_id: str | None = Field(default=None)
+    user_id: str | None = Field(default=None)
+    operation: str | None = Field(default=None)
+    parent_correlation_id: str | None = Field(default=None)
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ObservabilityManager:
@@ -1455,12 +1449,12 @@ class ObservabilityManager:
     @asynccontextmanager
     async def correlation_context(
         self,
-        correlation_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        operation: Optional[str] = None,
+        correlation_id: str | None = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        operation: str | None = None,
         trace_level: TraceLevel = TraceLevel.INFO,
-        **metadata,
+        **metadata: MetadataValue,
     ) -> AsyncGenerator[CorrelationContext, None]:
         """
         Async context manager for correlation tracking.
@@ -1477,10 +1471,13 @@ class ObservabilityManager:
         if correlation_id and not validate_correlation_id(correlation_id):
             raise ValueError(f"Invalid correlation ID format: {correlation_id}")
 
-        # Sanitize metadata values
-        sanitized_metadata = {
-            key: sanitize_metadata_value(value) for key, value in metadata.items()
-        }
+        # Sanitize metadata values and convert to ModelMetadata
+        metadata_pairs = [
+            ModelKeyValuePair(key=key, value=str(sanitize_metadata_value(value)))
+            for key, value in metadata.items()
+            if sanitize_metadata_value(value) is not None
+        ]
+        sanitized_metadata = ModelMetadata(pairs=metadata_pairs)
 
         # Create context
         context = CorrelationContext(
@@ -1539,7 +1536,7 @@ class ObservabilityManager:
         operation_name: str,
         operation_type: OperationType,
         trace_performance: bool = True,
-        **additional_context,
+        **additional_context: MetadataValue,
     ) -> AsyncGenerator[str, None]:
         """
         Async context manager for operation tracing.
@@ -1554,7 +1551,7 @@ class ObservabilityManager:
         correlation_id = correlation_id_var.get()
 
         # Initialize performance metrics if requested
-        start_memory: Optional[float] = None
+        start_memory: float | None = None
         if trace_performance:
             # Only track memory if psutil is available
             if _PSUTIL_AVAILABLE and psutil is not None:
@@ -1640,19 +1637,21 @@ class ObservabilityManager:
             raise
         finally:
             # Complete performance metrics if requested (thread-safe)
-            metrics = None
+            final_metrics: PerformanceMetrics | None = None
             if trace_performance:
                 # Get trace reference under lock
                 with self._traces_lock:
                     if trace_id in self._active_traces:
-                        metrics = self._active_traces[trace_id]
+                        final_metrics = self._active_traces[trace_id]
 
                 # Process metrics outside lock (I/O operations)
-                if metrics is not None:
-                    metrics.end_time = time.time()
-                    metrics.duration = metrics.end_time - metrics.start_time
+                if final_metrics is not None:
+                    final_metrics.end_time = time.time()
+                    final_metrics.duration = (
+                        final_metrics.end_time - final_metrics.start_time
+                    )
 
-                    if metrics.memory_usage_start is not None:
+                    if final_metrics.memory_usage_start is not None:
                         # Only track memory delta if psutil is available
                         if _PSUTIL_AVAILABLE and psutil is not None:
                             try:
@@ -1660,9 +1659,9 @@ class ObservabilityManager:
                                 end_memory = (
                                     process.memory_info().rss / 1024 / 1024
                                 )  # MB
-                                metrics.memory_usage_end = end_memory
-                                metrics.memory_delta = (
-                                    end_memory - metrics.memory_usage_start
+                                final_metrics.memory_usage_end = end_memory
+                                final_metrics.memory_delta = (
+                                    end_memory - final_metrics.memory_usage_start
                                 )
                             except (
                                 psutil.NoSuchProcess,
@@ -1691,10 +1690,10 @@ class ObservabilityManager:
                         correlation_id=correlation_id,
                         operation_name=operation_name,
                         operation_type=operation_type.value,
-                        duration=metrics.duration,
-                        memory_delta=metrics.memory_delta,
-                        success=metrics.success,
-                        error_type=metrics.error_type,
+                        duration=final_metrics.duration,
+                        memory_delta=final_metrics.memory_delta,
+                        success=final_metrics.success,
+                        error_type=final_metrics.error_type,
                         **additional_context,
                     )
 
@@ -1703,7 +1702,7 @@ class ObservabilityManager:
                         if trace_id in self._active_traces:
                             del self._active_traces[trace_id]
 
-    def get_current_context(self) -> Dict[str, Optional[str]]:
+    def get_current_context(self) -> dict[str, str | None]:
         """Get current correlation context."""
         return {
             "correlation_id": correlation_id_var.get(),
@@ -1712,12 +1711,14 @@ class ObservabilityManager:
             "operation": operation_var.get(),
         }
 
-    def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
+    def get_performance_metrics(self) -> dict[str, PerformanceMetrics]:
         """Get current performance metrics for active traces (thread-safe)."""
         with self._traces_lock:
             return dict(self._active_traces)
 
-    def log_with_context(self, level: str, message: str, **additional_fields):
+    def log_with_context(
+        self, level: str, message: str, **additional_fields: MetadataValue
+    ) -> None:
         """Log a message with current correlation context."""
         context = self.get_current_context()
 
@@ -1732,18 +1733,20 @@ observability_manager = ObservabilityManager()
 # Convenience functions for common patterns
 @asynccontextmanager
 async def correlation_context(
-    correlation_id: Optional[str] = None,
-    request_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    operation: Optional[str] = None,
-    **metadata,
-):
+    correlation_id: str | None = None,
+    request_id: str | None = None,
+    user_id: str | None = None,
+    operation: str | None = None,
+    trace_level: TraceLevel = TraceLevel.INFO,
+    **metadata: MetadataValue,
+) -> AsyncGenerator[CorrelationContext, None]:
     """Convenience function for correlation context management."""
     async with observability_manager.correlation_context(
         correlation_id=correlation_id,
         request_id=request_id,
         user_id=user_id,
         operation=operation,
+        trace_level=trace_level,
         **metadata,
     ) as ctx:
         yield ctx
@@ -1751,8 +1754,11 @@ async def correlation_context(
 
 @asynccontextmanager
 async def trace_operation(
-    operation_name: str, operation_type: OperationType | str, **context
-):
+    operation_name: str,
+    operation_type: OperationType | str,
+    trace_performance: bool = True,
+    **context: MetadataValue,
+) -> AsyncGenerator[str, None]:
     """Convenience function for operation tracing."""
     if isinstance(operation_type, str):
         # Try to convert string to OperationType
@@ -1763,22 +1769,25 @@ async def trace_operation(
             operation_type = OperationType.EXTERNAL_API
 
     async with observability_manager.trace_operation(
-        operation_name=operation_name, operation_type=operation_type, **context
+        operation_name=operation_name,
+        operation_type=operation_type,
+        trace_performance=trace_performance,
+        **context,
     ) as trace_id:
         yield trace_id
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get current correlation ID from context."""
     return correlation_id_var.get()
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     """Get current request ID from context."""
     return request_id_var.get()
 
 
-def log_with_correlation(level: str, message: str, **fields):
+def log_with_correlation(level: str, message: str, **fields: MetadataValue) -> None:
     """Log a message with correlation context."""
     observability_manager.log_with_context(level, message, **fields)
 
@@ -1824,7 +1833,7 @@ def inject_correlation_context_async(func: F) -> F:
             kwargs_keys=list(kwargs.keys()),
         )
         try:
-            result = await func(*args, **kwargs)
+            result = await func(*args, **kwargs)  # type: ignore[misc]
             logger.info(
                 f"async_function_completed_{func.__name__}", **context, success=True
             )
@@ -1858,14 +1867,14 @@ class HandlerMetrics:
     handler: str
     status: Literal["success", "failure"]
     latency_ms: float
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 def _get_safe_content_metadata(
-    content: Optional[str],
+    content: str | None,
     field_name: str = "content",
-) -> Dict[str, Union[str, int, bool]]:
+) -> dict[str, str | int | bool]:
     """Extract safe metadata from content without logging PII.
 
     Instead of logging raw content, we log:
@@ -1977,7 +1986,7 @@ class HandlerObservabilityWrapper:
             )
 
         self.handler_name = handler_name
-        self._custom_registry = registry
+        self._custom_registry: Optional[MetricsRegistry] = registry
         self._validate_log_schema = validate_log_schema
         self._logger = structlog.get_logger(f"omnimemory.handler.{handler_name}")
 
@@ -1995,8 +2004,8 @@ class HandlerObservabilityWrapper:
     async def observe_operation(
         self,
         operation: str,
-        correlation_id: Optional[str] = None,
-    ) -> AsyncGenerator[Dict[str, str], None]:
+        correlation_id: str | None = None,
+    ) -> AsyncGenerator[dict[str, str], None]:
         """Context manager for observing handler operations.
 
         Implements the core observability pattern:
@@ -2035,8 +2044,8 @@ class HandlerObservabilityWrapper:
         # Start timing
         start_time = time.perf_counter()
         status: Literal["success", "failure"] = "success"
-        error_type: Optional[str] = None
-        error_message: Optional[str] = None
+        error_type: str | None = None
+        error_message: str | None = None
 
         try:
             yield ctx
@@ -2166,7 +2175,7 @@ class HandlerObservabilityWrapper:
 
         # Build log data with ALL required fields (schema compliance)
         # Note: All required fields must be non-None strings/floats
-        log_data: Dict[str, Union[str, float]] = {
+        log_data: dict[str, str | float] = {
             "correlation_id": metrics.correlation_id,  # Required: str
             "operation": metrics.operation,  # Required: str
             "handler": metrics.handler,  # Required: str
@@ -2212,7 +2221,7 @@ class HandlerObservabilityWrapper:
         """Explicitly mark handler as unhealthy."""
         self.registry.handler_health_status.set(0.0, handler=self.handler_name)
 
-    def get_handler_stats(self) -> Dict[str, object]:
+    def get_handler_stats(self) -> dict[str, object]:
         """Get statistics for this handler.
 
         Returns:

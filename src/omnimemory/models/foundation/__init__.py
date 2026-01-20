@@ -6,9 +6,6 @@ error handling, migration progress tracking, and system-level operations.
 """
 
 from ...enums.enum_error_code import OmniMemoryErrorCode
-
-# Backward compatibility alias
-EnumErrorCode = OmniMemoryErrorCode
 from ...enums.enum_severity import EnumSeverity
 from .model_audit_metadata import (
     AuditEventDetails,
@@ -68,9 +65,13 @@ from .model_migration_progress import (
     MigrationStatus,
 )
 from .model_notes import ModelNote, ModelNotesCollection
-from .model_progress_summary import ProgressSummaryResponse
+from .model_progress_summary import (
+    ModelProgressPerformanceMetrics,
+    ProgressSummaryResponse,
+)
 from .model_semver import ModelSemVer
 from .model_success_metrics import (
+    ModelConfidenceInterval,
     ModelConfidenceScore,
     ModelQualityMetrics,
     ModelSuccessRate,
@@ -93,6 +94,9 @@ from .model_typed_collections import (
     convert_list_of_dicts_to_structured_data,
     convert_list_to_string_list,
 )
+
+# Backward compatibility alias
+EnumErrorCode = OmniMemoryErrorCode
 
 __all__ = [
     "EnumErrorCode",
@@ -138,6 +142,7 @@ __all__ = [
     # New foundation models
     "ModelSemVer",
     "ModelSuccessRate",
+    "ModelConfidenceInterval",
     "ModelConfidenceScore",
     "ModelQualityMetrics",
     "ModelNote",
@@ -157,6 +162,7 @@ __all__ = [
     "ConnectionMetadata",
     "ConnectionPoolStats",
     "SemaphoreMetrics",
+    "ModelProgressPerformanceMetrics",
     "ProgressSummaryResponse",
     # Contract versioning support
     "ModelContractVersion",

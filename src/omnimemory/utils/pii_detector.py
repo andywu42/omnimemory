@@ -16,7 +16,6 @@ __all__ = [
 
 import re
 from enum import Enum
-from typing import Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +30,7 @@ class PIIType(str, Enum):
     - EMAIL: Regex-based email detection
     - PHONE: US/International phone number patterns
     - SSN: Social Security Number patterns with validation
-    - CREDIT_CARD: Major card formats (Visa, MC, Amex, Discover)
+    - CREDIT_CARD: Major card formats (Visa, Mastercard, Amex)
     - IP_ADDRESS: IPv4 and IPv6 patterns
     - API_KEY: Common API key formats (OpenAI, GitHub, Google, AWS)
     - PASSWORD_HASH: Password field detection
@@ -69,11 +68,11 @@ class PIIDetectionResult(BaseModel):
     """Result of PII detection scan."""
 
     has_pii: bool = Field(description="Whether any PII was detected")
-    matches: List[PIIMatch] = Field(
+    matches: list[PIIMatch] = Field(
         default_factory=list, description="List of PII matches found"
     )
     sanitized_content: str = Field(description="Content with PII masked/removed")
-    pii_types_detected: Set[PIIType] = Field(
+    pii_types_detected: set[PIIType] = Field(
         default_factory=set, description="Types of PII found"
     )
     scan_duration_ms: float = Field(
@@ -134,11 +133,25 @@ class PIIPatternConfig(BaseModel):
 class PIIDetector:
     """Advanced PII detection with configurable patterns and sensitivity levels."""
 
-    def __init__(self, config: Optional[PIIDetectorConfig] = None):
+    def __init__(self, config: PIIDetectorConfig | None = None):
         """Initialize PII detector with configurable settings."""
         self.config = config or PIIDetectorConfig()
         self._patterns = self._initialize_patterns()
+        self._compiled_patterns = self._compile_patterns()
         self._common_names = self._load_common_names()
+
+    def _compile_patterns(self) -> dict[PIIType, list[re.Pattern[str]]]:
+        """Pre-compile regex patterns for better performance.
+
+        Compiling patterns once during initialization avoids repeated
+        compilation overhead in detect_pii().
+        """
+        compiled: dict[PIIType, list[re.Pattern[str]]] = {}
+        for pii_type, pattern_configs in self._patterns.items():
+            compiled[pii_type] = [
+                re.compile(config.pattern, re.IGNORECASE) for config in pattern_configs
+            ]
+        return compiled
 
     def _build_ssn_validation_pattern(self) -> str:
         """
@@ -166,9 +179,13 @@ class PIIDetector:
         serial_code = r"\d{4}"
 
         # Combine with word boundaries
-        return rf"\b{invalid_areas}{area_code}{invalid_group}{group_code}{invalid_serial}{serial_code}\b"
+        pattern = (
+            rf"\b{invalid_areas}{area_code}{invalid_group}"
+            rf"{group_code}{invalid_serial}{serial_code}\b"
+        )
+        return pattern
 
-    def _initialize_patterns(self) -> Dict[PIIType, List[PIIPatternConfig]]:
+    def _initialize_patterns(self) -> dict[PIIType, list[PIIPatternConfig]]:
         """Initialize regex patterns for different PII types using configuration.
 
         Note: The following PIIType values do NOT have patterns implemented:
@@ -206,8 +223,8 @@ class PIIDetector:
                     mask_template="***-**-****",
                 ),
                 PIIPatternConfig(
-                    # Improved SSN validation: excludes invalid area codes and sequences
-                    # Broken down for readability: (?!invalid_areas)AAA(?!00)GG(?!0000)SSSS
+                    # Improved SSN validation: excludes invalid area codes
+                    # Format: (?!invalid_areas)AAA(?!00)GG(?!0000)SSSS
                     pattern=self._build_ssn_validation_pattern(),
                     confidence=self.config.reduced_confidence,
                     mask_template="*********",
@@ -215,19 +232,24 @@ class PIIDetector:
             ],
             PIIType.CREDIT_CARD: [
                 PIIPatternConfig(
-                    pattern=r"\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b|\b6011\d{12}\b",
+                    # Implemented: Visa (4xxx), Mastercard (51-55xx), Amex (34xx/37xx)
+                    # NOT implemented: Discover (starts with 6011, 65, or 644-649)
+                    pattern=r"\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b",
                     confidence=self.config.medium_confidence,
                     mask_template="****-****-****-****",
                 )
             ],
             PIIType.IP_ADDRESS: [
                 PIIPatternConfig(
+                    # IPv4 address pattern (e.g., 192.168.1.1)
                     pattern=r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
                     confidence=self.config.medium_confidence,
                     mask_template="***.***.***.***",
                 ),
                 PIIPatternConfig(
-                    pattern=r"\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){7}\b",  # IPv6
+                    # IPv6 full-form only (e.g., 2001:0db8:85a3::8a2e:0370:7334)
+                    # Does not match abbreviated forms (e.g., ::1, fe80::1)
+                    pattern=r"\b[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){7}\b",
                     confidence=self.config.medium_confidence,
                     mask_template="****:****:****:****",
                 ),
@@ -259,7 +281,10 @@ class PIIDetector:
                     mask_template="AIza***REDACTED***",
                 ),
                 PIIPatternConfig(
-                    pattern=r"AWS[A-Z0-9]{16,}",  # AWS access keys
+                    # AWS access key IDs - broad pattern may have false positives
+                    # Real keys use prefixes: AKIA (IAM), ASIA (STS), AIDA (user ID)
+                    # Consider stricter pattern: r"A[SK]IA[A-Z0-9]{16}" for fewer FPs
+                    pattern=r"AWS[A-Z0-9]{16,}",
                     confidence=self.config.medium_high_confidence,
                     mask_template="AWS***REDACTED***",
                 ),
@@ -273,7 +298,7 @@ class PIIDetector:
             ],
         }
 
-    def _load_common_names(self) -> Set[str]:
+    def _load_common_names(self) -> set[str]:
         """Load common first and last names for person name detection.
 
         TODO: This name database is loaded but not actively used for detection.
@@ -323,26 +348,27 @@ class PIIDetector:
 
         # Check content length against configuration limit
         if len(content) > self.config.max_text_length:
-            raise ValueError(
-                f"Content length {len(content)} exceeds maximum allowed {self.config.max_text_length}"
-            )
+            max_len = self.config.max_text_length
+            msg = f"Content length {len(content)} exceeds max {max_len}"
+            raise ValueError(msg)
 
-        matches: List[PIIMatch] = []
-        pii_types_detected: Set[PIIType] = set()
+        matches: list[PIIMatch] = []
+        pii_types_detected: set[PIIType] = set()
         sanitized_content = content
 
-        # Adjust confidence thresholds based on sensitivity using configuration
+        # Adjust confidence thresholds based on sensitivity
         confidence_threshold = {
-            "low": self.config.medium_high_confidence,  # 0.95 - stricter for low sensitivity
+            "low": self.config.medium_high_confidence,  # 0.95 - stricter
             "medium": self.config.reduced_confidence,  # 0.75 - balanced
-            "high": self.config.low_confidence,  # 0.60 - more permissive for high sensitivity
+            "high": self.config.low_confidence,  # 0.60 - permissive
         }.get(sensitivity_level, self.config.reduced_confidence)
 
-        # Scan for each PII type
-        for pii_type, patterns in self._patterns.items():
+        # Scan for each PII type using pre-compiled patterns
+        for pii_type, pattern_configs in self._patterns.items():
+            compiled_patterns = self._compiled_patterns[pii_type]
             matches_for_type = 0
-            for pattern_config in patterns:
-                pattern = pattern_config.pattern
+            for idx, pattern_config in enumerate(pattern_configs):
+                compiled_pattern = compiled_patterns[idx]
                 base_confidence = pattern_config.confidence
                 mask_template = pattern_config.mask_template
 
@@ -350,8 +376,8 @@ class PIIDetector:
                 if base_confidence < confidence_threshold:
                     continue
 
-                # Find all matches with per-type limit
-                for match in re.finditer(pattern, content, re.IGNORECASE):
+                # Find all matches with per-type limit using pre-compiled pattern
+                for match in compiled_pattern.finditer(content):
                     if matches_for_type >= self.config.max_matches_per_type:
                         break  # Prevent excessive matches for any single PII type
 
@@ -386,15 +412,15 @@ class PIIDetector:
             scan_duration_ms=scan_duration_ms,
         )
 
-    def _deduplicate_matches(self, matches: List[PIIMatch]) -> List[PIIMatch]:
-        """Remove overlapping or duplicate matches, keeping the highest confidence ones."""
+    def _deduplicate_matches(self, matches: list[PIIMatch]) -> list[PIIMatch]:
+        """Remove overlapping/duplicate matches, keep highest confidence."""
         if not matches:
             return matches
 
         # Sort by start position and confidence
         matches.sort(key=lambda x: (x.start_index, -x.confidence))
 
-        deduplicated: List[PIIMatch] = []
+        deduplicated: list[PIIMatch] = []
         for match in matches:
             # Check if this match overlaps with any existing match
             overlap = False
@@ -411,7 +437,7 @@ class PIIDetector:
 
         return deduplicated
 
-    def _sanitize_content(self, content: str, matches: List[PIIMatch]) -> str:
+    def _sanitize_content(self, content: str, matches: list[PIIMatch]) -> str:
         """Replace PII in content with masked values."""
         # Sort matches by start position in reverse order for proper replacement
         sorted_matches = sorted(matches, key=lambda x: x.start_index, reverse=True)

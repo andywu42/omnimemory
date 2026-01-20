@@ -6,15 +6,83 @@ including structured error codes, exception chaining, and monadic error patterns
 that integrate with NodeResult for consistent error handling across the system.
 """
 
+import re
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import TypedDict
 from uuid import UUID
 
 # Type alias for field values in validation errors
 # Supports common field types that can fail validation
-FieldValueType = Union[
-    str, int, float, bool, bytes, list[object], dict[str, object], None
-]
+FieldValueType = (
+    str | int | float | bool | bytes | list[object] | dict[str, object] | None
+)
+
+# Patterns for detecting sensitive data that should be redacted
+_SENSITIVE_FIELD_PATTERNS = re.compile(
+    r"(password|secret|token|key|credential|auth|api.?key|private)",
+    re.IGNORECASE,
+)
+
+# Pattern to detect PostgresDsn or connection string with embedded password
+_CONNECTION_STRING_PASSWORD_PATTERN = re.compile(
+    r"(://[^:]+:)([^@]+)(@)",  # Matches user:password@ in connection strings
+    re.IGNORECASE,
+)
+
+# Redaction placeholder
+_REDACTED = "[REDACTED]"
+
+
+def _is_sensitive_field(field_name: str | None) -> bool:
+    """Check if a field name indicates sensitive data."""
+    if not field_name:
+        return False
+    return bool(_SENSITIVE_FIELD_PATTERNS.search(field_name))
+
+
+def _redact_connection_string(value: str) -> str:
+    """Redact password from connection strings (e.g., PostgresDsn)."""
+    return _CONNECTION_STRING_PASSWORD_PATTERN.sub(rf"\1{_REDACTED}\3", value)
+
+
+def _sanitize_field_value(field_name: str | None, field_value: FieldValueType) -> str:
+    """
+    Sanitize a field value for safe inclusion in error messages.
+
+    Redacts sensitive data including:
+    - Values from fields with sensitive names (password, secret, token, etc.)
+    - Passwords embedded in connection strings (PostgresDsn)
+    - SecretStr values (detected by type name check)
+
+    Args:
+        field_name: Name of the field (used to detect sensitive fields)
+        field_value: The value to sanitize
+
+    Returns:
+        Sanitized string representation safe for error messages
+    """
+    if field_value is None:
+        return "None"
+
+    # Check if field name indicates sensitive data
+    if _is_sensitive_field(field_name):
+        return _REDACTED
+
+    # Convert to string for inspection
+    value_str = str(field_value)
+
+    # Check for SecretStr type (from Pydantic) - these show as '**********'
+    # or have SecretStr in their type name
+    type_name = type(field_value).__name__
+    if "Secret" in type_name:
+        return _REDACTED
+
+    # Check for connection strings with embedded passwords
+    if "://" in value_str and "@" in value_str:
+        return _redact_connection_string(value_str)
+
+    return value_str
+
 
 # Use local compatibility stub until omnibase_core provides OnexError
 try:
@@ -22,9 +90,9 @@ try:
 except (ImportError, ModuleNotFoundError):
     from ..compat.onex_error import OnexError as BaseOnexError
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field  # noqa: E402
 
-from ..models.foundation import ModelMetadata
+from ..models.foundation import ModelMetadata  # noqa: E402
 
 # === ERROR CODES ===
 
@@ -116,7 +184,7 @@ class ErrorCategoryInfo(BaseModel):
     default_backoff_factor: float = Field(2.0, description="Default backoff multiplier")
 
 
-ERROR_CATEGORIES: Dict[str, ErrorCategoryInfo] = {
+ERROR_CATEGORIES: dict[str, ErrorCategoryInfo] = {
     "VALIDATION": ErrorCategoryInfo(
         prefix="ONEX_OMNIMEMORY_VAL",
         description="Input validation errors",
@@ -162,7 +230,7 @@ ERROR_CATEGORIES: Dict[str, ErrorCategoryInfo] = {
 }
 
 
-def get_error_category(error_code: OmniMemoryErrorCode) -> Optional[ErrorCategoryInfo]:
+def get_error_category(error_code: OmniMemoryErrorCode) -> ErrorCategoryInfo | None:
     """Get error category information for an error code."""
     for category_name, category_info in ERROR_CATEGORIES.items():
         if error_code.value.startswith(category_info.prefix):
@@ -185,12 +253,12 @@ class OmniMemoryError(BaseOnexError):
         self,
         error_code: OmniMemoryErrorCode,
         message: str,
-        context: Optional[ModelMetadata] = None,
-        correlation_id: Optional[UUID] = None,
-        cause: Optional[Exception] = None,
-        recovery_hint: Optional[str] = None,
-        retry_after: Optional[int] = None,
-        **kwargs,
+        context: ModelMetadata | dict[str, object] | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
+        recovery_hint: str | None = None,
+        retry_after: int | None = None,
+        **kwargs: object,
     ):
         """
         Initialize OmniMemory error.
@@ -198,7 +266,7 @@ class OmniMemoryError(BaseOnexError):
         Args:
             error_code: Specific error code from OmniMemoryErrorCode
             message: Human-readable error message
-            context: Additional error context information
+            context: Additional error context information (ModelMetadata or dict)
             correlation_id: Request correlation ID for tracing
             cause: Underlying exception that caused this error
             recovery_hint: Suggestion for error recovery
@@ -209,7 +277,13 @@ class OmniMemoryError(BaseOnexError):
         category_info = get_error_category(error_code)
 
         # Enhance context with category information
-        enhanced_context = context or {}
+        # Create a copy to avoid mutating caller-provided context
+        if context is None:
+            enhanced_context: dict[str, object] = {}
+        elif isinstance(context, ModelMetadata):
+            enhanced_context = dict(context.to_dict())
+        else:
+            enhanced_context = dict(context)
         if category_info:
             enhanced_context.update(
                 {
@@ -240,7 +314,7 @@ class OmniMemoryError(BaseOnexError):
         self.category_info = category_info
         self.recovery_hint = recovery_hint
         self.retry_after = retry_after
-        self.cause = cause
+        self.cause: BaseException | None = cause
 
         # Chain the underlying cause if provided
         if cause:
@@ -258,9 +332,9 @@ class OmniMemoryError(BaseOnexError):
         """Get suggested backoff factor for retries."""
         return self.category_info.default_backoff_factor if self.category_info else 1.0
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, object]:
         """Convert error to dictionary for serialization."""
-        base_dict = {
+        base_dict: dict[str, object] = {
             "error_code": self.omnimemory_error_code.value,
             "message": self.message,
             "context": self.context,
@@ -289,10 +363,11 @@ class ValidationError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        field_name: Optional[str] = None,
-        field_value: Optional[FieldValueType] = None,
-        validation_rule: Optional[str] = None,
-        **kwargs,
+        field_name: str | None = None,
+        field_value: FieldValueType | None = None,
+        validation_rule: str | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific validation error code
         error_code = OmniMemoryErrorCode.INVALID_INPUT
@@ -308,20 +383,23 @@ class ValidationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.VALUE_OUT_OF_RANGE
 
         # Build context with validation details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if field_name:
             context["field_name"] = field_name
         if field_value is not None:
-            context["field_value"] = str(field_value)
+            # Sanitize field value to prevent secret/password leakage
+            context["field_value"] = _sanitize_field_value(field_name, field_value)
         if validation_rule:
             context["validation_rule"] = validation_rule
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = (
-            "Review and correct the input data according to the schema requirements"
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Review and correct input data per schema requirements",
         )
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
 
 
 class StorageError(OmniMemoryError):
@@ -330,9 +408,10 @@ class StorageError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        storage_system: Optional[str] = None,
-        operation: Optional[str] = None,
-        **kwargs,
+        storage_system: str | None = None,
+        operation: str | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific storage error code
         error_code = OmniMemoryErrorCode.STORAGE_UNAVAILABLE
@@ -354,19 +433,21 @@ class StorageError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.TRANSACTION_FAILED
 
         # Build context with storage details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if storage_system:
             context["storage_system"] = storage_system
         if operation:
             context["operation"] = operation
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = (
-            "Check storage system health and retry with exponential backoff"
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check storage health and retry with backoff",
+            retry_after=5,  # Suggest 5 second retry delay
         )
-        kwargs["retry_after"] = 5  # Suggest 5 second retry delay
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
 
 
 class RetrievalError(OmniMemoryError):
@@ -375,9 +456,10 @@ class RetrievalError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        memory_id: Optional[UUID] = None,
-        query: Optional[str] = None,
-        **kwargs,
+        memory_id: UUID | None = None,
+        query: str | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific retrieval error code
         error_code = OmniMemoryErrorCode.SEARCH_FAILED
@@ -401,16 +483,20 @@ class RetrievalError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.FILTER_INVALID
 
         # Build context with retrieval details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if memory_id:
             context["memory_id"] = str(memory_id)
         if query:
             context["query"] = query
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Verify search parameters and check index health"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Verify search parameters and check index health",
+        )
 
 
 class ProcessingError(OmniMemoryError):
@@ -419,9 +505,10 @@ class ProcessingError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        processing_stage: Optional[str] = None,
-        model_name: Optional[str] = None,
-        **kwargs,
+        processing_stage: str | None = None,
+        model_name: str | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific processing error code
         error_code = OmniMemoryErrorCode.PROCESSING_FAILED
@@ -445,16 +532,20 @@ class ProcessingError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.COMPUTATION_TIMEOUT
 
         # Build context with processing details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if processing_stage:
             context["processing_stage"] = processing_stage
         if model_name:
             context["model_name"] = model_name
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Check model availability and processing resources"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check model availability and processing resources",
+        )
 
 
 class CoordinationError(OmniMemoryError):
@@ -463,9 +554,10 @@ class CoordinationError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        workflow_id: Optional[UUID] = None,
-        agent_ids: Optional[List[UUID]] = None,
-        **kwargs,
+        workflow_id: UUID | None = None,
+        agent_ids: list[UUID] | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific coordination error code
         error_code = OmniMemoryErrorCode.WORKFLOW_FAILED
@@ -489,16 +581,20 @@ class CoordinationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.ORCHESTRATION_FAILED
 
         # Build context with coordination details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if workflow_id:
             context["workflow_id"] = str(workflow_id)
         if agent_ids:
             context["agent_ids"] = [str(aid) for aid in agent_ids]
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Check agent availability and retry coordination"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check agent availability and retry coordination",
+        )
 
 
 class SystemError(OmniMemoryError):
@@ -507,8 +603,9 @@ class SystemError(OmniMemoryError):
     def __init__(
         self,
         message: str,
-        system_component: Optional[str] = None,
-        **kwargs,
+        system_component: str | None = None,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific system error code
         error_code = OmniMemoryErrorCode.INTERNAL_ERROR
@@ -532,24 +629,31 @@ class SystemError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.RATE_LIMIT_EXCEEDED
 
         # Build context with system details
-        context = kwargs.get("context", {})
+        context: dict[str, object] = {}
         if system_component:
             context["system_component"] = system_component
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Contact system administrator for system-level issues"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Contact system administrator for system-level issues",
+        )
 
 
 # === ERROR UTILITIES ===
 
 
 def wrap_exception(
-    exception: Exception,
+    exception: BaseException,
     error_code: OmniMemoryErrorCode,
-    message: Optional[str] = None,
-    **kwargs,
+    message: str | None = None,
+    context: ModelMetadata | dict[str, object] | None = None,
+    correlation_id: UUID | None = None,
+    recovery_hint: str | None = None,
+    retry_after: int | None = None,
 ) -> OmniMemoryError:
     """
     Wrap a generic exception in an OmniMemoryError.
@@ -558,7 +662,10 @@ def wrap_exception(
         exception: The original exception to wrap
         error_code: The OmniMemory error code to use
         message: Optional custom message (uses exception message if not provided)
-        **kwargs: Additional arguments for OmniMemoryError constructor
+        context: Optional error context information
+        correlation_id: Optional request correlation ID
+        recovery_hint: Optional suggestion for error recovery
+        retry_after: Optional suggested retry delay in seconds
 
     Returns:
         OmniMemoryError wrapping the original exception
@@ -567,14 +674,17 @@ def wrap_exception(
     return OmniMemoryError(
         error_code=error_code,
         message=error_message,
+        context=context,
+        correlation_id=correlation_id,
         cause=exception,
-        **kwargs,
+        recovery_hint=recovery_hint,
+        retry_after=retry_after,
     )
 
 
 def chain_errors(
     primary_error: OmniMemoryError,
-    secondary_error: Exception,
+    secondary_error: BaseException,
 ) -> OmniMemoryError:
     """
     Chain a secondary error to a primary OmniMemoryError.
@@ -591,7 +701,7 @@ def chain_errors(
         primary_error.__cause__ = secondary_error
     else:
         # If there's already a cause, chain it
-        current = primary_error.cause
+        current: BaseException = primary_error.cause
         while hasattr(current, "__cause__") and current.__cause__ is not None:
             current = current.__cause__
         current.__cause__ = secondary_error
@@ -599,7 +709,18 @@ def chain_errors(
     return primary_error
 
 
-def create_error_summary(errors: list[OmniMemoryError]) -> dict[str, str]:
+class ErrorSummary(TypedDict, total=False):
+    """Type definition for error summary returned by create_error_summary."""
+
+    total_errors: int
+    recoverable_errors: int
+    non_recoverable_errors: int
+    error_counts_by_code: dict[str, int]
+    error_counts_by_category: dict[str, int]
+    recovery_rate: float
+
+
+def create_error_summary(errors: list[OmniMemoryError]) -> ErrorSummary:
     """
     Create a summary of multiple errors for reporting.
 
@@ -607,13 +728,20 @@ def create_error_summary(errors: list[OmniMemoryError]) -> dict[str, str]:
         errors: List of OmniMemoryError instances
 
     Returns:
-        Dictionary containing error summary statistics
+        ErrorSummary containing error summary statistics with all fields populated
     """
     if not errors:
-        return {"total_errors": 0}
+        return {
+            "total_errors": 0,
+            "recoverable_errors": 0,
+            "non_recoverable_errors": 0,
+            "error_counts_by_code": {},
+            "error_counts_by_category": {},
+            "recovery_rate": 0.0,
+        }
 
-    error_counts = {}
-    category_counts = {}
+    error_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
     recoverable_count = 0
 
     for error in errors:

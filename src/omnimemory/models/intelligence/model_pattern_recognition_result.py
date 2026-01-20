@@ -5,11 +5,13 @@ Pattern recognition result model following ONEX standards.
 from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelPatternRecognitionResult(BaseModel):
     """Pattern recognition result following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Result identification
     result_id: UUID = Field(

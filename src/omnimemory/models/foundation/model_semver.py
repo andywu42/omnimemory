@@ -5,11 +5,13 @@ Semantic version model following ONEX standards.
 import re
 from typing import Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModelSemVer(BaseModel):
     """Semantic version model following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     major: int = Field(
         ge=0,
@@ -132,7 +134,7 @@ class ModelSemVer(BaseModel):
 
     def increment_major(self) -> Self:
         """Create new version with incremented major version."""
-        return ModelSemVer(
+        return type(self)(
             major=self.major + 1,
             minor=0,
             patch=0,
@@ -140,7 +142,7 @@ class ModelSemVer(BaseModel):
 
     def increment_minor(self) -> Self:
         """Create new version with incremented minor version."""
-        return ModelSemVer(
+        return type(self)(
             major=self.major,
             minor=self.minor + 1,
             patch=0,
@@ -148,7 +150,7 @@ class ModelSemVer(BaseModel):
 
     def increment_patch(self) -> Self:
         """Create new version with incremented patch version."""
-        return ModelSemVer(
+        return type(self)(
             major=self.major,
             minor=self.minor,
             patch=self.patch + 1,

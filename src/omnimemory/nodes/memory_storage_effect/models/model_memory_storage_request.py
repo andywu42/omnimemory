@@ -22,9 +22,8 @@ Example:
 
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
-
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = ["ModelMemoryStorageRequest"]
 

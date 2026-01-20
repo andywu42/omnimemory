@@ -3,21 +3,22 @@ Tags model following ONEX standards.
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Set
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModelTag(BaseModel):
     """Individual tag model with metadata."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(
         description="Tag name",
         min_length=1,
         max_length=100,
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         description="Optional tag category for organization",
         max_length=50,
@@ -26,7 +27,7 @@ class ModelTag(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the tag was created",
     )
-    created_by: Optional[UUID] = Field(
+    created_by: UUID | None = Field(
         default=None,
         description="User who created the tag",
     )
@@ -39,7 +40,7 @@ class ModelTag(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def validate_tag_name(cls, v):
+    def validate_tag_name(cls, v: str) -> str:
         """Validate tag name format."""
         # Remove whitespace and convert to lowercase
         v = v.strip().lower()
@@ -58,6 +59,8 @@ class ModelTag(BaseModel):
 class ModelTagCollection(BaseModel):
     """Collection of tags with validation and management."""
 
+    model_config = ConfigDict(extra="forbid")
+
     tags: list[ModelTag] = Field(
         default_factory=list,
         description="Collection of tags",
@@ -74,7 +77,7 @@ class ModelTagCollection(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def validate_unique_tags(cls, v):
+    def validate_unique_tags(cls, v: list[ModelTag]) -> list[ModelTag]:
         """Ensure tag names are unique."""
         tag_names = [tag.name for tag in v]
         if len(tag_names) != len(set(tag_names)):
@@ -84,11 +87,15 @@ class ModelTagCollection(BaseModel):
     def add_tag(
         self,
         name: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         weight: float = 1.0,
-        created_by: Optional[UUID] = None,
+        created_by: UUID | None = None,
     ) -> None:
         """Add a new tag to the collection."""
+        # Enforce maximum tag limit
+        if len(self.tags) >= 100:
+            raise ValueError("Maximum of 100 tags allowed")
+
         # Check if tag already exists
         if any(
             tag.name == name.strip().lower().replace(" ", "_").replace("-", "_")
@@ -129,7 +136,7 @@ class ModelTagCollection(BaseModel):
 
     @classmethod
     def from_string_list(
-        cls, tag_names: list[str], created_by: Optional[UUID] = None
+        cls, tag_names: list[str], created_by: UUID | None = None
     ) -> "ModelTagCollection":
         """Create tag collection from legacy string list."""
         collection = cls()

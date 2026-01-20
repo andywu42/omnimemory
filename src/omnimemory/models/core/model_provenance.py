@@ -5,23 +5,25 @@ Provenance tracking model following ONEX standards.
 from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelProvenanceEntry(BaseModel):
     """Single provenance entry following ONEX standards."""
 
+    model_config = ConfigDict(extra="forbid")
+
     # Operation identification
     operation_id: UUID = Field(
-        description="Unique identifier for the operation that created this provenance entry",
+        description="Unique identifier for the operation that created this entry",
     )
     operation_type: str = Field(
-        description="Type of operation (store, retrieve, update, delete, migrate, etc.)",
+        description="Type of operation (store, retrieve, update, delete, migrate)",
     )
 
     # Source identification
     source_component: str = Field(
-        description="Component that performed the operation (memory_manager, intelligence_engine, etc.)",
+        description="Component that performed the operation (e.g., memory_manager)",
     )
     source_version: str | None = Field(
         default=None,
@@ -30,7 +32,7 @@ class ModelProvenanceEntry(BaseModel):
 
     # Actor identification
     actor_type: str = Field(
-        description="Type of actor that initiated the operation (user, system, agent, migration)",
+        description="Type of actor that initiated the operation (user, system, agent)",
     )
     actor_id: str | None = Field(
         default=None,
@@ -66,6 +68,8 @@ class ModelProvenanceEntry(BaseModel):
 
 class ModelProvenanceChain(BaseModel):
     """Complete provenance chain for memory data following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Chain metadata
     chain_id: UUID = Field(

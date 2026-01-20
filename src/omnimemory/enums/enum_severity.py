@@ -12,8 +12,11 @@ except ImportError:
     # Fallback for development environments without omnibase_core
     from enum import Enum
 
-    class EnumSeverity(str, Enum):
-        """Fallback severity levels (use omnibase_core.enums.EnumLogLevel in production)."""
+    class EnumSeverity(str, Enum):  # type: ignore[no-redef]
+        """Fallback severity levels.
+
+        Use omnibase_core.enums.EnumLogLevel in production.
+        """
 
         CRITICAL = "critical"
         ERROR = "error"

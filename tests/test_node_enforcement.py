@@ -93,7 +93,7 @@ def validate_super_init_pattern(node_py_path: Path) -> SuperInitValidationResult
             for item in node.body:
                 if isinstance(item, ast.FunctionDef) and item.name == "__init__":
                     has_init = True
-                    # Check for super().__init__(container) or super().__init__(self.container)
+                    # Check for super().__init__(container) or self.container
                     for stmt in ast.walk(item):
                         if isinstance(stmt, ast.Call):
                             # Check for super().__init__(...) pattern
@@ -130,7 +130,7 @@ def validate_super_init_pattern(node_py_path: Path) -> SuperInitValidationResult
         if not has_super_init:
             return SuperInitValidationResult(
                 False,
-                f"Class '{class_name}' has __init__ but missing super().__init__(container) call",
+                f"Class '{class_name}' missing super().__init__(container) call",
                 class_name,
             )
 
@@ -175,7 +175,7 @@ def validate_contract(contract_path: Path) -> ContractValidationResult:
     if node_type not in VALID_NODE_TYPES:
         return ContractValidationResult(
             False,
-            f"Invalid node_type '{node_type}', must be one of: {', '.join(sorted(VALID_NODE_TYPES))}",
+            f"Invalid node_type '{node_type}', must be one of valid types",
         )
 
     if "name" not in contract_data:
@@ -257,7 +257,7 @@ class TestContractEnforcement:
         result: SuperInitValidationResult = validate_super_init_pattern(node_py_path)
         assert (
             result.valid
-        ), f"node.py for {node_name} failed super().__init__(container) check: {result.error}"
+        ), f"node.py for {node_name} failed super().__init__ check: {result.error}"
 
     def test_validate_contract_accepts_flat_format(self, tmp_path: Path) -> None:
         """Test that validator accepts flat format (no 'onex' wrapper)."""

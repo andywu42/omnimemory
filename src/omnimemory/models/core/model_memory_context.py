@@ -5,7 +5,7 @@ Memory context model following ONEX standards.
 from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...enums.enum_node_type import EnumNodeType
 from ..foundation.model_priority import ModelPriority
@@ -15,7 +15,9 @@ from ..foundation.model_user import ModelUser
 
 
 class ModelMemoryContext(BaseModel):
-    """Context information for memory operations following ONEX standards with typed models."""
+    """Context for memory operations following ONEX standards with typed models."""
+
+    model_config = ConfigDict(extra="forbid")
 
     correlation_id: UUID = Field(
         description="Unique correlation identifier for tracing operations across nodes",
@@ -100,13 +102,15 @@ class ModelMemoryContext(BaseModel):
         self.trust_score.refresh_current_score()
         return self.trust_score.current_score
 
-    def add_context_tag(self, tag_name: str, category: str | None = None) -> bool:
+    def add_context_tag(self, tag_name: str, category: str | None = None) -> None:
         """Add a tag to the context."""
-        return self.tags.add_tag(tag_name, category=category)
+        self.tags.add_tag(tag_name, category=category)
 
     def has_context_tag(self, tag_name: str) -> bool:
         """Check if context has a specific tag."""
-        return self.tags.has_tag(tag_name)
+        # Normalize tag name the same way ModelTag.validate_tag_name does
+        normalized = tag_name.strip().lower().replace(" ", "_").replace("-", "_")
+        return normalized in self.tags.get_tag_names()
 
     def get_tag_names(self) -> list[str]:
         """Get list of all tag names."""

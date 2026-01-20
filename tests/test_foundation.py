@@ -8,12 +8,10 @@ patterns, protocols, and error handling.
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime
-from typing import Dict
-from uuid import UUID, uuid4
+from pathlib import Path
 
 import pytest
+import yaml
 
 from omnimemory import (  # Protocols; Data models; Error handling
     AccessLevel,
@@ -24,7 +22,6 @@ from omnimemory import (  # Protocols; Data models; Error handling
     MemoryStoreResponse,
     OmniMemoryError,
     OmniMemoryErrorCode,
-    ProtocolMemoryBase,
     ProtocolMemoryStorage,
     SystemError,
     ValidationError,
@@ -49,15 +46,15 @@ class MockMemoryStorageNode:
         """Mock cache hit rate."""
         return 0.85
 
-    async def _get_storage_utilization(self) -> Dict[str, float]:
+    async def _get_storage_utilization(self) -> dict[str, float]:
         """Mock storage utilization."""
         return {"disk": 0.60, "memory": 0.45}
 
-    async def _validate_configuration(self, config: Dict[str, str]) -> bool:
+    async def _validate_configuration(self, config: dict[str, str]) -> bool:
         """Mock configuration validation."""
         return "invalid_key" not in config
 
-    async def _apply_configuration(self, config: Dict[str, str]) -> None:
+    async def _apply_configuration(self, config: dict[str, str]) -> None:
         """Mock configuration application."""
         pass
 
@@ -195,7 +192,7 @@ class TestFoundationArchitecture:
 
         assert validation_error.context["field_name"] == "test_field"
         assert validation_error.context["field_value"] == "invalid_value"
-        assert "Review and correct the input" in validation_error.recovery_hint
+        assert "Review and correct" in validation_error.recovery_hint
 
     def test_error_categorization(self) -> None:
         """Test error categorization and metadata."""
@@ -251,10 +248,6 @@ class TestFoundationArchitecture:
         Skips gracefully if contract.yaml doesn't exist.
         """
         # Verify contract.yaml can be loaded
-        from pathlib import Path
-
-        import yaml
-
         # Use __file__ relative path for CWD independence
         contract_path = Path(__file__).parent.parent / "contract.yaml"
         if not contract_path.exists():
@@ -303,6 +296,77 @@ class TestFoundationArchitecture:
         assert response.storage_location == "/mock/storage/location"
         assert response.indexing_status == "completed"
         assert response.embedding_generated is True
+
+
+class TestMockMemoryStorageNode:
+    """Test suite for MockMemoryStorageNode helper methods.
+
+    These tests ensure all mock helper methods are exercised and work correctly.
+    """
+
+    @pytest.fixture
+    def mock_node(self) -> MockMemoryStorageNode:
+        """Create a mock storage node for testing."""
+        return MockMemoryStorageNode()
+
+    @pytest.mark.asyncio
+    async def test_check_storage_connectivity(
+        self, mock_node: MockMemoryStorageNode
+    ) -> None:
+        """Test mock storage connectivity check returns True."""
+        result = await mock_node._check_storage_connectivity()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_get_storage_operation_count(
+        self, mock_node: MockMemoryStorageNode
+    ) -> None:
+        """Test mock storage operation count returns expected value."""
+        result = await mock_node._get_storage_operation_count()
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_get_cache_hit_rate(self, mock_node: MockMemoryStorageNode) -> None:
+        """Test mock cache hit rate returns expected value."""
+        result = await mock_node._get_cache_hit_rate()
+        assert result == 0.85
+
+    @pytest.mark.asyncio
+    async def test_get_storage_utilization(
+        self, mock_node: MockMemoryStorageNode
+    ) -> None:
+        """Test mock storage utilization returns expected structure."""
+        result = await mock_node._get_storage_utilization()
+        assert isinstance(result, dict)
+        assert "disk" in result
+        assert "memory" in result
+        assert result["disk"] == 0.60
+        assert result["memory"] == 0.45
+
+    @pytest.mark.asyncio
+    async def test_validate_configuration_valid(
+        self, mock_node: MockMemoryStorageNode
+    ) -> None:
+        """Test mock configuration validation accepts valid config."""
+        valid_config = {"key1": "value1", "key2": "value2"}
+        result = await mock_node._validate_configuration(valid_config)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_validate_configuration_invalid(
+        self, mock_node: MockMemoryStorageNode
+    ) -> None:
+        """Test mock configuration validation rejects invalid config."""
+        invalid_config = {"invalid_key": "should_fail"}
+        result = await mock_node._validate_configuration(invalid_config)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_apply_configuration(self, mock_node: MockMemoryStorageNode) -> None:
+        """Test mock configuration application completes without error."""
+        config = {"setting1": "value1"}
+        # Should not raise
+        await mock_node._apply_configuration(config)
 
 
 if __name__ == "__main__":
