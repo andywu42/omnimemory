@@ -92,6 +92,10 @@ class ModelTagCollection(BaseModel):
         created_by: UUID | None = None,
     ) -> None:
         """Add a new tag to the collection."""
+        # Enforce maximum tag limit
+        if len(self.tags) >= 100:
+            raise ValueError("Maximum of 100 tags allowed")
+
         # Check if tag already exists
         if any(
             tag.name == name.strip().lower().replace(" ", "_").replace("-", "_")

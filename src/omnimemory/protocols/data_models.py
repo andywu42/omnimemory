@@ -265,7 +265,8 @@ class MemoryRecord(BaseMemoryModel):
         default_factory=uuid4, description="Unique memory identifier"
     )
     content: str = Field(
-        description="Memory content", max_length=1048576  # 1MB max content
+        description="Memory content",
+        max_length=1048576,  # 1MB max content
     )
     content_type: ContentType = Field(description="Type of memory content")
     content_hash: str | None = Field(

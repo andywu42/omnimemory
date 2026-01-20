@@ -569,6 +569,10 @@ class HealthCheckManager:
         """
         Calculate overall system health based on dependency results.
 
+        Properly categorizes all HealthStatus values:
+        - Unhealthy: UNHEALTHY, TIMEOUT, CIRCUIT_OPEN, UNKNOWN
+        - Degraded: DEGRADED, RATE_LIMITED
+
         Args:
             results: List of health check results
 
@@ -581,12 +585,24 @@ class HealthCheckManager:
         critical_results = [r for r in results if r.config.critical]
         non_critical_results = [r for r in results if not r.config.critical]
 
+        # Define status categories - properly map all HealthStatus values
+        unhealthy_statuses = {
+            HealthStatus.UNHEALTHY,
+            HealthStatus.TIMEOUT,
+            HealthStatus.CIRCUIT_OPEN,
+            HealthStatus.UNKNOWN,
+        }
+        degraded_statuses = {
+            HealthStatus.DEGRADED,
+            HealthStatus.RATE_LIMITED,
+        }
+
         # Check critical dependencies
         critical_unhealthy = [
-            r for r in critical_results if r.status == HealthStatus.UNHEALTHY
+            r for r in critical_results if r.status in unhealthy_statuses
         ]
         critical_degraded = [
-            r for r in critical_results if r.status == HealthStatus.DEGRADED
+            r for r in critical_results if r.status in degraded_statuses
         ]
 
         # If any critical dependency is unhealthy, system is unhealthy
@@ -599,7 +615,7 @@ class HealthCheckManager:
 
         # Check non-critical dependencies for degradation signals
         non_critical_unhealthy = [
-            r for r in non_critical_results if r.status == HealthStatus.UNHEALTHY
+            r for r in non_critical_results if r.status in unhealthy_statuses
         ]
 
         # If majority of non-critical deps are unhealthy, system is degraded
@@ -1218,6 +1234,10 @@ class HealthManager:
         """
         Get overall system health by checking all registered resources.
 
+        Properly categorizes all HealthStatus values:
+        - Unhealthy: UNHEALTHY, TIMEOUT, CIRCUIT_OPEN, UNKNOWN
+        - Degraded: DEGRADED, RATE_LIMITED
+
         Returns:
             SystemHealth: Overall system health status
         """
@@ -1230,13 +1250,31 @@ class HealthManager:
             list(self.health_checks.keys())
         )
 
-        # Determine overall status
+        # Determine overall status with proper categorization
         statuses = [r.status for r in resource_statuses.values()]
+
+        # Define status categories
+        unhealthy_statuses = {
+            HealthStatus.UNHEALTHY,
+            HealthStatus.TIMEOUT,
+            HealthStatus.CIRCUIT_OPEN,
+            HealthStatus.UNKNOWN,
+        }
+        degraded_statuses = {
+            HealthStatus.DEGRADED,
+            HealthStatus.RATE_LIMITED,
+        }
 
         if all(s == HealthStatus.HEALTHY for s in statuses):
             overall_status = HealthStatus.HEALTHY
+        elif any(s in unhealthy_statuses for s in statuses):
+            # Any unhealthy status (UNHEALTHY, TIMEOUT, CIRCUIT_OPEN, UNKNOWN)
+            overall_status = HealthStatus.UNHEALTHY
+        elif any(s in degraded_statuses for s in statuses):
+            # Degraded statuses only (DEGRADED, RATE_LIMITED)
+            overall_status = HealthStatus.DEGRADED
         else:
-            # Any non-healthy status (UNHEALTHY, DEGRADED, etc.) results in DEGRADED
+            # Fallback to degraded for any unknown statuses
             overall_status = HealthStatus.DEGRADED
 
         return SystemHealth(
