@@ -138,7 +138,10 @@ MetadataValue = Union[str, int, float, bool, None]
 import structlog  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
-from ..models.foundation.model_typed_collections import ModelMetadata  # noqa: E402
+from ..models.foundation.model_typed_collections import (  # noqa: E402
+    ModelKeyValuePair,
+    ModelMetadata,
+)
 
 # === LABEL VALIDATION UTILITIES ===
 
@@ -484,7 +487,7 @@ def create_validated_log_entry(
 # Optional psutil import for memory tracking - gracefully degrade if unavailable
 _PSUTIL_AVAILABLE = False
 try:
-    import psutil
+    import psutil  # type: ignore[import-untyped]
 
     _PSUTIL_AVAILABLE = True
 except ImportError:
@@ -789,7 +792,7 @@ class HistogramValue:
             # Always increment +Inf bucket
             self.bucket_counts[-1] += 1
 
-    def get_snapshot(self) -> Dict[str, Union[float, int, List[int]]]:
+    def get_snapshot(self) -> Dict[str, Union[float, int, List[int], List[float]]]:
         """Get a snapshot of histogram values."""
         with self._lock:
             return {
@@ -943,7 +946,9 @@ class Histogram:
         # Safe to call outside lock - value_holder is our reference
         value_holder.observe(value)
 
-    def get(self, **labels: str) -> Dict[str, Union[float, int, List[int]]]:
+    def get(
+        self, **labels: str
+    ) -> Dict[str, Union[float, int, List[int], List[float]]]:
         """Get histogram snapshot for given labels."""
         key = self._labels_to_key(labels)
         with self._lock:
@@ -953,7 +958,9 @@ class Histogram:
             self._values.move_to_end(key)
             return self._values[key].get_snapshot()
 
-    def get_all(self) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int]]]]:
+    def get_all(
+        self,
+    ) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int], List[float]]]]:
         """Get all histogram values with their labels."""
         with self._lock:
             return {k: v.get_snapshot() for k, v in self._values.items()}
@@ -1460,7 +1467,7 @@ class ObservabilityManager:
         user_id: Optional[str] = None,
         operation: Optional[str] = None,
         trace_level: TraceLevel = TraceLevel.INFO,
-        **metadata,
+        **metadata: MetadataValue,
     ) -> AsyncGenerator[CorrelationContext, None]:
         """
         Async context manager for correlation tracking.
@@ -1477,10 +1484,13 @@ class ObservabilityManager:
         if correlation_id and not validate_correlation_id(correlation_id):
             raise ValueError(f"Invalid correlation ID format: {correlation_id}")
 
-        # Sanitize metadata values
-        sanitized_metadata = {
-            key: sanitize_metadata_value(value) for key, value in metadata.items()
-        }
+        # Sanitize metadata values and convert to ModelMetadata
+        metadata_pairs = [
+            ModelKeyValuePair(key=key, value=str(sanitize_metadata_value(value)))
+            for key, value in metadata.items()
+            if sanitize_metadata_value(value) is not None
+        ]
+        sanitized_metadata = ModelMetadata(pairs=metadata_pairs)
 
         # Create context
         context = CorrelationContext(
@@ -1539,7 +1549,7 @@ class ObservabilityManager:
         operation_name: str,
         operation_type: OperationType,
         trace_performance: bool = True,
-        **additional_context,
+        **additional_context: MetadataValue,
     ) -> AsyncGenerator[str, None]:
         """
         Async context manager for operation tracing.
@@ -1640,19 +1650,21 @@ class ObservabilityManager:
             raise
         finally:
             # Complete performance metrics if requested (thread-safe)
-            metrics = None
+            final_metrics: Optional[PerformanceMetrics] = None
             if trace_performance:
                 # Get trace reference under lock
                 with self._traces_lock:
                     if trace_id in self._active_traces:
-                        metrics = self._active_traces[trace_id]
+                        final_metrics = self._active_traces[trace_id]
 
                 # Process metrics outside lock (I/O operations)
-                if metrics is not None:
-                    metrics.end_time = time.time()
-                    metrics.duration = metrics.end_time - metrics.start_time
+                if final_metrics is not None:
+                    final_metrics.end_time = time.time()
+                    final_metrics.duration = (
+                        final_metrics.end_time - final_metrics.start_time
+                    )
 
-                    if metrics.memory_usage_start is not None:
+                    if final_metrics.memory_usage_start is not None:
                         # Only track memory delta if psutil is available
                         if _PSUTIL_AVAILABLE and psutil is not None:
                             try:
@@ -1660,9 +1672,9 @@ class ObservabilityManager:
                                 end_memory = (
                                     process.memory_info().rss / 1024 / 1024
                                 )  # MB
-                                metrics.memory_usage_end = end_memory
-                                metrics.memory_delta = (
-                                    end_memory - metrics.memory_usage_start
+                                final_metrics.memory_usage_end = end_memory
+                                final_metrics.memory_delta = (
+                                    end_memory - final_metrics.memory_usage_start
                                 )
                             except (
                                 psutil.NoSuchProcess,
@@ -1691,10 +1703,10 @@ class ObservabilityManager:
                         correlation_id=correlation_id,
                         operation_name=operation_name,
                         operation_type=operation_type.value,
-                        duration=metrics.duration,
-                        memory_delta=metrics.memory_delta,
-                        success=metrics.success,
-                        error_type=metrics.error_type,
+                        duration=final_metrics.duration,
+                        memory_delta=final_metrics.memory_delta,
+                        success=final_metrics.success,
+                        error_type=final_metrics.error_type,
                         **additional_context,
                     )
 
@@ -1717,7 +1729,9 @@ class ObservabilityManager:
         with self._traces_lock:
             return dict(self._active_traces)
 
-    def log_with_context(self, level: str, message: str, **additional_fields):
+    def log_with_context(
+        self, level: str, message: str, **additional_fields: MetadataValue
+    ) -> None:
         """Log a message with current correlation context."""
         context = self.get_current_context()
 
@@ -1736,14 +1750,16 @@ async def correlation_context(
     request_id: Optional[str] = None,
     user_id: Optional[str] = None,
     operation: Optional[str] = None,
-    **metadata,
-):
+    trace_level: TraceLevel = TraceLevel.INFO,
+    **metadata: MetadataValue,
+) -> AsyncGenerator[CorrelationContext, None]:
     """Convenience function for correlation context management."""
     async with observability_manager.correlation_context(
         correlation_id=correlation_id,
         request_id=request_id,
         user_id=user_id,
         operation=operation,
+        trace_level=trace_level,
         **metadata,
     ) as ctx:
         yield ctx
@@ -1751,8 +1767,11 @@ async def correlation_context(
 
 @asynccontextmanager
 async def trace_operation(
-    operation_name: str, operation_type: OperationType | str, **context
-):
+    operation_name: str,
+    operation_type: OperationType | str,
+    trace_performance: bool = True,
+    **context: MetadataValue,
+) -> AsyncGenerator[str, None]:
     """Convenience function for operation tracing."""
     if isinstance(operation_type, str):
         # Try to convert string to OperationType
@@ -1763,7 +1782,10 @@ async def trace_operation(
             operation_type = OperationType.EXTERNAL_API
 
     async with observability_manager.trace_operation(
-        operation_name=operation_name, operation_type=operation_type, **context
+        operation_name=operation_name,
+        operation_type=operation_type,
+        trace_performance=trace_performance,
+        **context,
     ) as trace_id:
         yield trace_id
 
@@ -1778,7 +1800,7 @@ def get_request_id() -> Optional[str]:
     return request_id_var.get()
 
 
-def log_with_correlation(level: str, message: str, **fields):
+def log_with_correlation(level: str, message: str, **fields: MetadataValue) -> None:
     """Log a message with correlation context."""
     observability_manager.log_with_context(level, message, **fields)
 
@@ -1824,7 +1846,7 @@ def inject_correlation_context_async(func: F) -> F:
             kwargs_keys=list(kwargs.keys()),
         )
         try:
-            result = await func(*args, **kwargs)
+            result = await func(*args, **kwargs)  # type: ignore[misc]
             logger.info(
                 f"async_function_completed_{func.__name__}", **context, success=True
             )

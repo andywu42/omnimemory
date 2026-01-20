@@ -31,7 +31,7 @@ class PIIType(str, Enum):
     - EMAIL: Regex-based email detection
     - PHONE: US/International phone number patterns
     - SSN: Social Security Number patterns with validation
-    - CREDIT_CARD: Major card formats (Visa, MC, Amex, Discover)
+    - CREDIT_CARD: Major card formats (Visa, Mastercard, Amex)
     - IP_ADDRESS: IPv4 and IPv6 patterns
     - API_KEY: Common API key formats (OpenAI, GitHub, Google, AWS)
     - PASSWORD_HASH: Password field detection

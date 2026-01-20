@@ -5,7 +5,7 @@ Health response model following ONEX standards.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -82,7 +82,7 @@ class ModelCircuitBreakerStats(BaseModel):
     success_count: int = Field(ge=0, description="Total number of successful calls")
     total_calls: int = Field(ge=0, description="Total number of calls made")
     total_timeouts: int = Field(ge=0, description="Total number of timeout failures")
-    last_failure_time: Optional[datetime] = Field(
+    last_failure_time: datetime | None = Field(
         default=None, description="Timestamp of the last failure"
     )
     state_changed_at: datetime = Field(
@@ -120,18 +120,18 @@ class ModelRateLimitedHealthCheckResponse(BaseModel):
         default_factory=dict,
         description="Additional details including retry_after and requests count",
     )
-    health_check: Optional[ModelHealthResponse] = Field(
+    health_check: ModelHealthResponse | None = Field(
         default=None, description="Health check result if within rate limit"
     )
     rate_limited: bool = Field(
         default=True, description="Whether the request was rate limited"
     )
-    rate_limit_reset_time: Optional[datetime] = Field(
+    rate_limit_reset_time: datetime | None = Field(
         default=None, description="When the rate limit will reset"
     )
-    remaining_requests: Optional[int] = Field(
+    remaining_requests: int | None = Field(
         default=None, description="Number of requests remaining in the current window"
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         default=None, description="Error message if rate limited"
     )

@@ -63,7 +63,7 @@ class TestBootstrapSuccess:
 
         assert result.success is True
         assert "filesystem" in result.initialized_backends
-        assert is_bootstrapped() is True
+        assert await is_bootstrapped() is True
 
     @pytest.mark.asyncio
     async def test_bootstrap_returns_bootstrap_result(
@@ -482,13 +482,13 @@ class TestShutdown:
         )
 
         await bootstrap(config)
-        assert is_bootstrapped() is True
-        assert get_bootstrap_result() is not None
+        assert await is_bootstrapped() is True
+        assert await get_bootstrap_result() is not None
 
         await shutdown()
 
-        assert is_bootstrapped() is False
-        assert get_bootstrap_result() is None
+        assert await is_bootstrapped() is False
+        assert await get_bootstrap_result() is None
 
     @pytest.mark.asyncio
     async def test_shutdown_allows_re_bootstrap(
@@ -515,7 +515,7 @@ class TestShutdown:
         await shutdown()
         await shutdown()
 
-        assert is_bootstrapped() is False
+        assert await is_bootstrapped() is False
 
 
 class TestIsBootstrapped:
@@ -524,7 +524,7 @@ class TestIsBootstrapped:
     @pytest.mark.asyncio
     async def test_is_bootstrapped_false_initially(self, reset_bootstrap: None) -> None:
         """Test is_bootstrapped() returns False before bootstrap."""
-        assert is_bootstrapped() is False
+        assert await is_bootstrapped() is False
 
     @pytest.mark.asyncio
     async def test_is_bootstrapped_true_after_bootstrap(
@@ -537,7 +537,7 @@ class TestIsBootstrapped:
 
         await bootstrap(config)
 
-        assert is_bootstrapped() is True
+        assert await is_bootstrapped() is True
 
     @pytest.mark.asyncio
     async def test_is_bootstrapped_false_after_failed_bootstrap(
@@ -556,7 +556,7 @@ class TestIsBootstrapped:
         with pytest.raises(BootstrapError):
             await bootstrap(config)
 
-        assert is_bootstrapped() is False
+        assert await is_bootstrapped() is False
 
 
 class TestGetBootstrapResult:
@@ -567,7 +567,7 @@ class TestGetBootstrapResult:
         self, reset_bootstrap: None
     ) -> None:
         """Test get_bootstrap_result() returns None before bootstrap."""
-        assert get_bootstrap_result() is None
+        assert await get_bootstrap_result() is None
 
     @pytest.mark.asyncio
     async def test_get_bootstrap_result_returns_result(
@@ -580,7 +580,7 @@ class TestGetBootstrapResult:
 
         await bootstrap(config)
 
-        result = get_bootstrap_result()
+        result = await get_bootstrap_result()
         assert result is not None
         assert isinstance(result, BootstrapResult)
         assert result.success is True
@@ -595,7 +595,7 @@ class TestGetBootstrapResult:
         )
 
         bootstrap_return = await bootstrap(config)
-        cached_result = get_bootstrap_result()
+        cached_result = await get_bootstrap_result()
 
         assert bootstrap_return is cached_result
 

@@ -136,7 +136,7 @@ class AsyncCircuitBreaker:
         self.stats = CircuitBreakerStats()
         self._lock = asyncio.Lock()
 
-    async def call(self, func: Callable[..., Any], *args, **kwargs) -> Any:
+    async def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute a function call through the circuit breaker."""
         async with self._lock:
             if self.state == CircuitState.OPEN:
@@ -175,7 +175,7 @@ class AsyncCircuitBreaker:
         time_since_failure = datetime.now(timezone.utc) - self.stats.last_failure_time
         return time_since_failure.total_seconds() >= effective_timeout
 
-    async def _transition_to_half_open(self):
+    async def _transition_to_half_open(self) -> None:
         """Transition circuit breaker to half-open state."""
         self.state = CircuitState.HALF_OPEN
         self.stats.state_changed_at = datetime.now(timezone.utc)
@@ -188,7 +188,7 @@ class AsyncCircuitBreaker:
             reason="recovery_timeout_reached",
         )
 
-    async def _on_success(self):
+    async def _on_success(self) -> None:
         """Handle successful operation result."""
         async with self._lock:
             self.stats.total_calls += 1
@@ -200,7 +200,7 @@ class AsyncCircuitBreaker:
             elif self.state == CircuitState.CLOSED:
                 self.stats.failure_count = 0  # Reset failure count on success
 
-    async def _on_failure(self, error: Exception):
+    async def _on_failure(self, error: Exception) -> None:
         """Handle failed operation result."""
         async with self._lock:
             self.stats.total_calls += 1
@@ -215,7 +215,7 @@ class AsyncCircuitBreaker:
             elif self.state == CircuitState.HALF_OPEN:
                 await self._transition_to_open()
 
-    async def _transition_to_closed(self):
+    async def _transition_to_closed(self) -> None:
         """Transition circuit breaker to closed state."""
         self.state = CircuitState.CLOSED
         self.stats.state_changed_at = datetime.now(timezone.utc)
@@ -228,7 +228,7 @@ class AsyncCircuitBreaker:
             reason="success_threshold_reached",
         )
 
-    async def _transition_to_open(self):
+    async def _transition_to_open(self) -> None:
         """Transition circuit breaker to open state."""
         self.state = CircuitState.OPEN
         self.stats.state_changed_at = datetime.now(timezone.utc)
@@ -253,7 +253,7 @@ class AsyncResourceManager:
     - Resource cleanup
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -286,8 +286,8 @@ class AsyncResourceManager:
         release_func: Optional[Callable[[Any], None]] = None,
         circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
         semaphore_limit: Optional[int] = None,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> AsyncGenerator[Any, None]:
         """
         Async context manager for comprehensive resource management.
@@ -384,8 +384,8 @@ async def with_circuit_breaker(
     service_name: str,
     func: Callable[..., Any],
     config: Optional[CircuitBreakerConfig] = None,
-    *args,
-    **kwargs,
+    *args: Any,
+    **kwargs: Any,
 ) -> Any:
     """Execute a function with circuit breaker protection."""
     circuit_breaker = resource_manager.get_circuit_breaker(service_name, config)
@@ -393,7 +393,7 @@ async def with_circuit_breaker(
 
 
 @contextlib.asynccontextmanager
-async def with_semaphore(name: str, limit: int):
+async def with_semaphore(name: str, limit: int) -> AsyncGenerator[None, None]:
     """Context manager for semaphore-based rate limiting."""
     semaphore = resource_manager.get_semaphore(name, limit)
     async with semaphore:
@@ -401,7 +401,7 @@ async def with_semaphore(name: str, limit: int):
 
 
 @contextlib.asynccontextmanager
-async def with_timeout(timeout: float):
+async def with_timeout(timeout: float) -> AsyncGenerator[None, None]:
     """Context manager for timeout operations."""
     try:
         async with asyncio.timeout(timeout):
@@ -474,7 +474,8 @@ class ResourceHandle:
             return False
 
         if hasattr(self.resource, "is_healthy"):
-            return self.resource.is_healthy()
+            result: bool = self.resource.is_healthy()
+            return result
 
         return True
 
@@ -543,7 +544,8 @@ class ResourcePool:
         self._scale_increment = config.get("scale_increment", 1)
         self._health_check_interval = config.get("health_check_interval", 60.0)
 
-        self.available_resources: list[Any] = []
+        # Store (resource, added_time) tuples to enable TTL tracking
+        self.available_resources: list[tuple[Any, float]] = []
         self.active_resources: dict[Any, ResourceHandle] = {}
         self.current_size = 0
 
@@ -557,7 +559,7 @@ class ResourcePool:
             for _ in range(self.min_size):
                 resource = self._create_resource()
                 if resource:
-                    self.available_resources.append(resource)
+                    self.available_resources.append((resource, time.time()))
                     self.current_size += 1
 
             self._initialized = True
@@ -599,7 +601,7 @@ class ResourcePool:
             async with self._lock:
                 # Try to get an available resource
                 if self.available_resources:
-                    resource = self.available_resources.pop()
+                    resource, _added_time = self.available_resources.pop()
                     resource_id = id(resource)
                     handle = ResourceHandle(
                         resource_id=resource_id,
@@ -668,7 +670,7 @@ class ResourcePool:
 
             # Return to pool if was healthy and not expired
             if should_return_to_pool:
-                self.available_resources.append(handle.resource)
+                self.available_resources.append((handle.resource, time.time()))
                 self._available_event.set()
 
 
@@ -683,10 +685,10 @@ class ResourceManager:
     - Metrics collection
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize resource manager."""
         self.resource_pools: dict[ResourceType, ResourcePool] = {}
-        self._metrics = {
+        self._metrics: dict[str, int] = {
             "total_operations": 0,
             "total_acquisitions": 0,
             "total_releases": 0,
@@ -847,6 +849,9 @@ class ResourceManager:
         """
         Check and handle expired resources in a pool.
 
+        Filters out resources that have exceeded the pool's TTL configuration.
+        Resources without TTL configured are never expired.
+
         Args:
             resource_type: Type of resource pool to check
         """
@@ -856,11 +861,29 @@ class ResourceManager:
         pool = self.resource_pools[resource_type]
 
         async with pool._lock:
-            # Check available resources for expiration
-            valid_resources = []
-            for resource in pool.available_resources:
-                # Simple TTL check based on pool config
-                valid_resources.append(resource)
+            # If no TTL configured, all resources are valid
+            if pool._ttl is None:
+                return
+
+            current_time = time.time()
+            valid_resources: list[tuple[Any, float]] = []
+            expired_count = 0
+
+            for resource, added_time in pool.available_resources:
+                elapsed = current_time - added_time
+                if elapsed < pool._ttl:
+                    valid_resources.append((resource, added_time))
+                else:
+                    expired_count += 1
+                    pool.current_size -= 1
+
+            if expired_count > 0:
+                logger.debug(
+                    "expired_resources_cleaned",
+                    resource_type=resource_type.value,
+                    expired_count=expired_count,
+                    remaining_count=len(valid_resources),
+                )
 
             pool.available_resources = valid_resources
 

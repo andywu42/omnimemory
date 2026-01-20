@@ -11,7 +11,7 @@ except ImportError:
     # Fallback for development environments without omnibase_core
     from enum import Enum
 
-    class OnexErrorCode(str, Enum):
+    class OnexErrorCode(str, Enum):  # type: ignore[no-redef]
         """Base class for ONEX error codes (fallback implementation)."""
 
         def get_component(self) -> str:

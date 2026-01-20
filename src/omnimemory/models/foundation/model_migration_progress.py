@@ -13,7 +13,12 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 
-from omnimemory.enums import FileProcessingStatus, MigrationPriority, MigrationStatus
+from omnimemory.enums import (
+    EnumPriorityLevel,
+    FileProcessingStatus,
+    MigrationPriority,
+    MigrationStatus,
+)
 
 from .model_progress_summary import ProgressSummaryResponse
 from .model_typed_collections import ModelConfiguration, ModelMetadata
@@ -34,7 +39,7 @@ class BatchProcessingMetrics(BaseModel):
         default_factory=list, description="Error messages"
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def success_rate(self) -> float:
         """Calculate success rate for the batch."""
@@ -42,7 +47,7 @@ class BatchProcessingMetrics(BaseModel):
             return 0.0
         return (self.processed_count - self.failed_count) / self.processed_count
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def duration(self) -> timedelta | None:
         """Calculate batch processing duration."""
@@ -72,7 +77,7 @@ class FileProcessingInfo(BaseModel):
         default_factory=ModelMetadata, description="Additional file metadata"
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def processing_duration(self) -> timedelta | None:
         """Calculate file processing duration."""
@@ -128,7 +133,7 @@ class MigrationProgressMetrics(BaseModel):
     _cache_invalidated_at: datetime | None = PrivateAttr(default=None)
     _cache_ttl_seconds: int = PrivateAttr(default=60)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def completion_percentage(self) -> float:
         """Calculate completion percentage with caching for performance."""
@@ -145,7 +150,7 @@ class MigrationProgressMetrics(BaseModel):
         self._cached_completion_percentage = result
         return result
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def success_rate(self) -> float:
         """Calculate overall success rate with caching for performance."""
@@ -163,19 +168,19 @@ class MigrationProgressMetrics(BaseModel):
         self._cached_success_rate = result
         return result
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def elapsed_time(self) -> timedelta:
         """Calculate elapsed processing time."""
         return self.last_update_time - self.start_time
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def remaining_files(self) -> int:
         """Calculate number of remaining files."""
         return self.total_files - self.processed_files
 
-    def update_processing_rates(self):
+    def update_processing_rates(self) -> None:
         """Update processing rates based on current progress."""
         elapsed_seconds = self.elapsed_time.total_seconds()
 
@@ -262,7 +267,7 @@ class MigrationProgressTracker(BaseModel):
     )
 
     def add_file(
-        self, file_path: str, file_size: int | None = None, **metadata
+        self, file_path: str, file_size: int | None = None, **metadata: str
     ) -> FileProcessingInfo:
         """Add a file to be tracked for processing."""
         from .model_typed_collections import ModelKeyValuePair
@@ -303,7 +308,7 @@ class MigrationProgressTracker(BaseModel):
 
     def complete_file_processing(
         self, file_path: str, success: bool = True, error_message: str | None = None
-    ):
+    ) -> None:
         """Mark a file as completed processing."""
         file_info = self._find_file(file_path)
         if file_info:
@@ -329,7 +334,7 @@ class MigrationProgressTracker(BaseModel):
             self._update_progress_metrics()
             self._update_timestamp()
 
-    def skip_file_processing(self, file_path: str, reason: str):
+    def skip_file_processing(self, file_path: str, reason: str) -> None:
         """Mark a file as skipped."""
         file_info = self._find_file(file_path)
         if file_info:
@@ -350,7 +355,7 @@ class MigrationProgressTracker(BaseModel):
         self._update_timestamp()
         return batch_metrics
 
-    def complete_batch(self, batch_id: str):
+    def complete_batch(self, batch_id: str) -> None:
         """Complete batch processing."""
         batch_metrics = self._find_batch(batch_id)
         if batch_metrics:
@@ -361,11 +366,13 @@ class MigrationProgressTracker(BaseModel):
 
     def get_progress_summary(self) -> ProgressSummaryResponse:
         """Get a comprehensive progress summary."""
+        # Convert MigrationPriority to EnumPriorityLevel (both use same string values)
+        priority_level = EnumPriorityLevel(self.priority.value)
         return ProgressSummaryResponse(
             migration_id=str(self.migration_id),
             name=self.name,
             status=self.status,
-            priority=self.priority,
+            priority=priority_level,
             completion_percentage=self.metrics.completion_percentage,
             success_rate=self.metrics.success_rate,
             elapsed_time=str(self.metrics.elapsed_time),
@@ -452,7 +459,7 @@ class MigrationProgressTracker(BaseModel):
             (b for b in self.metrics.batch_metrics if b.batch_id == batch_id), None
         )
 
-    def _update_progress_metrics(self):
+    def _update_progress_metrics(self) -> None:
         """Update progress metrics and estimates with cache invalidation."""
         # Invalidate cache since metrics are changing
         self.metrics.invalidate_cache()
@@ -461,7 +468,7 @@ class MigrationProgressTracker(BaseModel):
         self.metrics.update_processing_rates()
         self.metrics.estimate_completion_time()
 
-    def _update_timestamp(self):
+    def _update_timestamp(self) -> None:
         """Update the last modified timestamp."""
         self.updated_at = datetime.now(timezone.utc)
 

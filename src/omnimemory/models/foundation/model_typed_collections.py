@@ -56,8 +56,12 @@ class ModelStringList(BaseModel):
         """Support 'in' operator for checking membership."""
         return item in self.values
 
-    def __iter__(self) -> Iterator[str]:
-        """Support iteration over values."""
+    def iterate(self) -> Iterator[str]:
+        """Iterate over values.
+
+        Note: We use iterate() instead of __iter__ to avoid conflict with
+        Pydantic's BaseModel.__iter__ which returns field-value pairs.
+        """
         return iter(self.values)
 
     def __len__(self) -> int:
@@ -112,10 +116,13 @@ class ModelOptionalStringList(BaseModel):
             return False
         return item in self.values
 
-    def __iter__(self) -> Iterator[str]:
-        """Support iteration over values.
+    def iterate(self) -> Iterator[str]:
+        """Iterate over values.
 
         Returns empty iterator if values is None.
+
+        Note: We use iterate() instead of __iter__ to avoid conflict with
+        Pydantic's BaseModel.__iter__ which returns field-value pairs.
         """
         if self.values is None:
             return iter([])

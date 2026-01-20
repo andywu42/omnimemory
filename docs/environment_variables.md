@@ -212,15 +212,17 @@ OMNIMEMORY__QDRANT__ON_DISK=true
 | `str` | String | `omnimemory` |
 | `list` | JSON array format (see note below) | `[".json", ".txt"]` |
 
-**Note on List Values**: List-type environment variables must use JSON array format. Comma-separated strings (e.g., `.json,.txt,.md`) are **not supported** by pydantic-settings.
+**Note on List Values**: List-type environment variables must use JSON array format. Comma-separated strings (e.g., `.json,.txt,.md`) are **not supported** by pydantic-settings by default.
 
 ```bash
 # Correct - JSON array format
 export OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS='[".json", ".txt", ".md"]'
 
-# Incorrect - comma-separated (will fail)
+# Incorrect - comma-separated (will fail to parse as a list)
 export OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS=".json,.txt,.md"
 ```
+
+> **Note**: Comma-separated value support could be added by implementing a custom `settings_customise_sources()` method or using a `@field_validator` with `mode='before'` to parse comma-separated strings. The current implementation uses the pydantic-settings default behavior which expects JSON array format.
 
 ## Secrets Management
 

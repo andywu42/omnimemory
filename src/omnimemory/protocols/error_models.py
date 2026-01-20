@@ -253,12 +253,12 @@ class OmniMemoryError(BaseOnexError):
         self,
         error_code: OmniMemoryErrorCode,
         message: str,
-        context: ModelMetadata | None = None,
+        context: ModelMetadata | dict[str, object] | None = None,
         correlation_id: UUID | None = None,
-        cause: Exception | None = None,
+        cause: BaseException | None = None,
         recovery_hint: str | None = None,
         retry_after: int | None = None,
-        **kwargs,
+        **kwargs: object,
     ):
         """
         Initialize OmniMemory error.
@@ -266,7 +266,7 @@ class OmniMemoryError(BaseOnexError):
         Args:
             error_code: Specific error code from OmniMemoryErrorCode
             message: Human-readable error message
-            context: Additional error context information
+            context: Additional error context information (ModelMetadata or dict)
             correlation_id: Request correlation ID for tracing
             cause: Underlying exception that caused this error
             recovery_hint: Suggestion for error recovery
@@ -278,7 +278,12 @@ class OmniMemoryError(BaseOnexError):
 
         # Enhance context with category information
         # Create a copy to avoid mutating caller-provided context
-        enhanced_context = {**context} if context else {}
+        if context is None:
+            enhanced_context: dict[str, object] = {}
+        elif isinstance(context, ModelMetadata):
+            enhanced_context = dict(context.to_dict())
+        else:
+            enhanced_context = dict(context)
         if category_info:
             enhanced_context.update(
                 {
@@ -309,7 +314,7 @@ class OmniMemoryError(BaseOnexError):
         self.category_info = category_info
         self.recovery_hint = recovery_hint
         self.retry_after = retry_after
-        self.cause = cause
+        self.cause: BaseException | None = cause
 
         # Chain the underlying cause if provided
         if cause:
@@ -327,9 +332,9 @@ class OmniMemoryError(BaseOnexError):
         """Get suggested backoff factor for retries."""
         return self.category_info.default_backoff_factor if self.category_info else 1.0
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, object]:
         """Convert error to dictionary for serialization."""
-        base_dict = {
+        base_dict: dict[str, object] = {
             "error_code": self.omnimemory_error_code.value,
             "message": self.message,
             "context": self.context,
@@ -361,7 +366,8 @@ class ValidationError(OmniMemoryError):
         field_name: str | None = None,
         field_value: FieldValueType | None = None,
         validation_rule: str | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific validation error code
         error_code = OmniMemoryErrorCode.INVALID_INPUT
@@ -377,8 +383,7 @@ class ValidationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.VALUE_OUT_OF_RANGE
 
         # Build context with validation details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if field_name:
             context["field_name"] = field_name
         if field_value is not None:
@@ -387,12 +392,14 @@ class ValidationError(OmniMemoryError):
         if validation_rule:
             context["validation_rule"] = validation_rule
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = (
-            "Review and correct the input data according to the schema requirements"
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Review and correct input data per schema requirements",
         )
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
 
 
 class StorageError(OmniMemoryError):
@@ -403,7 +410,8 @@ class StorageError(OmniMemoryError):
         message: str,
         storage_system: str | None = None,
         operation: str | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific storage error code
         error_code = OmniMemoryErrorCode.STORAGE_UNAVAILABLE
@@ -425,20 +433,21 @@ class StorageError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.TRANSACTION_FAILED
 
         # Build context with storage details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if storage_system:
             context["storage_system"] = storage_system
         if operation:
             context["operation"] = operation
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = (
-            "Check storage system health and retry with exponential backoff"
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check storage health and retry with backoff",
+            retry_after=5,  # Suggest 5 second retry delay
         )
-        kwargs["retry_after"] = 5  # Suggest 5 second retry delay
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
 
 
 class RetrievalError(OmniMemoryError):
@@ -449,7 +458,8 @@ class RetrievalError(OmniMemoryError):
         message: str,
         memory_id: UUID | None = None,
         query: str | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific retrieval error code
         error_code = OmniMemoryErrorCode.SEARCH_FAILED
@@ -473,17 +483,20 @@ class RetrievalError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.FILTER_INVALID
 
         # Build context with retrieval details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if memory_id:
             context["memory_id"] = str(memory_id)
         if query:
             context["query"] = query
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Verify search parameters and check index health"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Verify search parameters and check index health",
+        )
 
 
 class ProcessingError(OmniMemoryError):
@@ -494,7 +507,8 @@ class ProcessingError(OmniMemoryError):
         message: str,
         processing_stage: str | None = None,
         model_name: str | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific processing error code
         error_code = OmniMemoryErrorCode.PROCESSING_FAILED
@@ -518,17 +532,20 @@ class ProcessingError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.COMPUTATION_TIMEOUT
 
         # Build context with processing details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if processing_stage:
             context["processing_stage"] = processing_stage
         if model_name:
             context["model_name"] = model_name
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Check model availability and processing resources"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check model availability and processing resources",
+        )
 
 
 class CoordinationError(OmniMemoryError):
@@ -539,7 +556,8 @@ class CoordinationError(OmniMemoryError):
         message: str,
         workflow_id: UUID | None = None,
         agent_ids: list[UUID] | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific coordination error code
         error_code = OmniMemoryErrorCode.WORKFLOW_FAILED
@@ -563,17 +581,20 @@ class CoordinationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.ORCHESTRATION_FAILED
 
         # Build context with coordination details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if workflow_id:
             context["workflow_id"] = str(workflow_id)
         if agent_ids:
             context["agent_ids"] = [str(aid) for aid in agent_ids]
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Check agent availability and retry coordination"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Check agent availability and retry coordination",
+        )
 
 
 class SystemError(OmniMemoryError):
@@ -583,7 +604,8 @@ class SystemError(OmniMemoryError):
         self,
         message: str,
         system_component: str | None = None,
-        **kwargs,
+        correlation_id: UUID | None = None,
+        cause: BaseException | None = None,
     ):
         # Determine specific system error code
         error_code = OmniMemoryErrorCode.INTERNAL_ERROR
@@ -607,25 +629,31 @@ class SystemError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.RATE_LIMIT_EXCEEDED
 
         # Build context with system details
-        # Copy to avoid mutating caller-provided context
-        context = {**kwargs.get("context", {})}
+        context: dict[str, object] = {}
         if system_component:
             context["system_component"] = system_component
 
-        kwargs["context"] = context
-        kwargs["recovery_hint"] = "Contact system administrator for system-level issues"
-
-        super().__init__(error_code=error_code, message=message, **kwargs)
+        super().__init__(
+            error_code=error_code,
+            message=message,
+            context=context,
+            correlation_id=correlation_id,
+            cause=cause,
+            recovery_hint="Contact system administrator for system-level issues",
+        )
 
 
 # === ERROR UTILITIES ===
 
 
 def wrap_exception(
-    exception: Exception,
+    exception: BaseException,
     error_code: OmniMemoryErrorCode,
     message: str | None = None,
-    **kwargs,
+    context: ModelMetadata | dict[str, object] | None = None,
+    correlation_id: UUID | None = None,
+    recovery_hint: str | None = None,
+    retry_after: int | None = None,
 ) -> OmniMemoryError:
     """
     Wrap a generic exception in an OmniMemoryError.
@@ -634,7 +662,10 @@ def wrap_exception(
         exception: The original exception to wrap
         error_code: The OmniMemory error code to use
         message: Optional custom message (uses exception message if not provided)
-        **kwargs: Additional arguments for OmniMemoryError constructor
+        context: Optional error context information
+        correlation_id: Optional request correlation ID
+        recovery_hint: Optional suggestion for error recovery
+        retry_after: Optional suggested retry delay in seconds
 
     Returns:
         OmniMemoryError wrapping the original exception
@@ -643,14 +674,17 @@ def wrap_exception(
     return OmniMemoryError(
         error_code=error_code,
         message=error_message,
+        context=context,
+        correlation_id=correlation_id,
         cause=exception,
-        **kwargs,
+        recovery_hint=recovery_hint,
+        retry_after=retry_after,
     )
 
 
 def chain_errors(
     primary_error: OmniMemoryError,
-    secondary_error: Exception,
+    secondary_error: BaseException,
 ) -> OmniMemoryError:
     """
     Chain a secondary error to a primary OmniMemoryError.
@@ -667,7 +701,7 @@ def chain_errors(
         primary_error.__cause__ = secondary_error
     else:
         # If there's already a cause, chain it
-        current = primary_error.cause
+        current: BaseException = primary_error.cause
         while hasattr(current, "__cause__") and current.__cause__ is not None:
             current = current.__cause__
         current.__cause__ = secondary_error
@@ -699,8 +733,8 @@ def create_error_summary(errors: list[OmniMemoryError]) -> ErrorSummary:
     if not errors:
         return ErrorSummary(total_errors=0)
 
-    error_counts = {}
-    category_counts = {}
+    error_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
     recoverable_count = 0
 
     for error in errors:

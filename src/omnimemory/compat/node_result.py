@@ -138,6 +138,8 @@ class NodeResult(Generic[T]):
             )
 
         try:
+            # Assert value is not None - guaranteed by is_success check above
+            assert self.value is not None
             new_value = func(self.value)
             return NodeResult[U].success(
                 new_value,
@@ -177,6 +179,8 @@ class NodeResult(Generic[T]):
             )
 
         try:
+            # Assert value is not None - guaranteed by is_success check above
+            assert self.value is not None
             inner_result = func(self.value)
             # Combine provenance chains (outer first, then inner)
             combined_provenance = self.provenance + inner_result.provenance
@@ -186,6 +190,8 @@ class NodeResult(Generic[T]):
             combined_metadata = {**self.metadata, **inner_result.metadata}
 
             if inner_result.is_success:
+                # Assert value is not None - guaranteed by inner_result.is_success
+                assert inner_result.value is not None
                 return NodeResult[U].success(
                     inner_result.value,
                     provenance=combined_provenance,
@@ -222,6 +228,8 @@ class NodeResult(Generic[T]):
             if self.error:
                 raise self.error
             raise ValueError(self.error_message or "Unknown error")
+        # Assert value is not None - guaranteed by is_success check above
+        assert self.value is not None
         return self.value
 
     def unwrap_or(self, default: T) -> T:
@@ -236,7 +244,10 @@ class NodeResult(Generic[T]):
         """
         if not self.is_success:
             return default
-        return self.value
+        # Value may be None even on success if T is Optional, but the signature
+        # promises T. If user created success(None), they get None back.
+        # Use type: ignore since this is intentional behavior.
+        return self.value  # type: ignore[return-value]
 
     def __bool__(self) -> bool:
         """Return True if this is a success result."""

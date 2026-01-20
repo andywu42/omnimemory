@@ -7,6 +7,7 @@ in connection pooling, ensuring type safety and validation.
 
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,7 +17,10 @@ class ConnectionMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    connection_id: str = Field(description="Unique identifier for this connection")
+    connection_id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        description="Unique identifier for this connection",
+    )
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

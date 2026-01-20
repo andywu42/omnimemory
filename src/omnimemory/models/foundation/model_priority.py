@@ -59,9 +59,9 @@ class ModelPriority(BaseModel):
         """Get effective priority value considering boost and expiration."""
         if self.is_expired():
             # If expired, fallback to normal priority
-            base_priority = EnumPriorityLevel.NORMAL.get_numeric_value()
+            base_priority = float(EnumPriorityLevel.NORMAL.get_numeric_value())
         else:
-            base_priority = self.level.get_numeric_value()
+            base_priority = float(self.level.get_numeric_value())
 
         return base_priority * self.boost_factor
 

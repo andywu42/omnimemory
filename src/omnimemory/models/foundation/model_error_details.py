@@ -10,20 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 # Import standard ONEX error types from omnibase_core
-try:
-    from omnibase_core.core.errors.core_errors import OnexErrorCode as CoreErrorCode
-    from omnibase_core.enums.enum_log_level import EnumLogLevel as CoreSeverity
-
-    # Local omnimemory-specific error codes
-    from ...enums.enum_error_code import OmniMemoryErrorCode
-
-    # Union type for error codes
-    ErrorCodeType = CoreErrorCode | OmniMemoryErrorCode | str
-    SeverityType = CoreSeverity
-except ImportError:
-    # Fallback for development environments
-    from ...enums.enum_error_code import OmniMemoryErrorCode as ErrorCodeType
-    from ...enums.enum_severity import EnumSeverity as SeverityType
+from ..._compat_imports import ErrorCodeType, SeverityType
 
 
 class ModelErrorDetails(BaseModel):

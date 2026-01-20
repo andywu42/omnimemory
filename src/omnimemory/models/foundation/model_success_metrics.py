@@ -4,7 +4,7 @@ Success metrics models following ONEX standards.
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 class ModelSuccessRate(BaseModel):
@@ -37,7 +37,7 @@ class ModelSuccessRate(BaseModel):
 
     @field_validator("successful_operations")
     @classmethod
-    def validate_successful_operations(cls, v: int, info) -> int:
+    def validate_successful_operations(cls, v: int, info: ValidationInfo) -> int:
         """Validate successful operations doesn't exceed total."""
         if hasattr(info, "data") and "total_operations" in info.data:
             total = info.data["total_operations"]

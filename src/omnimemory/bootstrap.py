@@ -341,19 +341,27 @@ async def shutdown() -> None:
         logger.info("Shutdown complete")
 
 
-def is_bootstrapped() -> bool:
+async def is_bootstrapped() -> bool:
     """Check if bootstrap has been completed.
+
+    This function is protected by the bootstrap lock to ensure
+    consistent reads when bootstrap/shutdown may be in progress.
 
     Returns:
         True if bootstrap() has been called successfully.
     """
-    return _bootstrap_completed
+    async with _get_bootstrap_lock():
+        return _bootstrap_completed
 
 
-def get_bootstrap_result() -> BootstrapResult | None:
+async def get_bootstrap_result() -> BootstrapResult | None:
     """Get the cached bootstrap result.
+
+    This function is protected by the bootstrap lock to ensure
+    consistent reads when bootstrap/shutdown may be in progress.
 
     Returns:
         BootstrapResult if bootstrap completed, None otherwise.
     """
-    return _bootstrap_result
+    async with _get_bootstrap_lock():
+        return _bootstrap_result

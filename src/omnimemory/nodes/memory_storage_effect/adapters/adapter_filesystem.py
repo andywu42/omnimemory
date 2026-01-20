@@ -665,7 +665,8 @@ class HandlerFileSystemAdapter:
             )
         except InfraConnectionError as e:
             # Handler raises InfraConnectionError for file not found
-            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            # Use helper to detect "not found" condition
+            # (see _is_not_found_infra_error docs)
             if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="not_found",
@@ -1013,7 +1014,8 @@ class HandlerFileSystemAdapter:
             )
         except InfraConnectionError as e:
             # Handler raises InfraConnectionError for directory not found
-            # Use helper to detect "not found" condition (see _is_not_found_infra_error docs)
+            # Use helper to detect "not found" condition
+            # (see _is_not_found_infra_error docs)
             if _is_not_found_infra_error(e):
                 return ModelMemoryStorageResponse(
                     status="error",

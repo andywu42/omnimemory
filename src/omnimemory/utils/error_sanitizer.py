@@ -14,7 +14,7 @@ __all__ = [
 
 import re
 from enum import Enum
-from typing import Pattern
+from typing import Any, Pattern
 
 
 class SanitizationLevel(Enum):
@@ -220,7 +220,7 @@ class ErrorSanitizer:
                 "session_id",
             }
 
-        sanitized = {}
+        sanitized: dict[str, Any] = {}
         for key, value in data.items():
             if any(sensitive in key.lower() for sensitive in keys_to_sanitize):
                 sanitized[key] = "[REDACTED]"
