@@ -86,6 +86,9 @@ class AuditEvent(BaseModel):
     sanitized: bool = Field(default=False, description="Whether data was sanitized")
 
     model_config = ConfigDict(
+        extra="forbid",
+        validate_default=True,
+        str_strip_whitespace=True,
         ser_json_timedelta="iso8601",
     )
 

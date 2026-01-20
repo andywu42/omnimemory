@@ -60,6 +60,9 @@ class BootstrapError(Exception):
         self.config_block = config_block
         self.cause = cause
         super().__init__(f"Bootstrap failed [{config_block}]: {message}")
+        # Set __cause__ for proper Python exception chaining (enables traceback display)
+        if cause is not None:
+            self.__cause__ = cause
 
 
 @dataclass

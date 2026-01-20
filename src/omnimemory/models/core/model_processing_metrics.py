@@ -3,7 +3,6 @@ Processing metrics model for operation timing and performance tracking.
 """
 
 from datetime import datetime
-from typing import Dict
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -81,7 +80,7 @@ class ModelProcessingMetrics(BaseModel):
 
     @computed_field
     @property
-    def breakdown_percentages(self) -> Dict[str, float]:
+    def breakdown_percentages(self) -> dict[str, float]:
         """
         Calculate percentage breakdown of processing time.
 
@@ -115,11 +114,11 @@ class ModelProcessingMetrics(BaseModel):
         storage_pct = (self.storage_time_ms / total) * 100
         serialization_pct = (self.serialization_time_ms / total) * 100
 
-        # "other" = untracked time (framework overhead, context switching, etc.)
-        other_pct = max(
-            0.0,
-            ((total - total_accounted) / total) * 100,
-        )
+        # "other" = remainder to ensure percentages sum to exactly 100%
+        # This correctly handles edge cases where component times exceed total
+        # (due to measurement overlap) or where there's untracked overhead
+        known_total = validation_pct + computation_pct + storage_pct + serialization_pct
+        other_pct = max(0.0, 100.0 - known_total)
 
         return {
             "validation": validation_pct,

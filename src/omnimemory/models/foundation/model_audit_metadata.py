@@ -5,11 +5,13 @@ This module provides strongly typed replacements for Dict[str, Any] patterns
 in audit logging, ensuring type safety and validation.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuditEventDetails(BaseModel):
     """Strongly typed details for audit events."""
+
+    model_config = ConfigDict(extra="forbid")
 
     operation_type: str = Field(
         default="unspecified", description="Type of operation being audited"
@@ -53,6 +55,8 @@ class AuditEventDetails(BaseModel):
 class ResourceUsageMetadata(BaseModel):
     """Strongly typed resource usage metrics."""
 
+    model_config = ConfigDict(extra="forbid")
+
     cpu_usage_percent: float | None = Field(
         default=None, description="CPU usage percentage during operation"
     )
@@ -82,6 +86,8 @@ class ResourceUsageMetadata(BaseModel):
 
 class SecurityAuditDetails(BaseModel):
     """Strongly typed security audit information."""
+
+    model_config = ConfigDict(extra="forbid")
 
     authentication_method: str | None = Field(
         default=None, description="Authentication method used"
@@ -118,6 +124,8 @@ class SecurityAuditDetails(BaseModel):
 
 class PerformanceAuditDetails(BaseModel):
     """Strongly typed performance audit information."""
+
+    model_config = ConfigDict(extra="forbid")
 
     operation_latency_ms: float = Field(description="Operation latency in milliseconds")
 

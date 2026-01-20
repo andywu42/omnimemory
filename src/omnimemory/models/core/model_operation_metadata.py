@@ -2,16 +2,18 @@
 Operation metadata model for tracking operation-specific information.
 """
 
-from typing import Dict, Optional
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..foundation.model_typed_collections import ModelConfiguration, ModelMetadata
 
 
 class ModelOperationMetadata(BaseModel):
     """Operation metadata for tracking operation-specific information."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Operation identification
     operation_type: str = Field(
@@ -62,7 +64,7 @@ class ModelOperationMetadata(BaseModel):
     )
 
     # Feature flags and experiments
-    feature_flags: Dict[str, bool] = Field(
+    feature_flags: dict[str, bool] = Field(
         default_factory=dict, description="Feature flags active during operation"
     )
     experiment_id: Optional[str] = Field(

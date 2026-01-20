@@ -26,10 +26,10 @@ import functools
 import threading
 from collections import deque
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, AsyncGenerator, Callable, Optional, TypeVar, Union
 
 # Type variable for generic function return types
 F = TypeVar("F", bound=Callable[..., Any])
@@ -164,7 +164,7 @@ class PriorityLock:
     def __init__(self, name: str):
         self.name = name
         self._lock = asyncio.Lock()
-        self._queue: List[LockRequest] = []
+        self._queue: list[LockRequest] = []
         self._current_holder: Optional[LockRequest] = None
         self._stats = {
             "total_acquisitions": 0,
@@ -326,7 +326,7 @@ class FairSemaphore:
         self._semaphore = asyncio.Semaphore(value)
         self._total_permits = value
         self._waiting_queue: deque = deque()
-        self._active_holders: Dict[str, datetime] = {}
+        self._active_holders: dict[str, datetime] = {}
         self._stats = SemaphoreStats(
             total_permits=value, available_permits=value, waiting_count=0
         )
@@ -437,8 +437,11 @@ class FairSemaphore:
                         )
 
     def get_stats(self) -> SemaphoreStats:
-        """Get current semaphore statistics."""
-        return self._stats
+        """Get current semaphore statistics.
+
+        Returns a copy to prevent external mutation of internal state.
+        """
+        return replace(self._stats)
 
 
 class AsyncConnectionPool:
@@ -465,7 +468,7 @@ class AsyncConnectionPool:
         self._close_connection = close_connection or (lambda conn: None)
 
         self._available: asyncio.Queue = asyncio.Queue(maxsize=config.max_connections)
-        self._active: Dict[str, ConnectionMetadata] = {}
+        self._active: dict[str, ConnectionMetadata] = {}
         self._metrics = PoolMetrics()
         self._status = PoolStatus.HEALTHY
         self._lock = asyncio.Lock()
@@ -756,10 +759,13 @@ class AsyncConnectionPool:
         )
 
     def get_metrics(self) -> PoolMetrics:
-        """Get current pool metrics."""
+        """Get current pool metrics.
+
+        Returns a copy to prevent external mutation of internal state.
+        """
         self._metrics.active_connections = len(self._active)
         self._metrics.idle_connections = self._available.qsize()
-        return self._metrics
+        return replace(self._metrics)
 
     def get_status(self) -> PoolStatus:
         """Get current pool status."""
@@ -786,9 +792,9 @@ class AsyncConnectionPool:
 
 
 # Global managers
-_locks: Dict[str, PriorityLock] = {}
-_semaphores: Dict[str, FairSemaphore] = {}
-_pools: Dict[str, AsyncConnectionPool] = {}
+_locks: dict[str, PriorityLock] = {}
+_semaphores: dict[str, FairSemaphore] = {}
+_pools: dict[str, AsyncConnectionPool] = {}
 _manager_lock = asyncio.Lock()
 
 # Shared ThreadPoolExecutor for sync function timeout enforcement
@@ -1018,9 +1024,7 @@ class CircuitBreaker:
             bool: True if request is allowed, False if blocked
         """
         with self._sync_lock:
-            if self.state == CircuitBreakerState.CLOSED:
-                return True
-            elif self.state == CircuitBreakerState.OPEN:
+            if self.state == CircuitBreakerState.OPEN:
                 # Check if recovery timeout has passed
                 if self.last_failure_time:
                     elapsed = (
@@ -1030,9 +1034,8 @@ class CircuitBreaker:
                         self._transition_to_half_open()
                         return True
                 return False
-            elif self.state == CircuitBreakerState.HALF_OPEN:
-                return True
-            return False
+            # CLOSED and HALF_OPEN both allow requests through
+            return True
 
     async def call(
         self, func: Callable[..., Any], *args, timeout: Optional[float] = None, **kwargs

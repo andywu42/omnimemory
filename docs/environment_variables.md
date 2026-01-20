@@ -81,7 +81,7 @@ Filesystem backend is **required** for Phase 1. All memory operations use filesy
 |----------|------|---------|-------------|-------------|
 | `OMNIMEMORY__FILESYSTEM__BASE_PATH` | Path | **required** | Must be absolute | Base directory for memory storage |
 | `OMNIMEMORY__FILESYSTEM__MAX_FILE_SIZE_BYTES` | int | `10485760` (10MB) | 1 - 1073741824 (1GB) | Maximum file size in bytes |
-| `OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS` | list | `[".json", ".txt", ".md"]` | - | Allowed file extensions for storage |
+| `OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS` | list | `[".json", ".txt", ".md"]` | JSON array format | Allowed file extensions (e.g., `'[".json", ".txt"]'`) |
 | `OMNIMEMORY__FILESYSTEM__CREATE_IF_MISSING` | bool | `true` | - | Create base_path if it doesn't exist |
 | `OMNIMEMORY__FILESYSTEM__ENABLE_COMPRESSION` | bool | `false` | - | Enable gzip compression for stored files |
 | `OMNIMEMORY__FILESYSTEM__BUFFER_SIZE_BYTES` | int | `65536` (64KB) | 4096 - 1048576 (1MB) | I/O buffer size in bytes |

@@ -6,6 +6,7 @@ including structured error codes, exception chaining, and monadic error patterns
 that integrate with NodeResult for consistent error handling across the system.
 """
 
+import re
 from enum import Enum
 from typing import TypedDict
 from uuid import UUID
@@ -15,6 +16,73 @@ from uuid import UUID
 FieldValueType = (
     str | int | float | bool | bytes | list[object] | dict[str, object] | None
 )
+
+# Patterns for detecting sensitive data that should be redacted
+_SENSITIVE_FIELD_PATTERNS = re.compile(
+    r"(password|secret|token|key|credential|auth|api.?key|private)",
+    re.IGNORECASE,
+)
+
+# Pattern to detect PostgresDsn or connection string with embedded password
+_CONNECTION_STRING_PASSWORD_PATTERN = re.compile(
+    r"(://[^:]+:)([^@]+)(@)",  # Matches user:password@ in connection strings
+    re.IGNORECASE,
+)
+
+# Redaction placeholder
+_REDACTED = "[REDACTED]"
+
+
+def _is_sensitive_field(field_name: str | None) -> bool:
+    """Check if a field name indicates sensitive data."""
+    if not field_name:
+        return False
+    return bool(_SENSITIVE_FIELD_PATTERNS.search(field_name))
+
+
+def _redact_connection_string(value: str) -> str:
+    """Redact password from connection strings (e.g., PostgresDsn)."""
+    return _CONNECTION_STRING_PASSWORD_PATTERN.sub(rf"\1{_REDACTED}\3", value)
+
+
+def _sanitize_field_value(field_name: str | None, field_value: FieldValueType) -> str:
+    """
+    Sanitize a field value for safe inclusion in error messages.
+
+    Redacts sensitive data including:
+    - Values from fields with sensitive names (password, secret, token, etc.)
+    - Passwords embedded in connection strings (PostgresDsn)
+    - SecretStr values (detected by type name check)
+
+    Args:
+        field_name: Name of the field (used to detect sensitive fields)
+        field_value: The value to sanitize
+
+    Returns:
+        Sanitized string representation safe for error messages
+    """
+    if field_value is None:
+        return "None"
+
+    # Check if field name indicates sensitive data
+    if _is_sensitive_field(field_name):
+        return _REDACTED
+
+    # Convert to string for inspection
+    value_str = str(field_value)
+
+    # Check for SecretStr type (from Pydantic) - these show as '**********'
+    # or have SecretStr in their type name
+    type_name = type(field_value).__name__
+    if "Secret" in type_name:
+        return _REDACTED
+
+    # Check for connection strings with embedded passwords
+    if "://" in value_str and "@" in value_str:
+        return _redact_connection_string(value_str)
+
+    return value_str
+
 
 # Use local compatibility stub until omnibase_core provides OnexError
 try:
@@ -309,11 +377,13 @@ class ValidationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.VALUE_OUT_OF_RANGE
 
         # Build context with validation details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if field_name:
             context["field_name"] = field_name
         if field_value is not None:
-            context["field_value"] = str(field_value)
+            # Sanitize field value to prevent secret/password leakage
+            context["field_value"] = _sanitize_field_value(field_name, field_value)
         if validation_rule:
             context["validation_rule"] = validation_rule
 
@@ -355,7 +425,8 @@ class StorageError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.TRANSACTION_FAILED
 
         # Build context with storage details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if storage_system:
             context["storage_system"] = storage_system
         if operation:
@@ -402,7 +473,8 @@ class RetrievalError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.FILTER_INVALID
 
         # Build context with retrieval details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if memory_id:
             context["memory_id"] = str(memory_id)
         if query:
@@ -446,7 +518,8 @@ class ProcessingError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.COMPUTATION_TIMEOUT
 
         # Build context with processing details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if processing_stage:
             context["processing_stage"] = processing_stage
         if model_name:
@@ -490,7 +563,8 @@ class CoordinationError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.ORCHESTRATION_FAILED
 
         # Build context with coordination details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if workflow_id:
             context["workflow_id"] = str(workflow_id)
         if agent_ids:
@@ -533,7 +607,8 @@ class SystemError(OmniMemoryError):
             error_code = OmniMemoryErrorCode.RATE_LIMIT_EXCEEDED
 
         # Build context with system details
-        context = kwargs.get("context", {})
+        # Copy to avoid mutating caller-provided context
+        context = {**kwargs.get("context", {})}
         if system_component:
             context["system_component"] = system_component
 

@@ -16,9 +16,8 @@ Example environment variables:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Self
 
-from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, model_validator
+from pydantic import Field, HttpUrl, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from omnimemory.models.config import (
@@ -341,15 +340,6 @@ class SettingsMemoryService(BaseSettings):
         default=False,
         description="Enable debug mode for verbose output",
     )
-
-    @model_validator(mode="after")
-    def validate_enabled_backends(self) -> Self:
-        """Validate that enabled backends can be loaded.
-
-        This validator runs after field validation to ensure consistency.
-        Actual backend settings are loaded lazily in to_config().
-        """
-        return self
 
     def to_config(self) -> ModelMemoryServiceConfig:
         """Convert settings to config model.

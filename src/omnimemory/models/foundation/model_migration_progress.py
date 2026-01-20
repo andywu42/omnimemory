@@ -11,20 +11,18 @@ This module provides models for tracking migration progress across the system:
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, PrivateAttr, computed_field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 
 from omnimemory.enums import FileProcessingStatus, MigrationPriority, MigrationStatus
 
-from ...utils.error_sanitizer import ErrorSanitizer, SanitizationLevel
 from .model_progress_summary import ProgressSummaryResponse
 from .model_typed_collections import ModelConfiguration, ModelMetadata
-
-# Initialize error sanitizer for secure logging
-_error_sanitizer = ErrorSanitizer(level=SanitizationLevel.STANDARD)
 
 
 class BatchProcessingMetrics(BaseModel):
     """Metrics for batch processing operations."""
+
+    model_config = ConfigDict(extra="forbid")
 
     batch_id: str = Field(description="Unique batch identifier")
     batch_size: int = Field(description="Number of items in batch")
@@ -56,6 +54,8 @@ class BatchProcessingMetrics(BaseModel):
 class FileProcessingInfo(BaseModel):
     """Information about individual file processing."""
 
+    model_config = ConfigDict(extra="forbid")
+
     file_path: str = Field(description="Path to the file being processed")
     file_size: int | None = Field(default=None, description="File size in bytes")
     status: FileProcessingStatus = Field(default=FileProcessingStatus.PENDING)
@@ -83,6 +83,8 @@ class FileProcessingInfo(BaseModel):
 
 class MigrationProgressMetrics(BaseModel):
     """Comprehensive metrics for migration progress tracking."""
+
+    model_config = ConfigDict(extra="forbid")
 
     total_files: int = Field(description="Total number of files to process")
     processed_files: int = Field(default=0, description="Number of files processed")
@@ -219,6 +221,8 @@ class MigrationProgressTracker(BaseModel):
     - Overall migration progress
     - Error tracking and recovery
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     migration_id: UUID = Field(
         default_factory=uuid4, description="Unique migration identifier"
@@ -375,12 +379,8 @@ class MigrationProgressTracker(BaseModel):
                 [b for b in self.metrics.batch_metrics if b.end_time is None]
             ),
             recent_errors=(
-                [
-                    _error_sanitizer.sanitize_error_message(
-                        str(e), level=SanitizationLevel.STRICT
-                    )
-                    for e in list(self.error_summary.keys())[-5:]
-                ]
+                # Error types are safe identifiers from _extract_error_type()
+                list(self.error_summary.keys())[-5:]
                 if self.error_summary
                 else []
             ),

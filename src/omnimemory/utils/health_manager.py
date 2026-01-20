@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from enum import Enum
@@ -27,7 +28,7 @@ except ImportError:
     psutil = None  # type: ignore[assignment]
 
 import structlog  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 from ..models.foundation.model_health_metadata import HealthCheckMetadata  # noqa: E402
 from ..models.foundation.model_health_response import (  # noqa: E402
@@ -461,8 +462,9 @@ class HealthCheckManager:
             memory = psutil.virtual_memory()
             memory_mb = memory.used / 1024 / 1024
 
-            # Get disk usage for root partition
-            disk = psutil.disk_usage("/")
+            # Get disk usage for root/system partition (platform-agnostic)
+            disk_path = "/" if sys.platform != "win32" else "C:\\"
+            disk = psutil.disk_usage(disk_path)
             disk_percent = disk.percent
 
             # Get network stats (simplified)
@@ -740,9 +742,13 @@ async def create_pinecone_health_check(
 ) -> Callable[[], Awaitable[HealthCheckResult]]:
     """Create a Pinecone health check function.
 
+    Note: Modern Pinecone SDK (v3+) determines region from the API key,
+    so the environment parameter is only used for metadata/logging purposes.
+
     Args:
-        api_key: Pinecone API key. If None, check is skipped with UNKNOWN status.
-        environment: Pinecone environment/region. If None, check is skipped.
+        api_key: Pinecone API key. If None, check returns UNKNOWN status.
+        environment: Optional environment identifier for metadata. Not required
+            by Pinecone SDK v3+ but useful for logging/tracking.
 
     Returns:
         Async function that performs Pinecone health check.
@@ -753,29 +759,29 @@ async def create_pinecone_health_check(
             name="pinecone", dependency_type=DependencyType.VECTOR_DB
         )
 
-        # If credentials not configured, return UNKNOWN status
-        if not api_key or not environment:
+        # If API key not configured, return UNKNOWN status
+        if not api_key:
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNKNOWN,
                 latency_ms=0.0,
-                error_message="Pinecone not configured (missing api_key/env)",
+                error_message="Pinecone not configured (missing api_key)",
             )
 
+        # Attempt to import Pinecone client
         try:
-            # Attempt to import and initialize Pinecone client
-            try:
-                from pinecone import Pinecone
-            except ImportError:
-                return HealthCheckResult(
-                    config=config,
-                    status=HealthStatus.UNKNOWN,
-                    latency_ms=0.0,
-                    error_message="Pinecone client library not installed",
-                )
+            from pinecone import Pinecone
+        except ImportError:
+            return HealthCheckResult(
+                config=config,
+                status=HealthStatus.UNKNOWN,
+                latency_ms=0.0,
+                error_message="Pinecone client library not installed",
+            )
 
-            # Create client and test connectivity by listing indexes
-            start_time = time.time()
+        # Perform actual health check by calling Pinecone API
+        start_time = time.time()
+        try:
             pc = Pinecone(api_key=api_key)
 
             # List indexes to verify connectivity - this is a lightweight API call
@@ -793,11 +799,7 @@ async def create_pinecone_health_check(
                 ),
             )
         except Exception as e:
-            # Calculate latency if start_time was set
-            try:
-                latency_ms = (time.time() - start_time) * 1000
-            except NameError:
-                latency_ms = 0.0
+            latency_ms = (time.time() - start_time) * 1000
             return HealthCheckResult(
                 config=config,
                 status=HealthStatus.UNHEALTHY,
@@ -819,6 +821,8 @@ HealthCheckResultDict = dict[str, HealthCheckResultValue]
 
 class HealthCheckDetails(BaseModel):
     """Strongly typed health check details with rate-limit and circuit tracking."""
+
+    model_config = ConfigDict(extra="forbid")
 
     message: str | None = Field(
         default=None, description="Human-readable status message"
@@ -862,6 +866,8 @@ class HealthCheckDetails(BaseModel):
 class ResourceHealthCheck(BaseModel):
     """Result of a resource health check."""
 
+    model_config = ConfigDict(use_enum_values=False)
+
     status: HealthStatus = Field(description="Health status of the resource")
     response_time: float = Field(default=0.0, description="Response time in seconds")
     details: HealthCheckDetails = Field(
@@ -871,14 +877,11 @@ class ResourceHealthCheck(BaseModel):
         default=None, description="Correlation ID for tracking"
     )
 
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = False
-
 
 class SystemHealth(BaseModel):
     """Overall system health status."""
+
+    model_config = ConfigDict(use_enum_values=False)
 
     overall_status: HealthStatus = Field(description="Overall system health status")
     resource_statuses: dict[str, ResourceHealthCheck] = Field(
@@ -888,11 +891,6 @@ class SystemHealth(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp of health check",
     )
-
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = False
 
 
 class HealthManager:
@@ -1154,9 +1152,8 @@ class HealthManager:
 
         if all(s == HealthStatus.HEALTHY for s in statuses):
             overall_status = HealthStatus.HEALTHY
-        elif any(s == HealthStatus.UNHEALTHY for s in statuses):
-            overall_status = HealthStatus.DEGRADED
         else:
+            # Any non-healthy status (UNHEALTHY, DEGRADED, etc.) results in DEGRADED
             overall_status = HealthStatus.DEGRADED
 
         return SystemHealth(

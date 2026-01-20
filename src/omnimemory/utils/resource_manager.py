@@ -11,8 +11,8 @@ NOTE ON Any TYPES:
 This module intentionally uses 'Any' types for generic resource management:
 - ResourcePool manages arbitrary resource types (connections, handles, etc.)
 - resource_id/resource fields use Any for generic resource references
-- config: Dict[str, Any] - Resource pool configs contain various value types
-- Pool health/stats methods return Dict[str, Any] for flexible monitoring data
+- config: dict[str, Any] - Resource pool configs contain various value types
+- Pool health/stats methods return dict[str, Any] for flexible monitoring data
 
 This design enables a single resource pool implementation to work with any
 resource type without complex generic type hierarchies.
@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, TypeVar
+from typing import Any, AsyncGenerator, Callable, Optional, TypeVar
 
 import structlog
 from pydantic import BaseModel, Field
@@ -254,9 +254,9 @@ class AsyncResourceManager:
     """
 
     def __init__(self):
-        self._circuit_breakers: Dict[str, AsyncCircuitBreaker] = {}
-        self._semaphores: Dict[str, asyncio.Semaphore] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._circuit_breakers: dict[str, AsyncCircuitBreaker] = {}
+        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def get_circuit_breaker(
         self, name: str, config: Optional[CircuitBreakerConfig] = None
@@ -355,7 +355,7 @@ class AsyncResourceManager:
             if semaphore:
                 semaphore.release()
 
-    def get_circuit_breaker_stats(self) -> Dict[str, CircuitBreakerStatsResponse]:
+    def get_circuit_breaker_stats(self) -> dict[str, CircuitBreakerStatsResponse]:
         """Get typed statistics for all circuit breakers."""
         stats = {}
         for name, cb in self._circuit_breakers.items():
@@ -461,7 +461,7 @@ class ResourceHandle:
     status: ResourceStatus = ResourceStatus.ACTIVE
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     ttl: Optional[float] = None
-    _context: Dict[str, Any] = field(default_factory=dict)
+    _context: dict[str, Any] = field(default_factory=dict)
 
     def is_healthy(self) -> bool:
         """
@@ -525,7 +525,7 @@ class ResourcePool:
     Manages resource creation, pooling, and lifecycle.
     """
 
-    def __init__(self, resource_type: ResourceType, config: Dict[str, Any]):
+    def __init__(self, resource_type: ResourceType, config: dict[str, Any]):
         """
         Initialize resource pool.
 
@@ -543,8 +543,8 @@ class ResourcePool:
         self._scale_increment = config.get("scale_increment", 1)
         self._health_check_interval = config.get("health_check_interval", 60.0)
 
-        self.available_resources: List[Any] = []
-        self.active_resources: Dict[Any, ResourceHandle] = {}
+        self.available_resources: list[Any] = []
+        self.active_resources: dict[Any, ResourceHandle] = {}
         self.current_size = 0
 
         self._lock = asyncio.Lock()
@@ -685,7 +685,7 @@ class ResourceManager:
 
     def __init__(self):
         """Initialize resource manager."""
-        self.resource_pools: Dict[ResourceType, ResourcePool] = {}
+        self.resource_pools: dict[ResourceType, ResourcePool] = {}
         self._metrics = {
             "total_operations": 0,
             "total_acquisitions": 0,
@@ -694,7 +694,7 @@ class ResourceManager:
         }
 
     async def register_pool(
-        self, resource_type: ResourceType, config: Dict[str, Any]
+        self, resource_type: ResourceType, config: dict[str, Any]
     ) -> None:
         """
         Register a resource pool.
@@ -780,7 +780,7 @@ class ResourceManager:
         finally:
             await self.release(handle)
 
-    def get_pool_health(self, resource_type: ResourceType) -> Dict[str, Any]:
+    def get_pool_health(self, resource_type: ResourceType) -> dict[str, Any]:
         """
         Get health status of a resource pool.
 
@@ -802,7 +802,7 @@ class ResourceManager:
             "health_check_failures": 0,
         }
 
-    def get_pool_stats(self, resource_type: ResourceType) -> Dict[str, Any]:
+    def get_pool_stats(self, resource_type: ResourceType) -> dict[str, Any]:
         """
         Get statistics for a resource pool.
 
@@ -825,7 +825,7 @@ class ResourceManager:
             "available_count": len(pool.available_resources),
         }
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """
         Get resource manager metrics.
 

@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModelTag(BaseModel):
     """Individual tag model with metadata."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(
         description="Tag name",
@@ -57,6 +59,8 @@ class ModelTag(BaseModel):
 
 class ModelTagCollection(BaseModel):
     """Collection of tags with validation and management."""
+
+    model_config = ConfigDict(extra="forbid")
 
     tags: list[ModelTag] = Field(
         default_factory=list,

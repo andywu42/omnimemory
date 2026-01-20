@@ -318,6 +318,10 @@ class TestBootstrapFailure:
             assert error.config_block == "filesystem"
             # Verify error message indicates write failure
             assert "not writable" in str(error)
+            # Verify Python standard exception chaining is also set
+            assert (
+                error.__cause__ is error.cause
+            ), "__cause__ should be set for proper Python exception chaining"
         finally:
             # Restore permissions for cleanup
             if read_only_dir.exists():
@@ -386,6 +390,10 @@ class TestBootstrapFailure:
             assert error.config_block == "filesystem"
             # Verify error message indicates creation failure
             assert "Cannot create" in str(error)
+            # Verify Python standard exception chaining is also set
+            assert (
+                error.__cause__ is error.cause
+            ), "__cause__ should be set for proper Python exception chaining"
         finally:
             # Restore permissions for cleanup
             if read_only_parent.exists():
@@ -418,6 +426,10 @@ class TestBootstrapFailure:
         assert hasattr(error, "cause"), "BootstrapError must have cause attribute"
         assert error.cause is None, "cause should be None for validation errors"
         assert error.config_block == "filesystem"
+        # Verify Python standard exception chaining is not set for validation errors
+        assert (
+            error.__cause__ is None
+        ), "__cause__ should be None when no underlying exception exists"
 
 
 class TestBootstrapIdempotency:

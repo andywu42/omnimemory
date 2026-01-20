@@ -7,13 +7,15 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from omnimemory.enums import EnumDecayFunction, EnumTrustLevel
 
 
 class ModelTrustScore(BaseModel):
     """Trust score with time-based decay and validation."""
+
+    model_config = ConfigDict(extra="forbid")
 
     base_score: float = Field(
         ge=0.0,
