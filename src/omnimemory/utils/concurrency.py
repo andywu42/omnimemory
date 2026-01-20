@@ -1140,7 +1140,10 @@ class ConnectionPool:
         self.max_size = max_size
         self.timeout = timeout
         self._connections: list[object] = []
-        self._active: dict[str, object] = {}
+        # NOTE: Values are typed as Optional[object] because connection starts as None
+        # and is assigned within the acquire() method before being stored here.
+        # In practice, only non-None object instances are ever stored.
+        self._active: dict[str, object | None] = {}
         self._lock = asyncio.Lock()
         self._connection_counter = 0
         # Thread-safe lock for synchronous accessor methods
@@ -1210,8 +1213,10 @@ class ConnectionPool:
             Connection object
         """
         connection_id = str(uuid4())
-        connection = None
-        effective_timeout = timeout or self.timeout
+        connection: object | None = None
+        # NOTE: Use explicit None check to allow timeout=0 to be respected.
+        # Using `timeout or self.timeout` would treat 0 as falsy and use self.timeout.
+        effective_timeout = timeout if timeout is not None else self.timeout
         start_time = datetime.now(timezone.utc)
 
         try:

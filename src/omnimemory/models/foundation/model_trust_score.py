@@ -4,7 +4,6 @@ Trust score model with time decay following ONEX standards.
 
 import math
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from pydantic import (
@@ -65,13 +64,13 @@ class ModelTrustScore(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the trust score was last updated",
     )
-    last_verified: Optional[datetime] = Field(
+    last_verified: datetime | None = Field(
         default=None,
         description="When the trust was last externally verified",
     )
 
     # Metadata
-    source_node_id: Optional[UUID] = Field(
+    source_node_id: UUID | None = Field(
         default=None,
         description="Node that established this trust score",
     )
@@ -87,8 +86,8 @@ class ModelTrustScore(BaseModel):
     )
 
     # Performance optimization caching (using PrivateAttr for underscore names)
-    _cached_score: Optional[float] = PrivateAttr(default=None)
-    _cache_timestamp: Optional[datetime] = PrivateAttr(default=None)
+    _cached_score: float | None = PrivateAttr(default=None)
+    _cache_timestamp: datetime | None = PrivateAttr(default=None)
     _cache_ttl_seconds: int = PrivateAttr(default=300)
 
     @field_validator("trust_level")
@@ -121,7 +120,7 @@ class ModelTrustScore(BaseModel):
             return EnumTrustLevel.UNTRUSTED
 
     def calculate_current_score(
-        self, as_of: Optional[datetime] = None, force_recalculate: bool = False
+        self, as_of: datetime | None = None, force_recalculate: bool = False
     ) -> float:
         """Calculate current trust score with time decay and caching for performance."""
         if as_of is None:
@@ -212,7 +211,7 @@ class ModelTrustScore(BaseModel):
 
     @classmethod
     def create_from_float(
-        cls, score: float, source_node_id: Optional[UUID] = None
+        cls, score: float, source_node_id: UUID | None = None
     ) -> "ModelTrustScore":
         """Create trust score model from legacy float value."""
         trust_level = cls._score_to_level(score)

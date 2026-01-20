@@ -6,56 +6,56 @@ error handling, migration progress tracking, and system-level operations.
 """
 
 from ...enums.enum_error_code import OmniMemoryErrorCode
-from ...enums.enum_severity import EnumSeverity  # noqa: E402
-from .model_audit_metadata import (  # noqa: E402
+from ...enums.enum_severity import EnumSeverity
+from .model_audit_metadata import (
     AuditEventDetails,
     PerformanceAuditDetails,
     ResourceUsageMetadata,
     SecurityAuditDetails,
 )
-from .model_configuration import (  # noqa: E402
+from .model_configuration import (
     ModelCacheConfig,
     ModelDatabaseConfig,
     ModelObservabilityConfig,
     ModelPerformanceConfig,
     ModelSystemConfiguration,
 )
-from .model_connection_metadata import (  # noqa: E402
+from .model_connection_metadata import (
     ConnectionMetadata,
     ConnectionPoolStats,
     SemaphoreMetrics,
 )
-from .model_contract_version import (  # noqa: E402
+from .model_contract_version import (
     DEFAULT_CONTRACT_VERSION,
     ContractVersionMixin,
     ModelContractVersion,
 )
-from .model_error_details import ModelErrorDetails  # noqa: E402
+from .model_error_details import ModelErrorDetails
 
 # New metadata models for replacing Dict[str, Any]
-from .model_health_metadata import (  # noqa: E402
+from .model_health_metadata import (
     AggregateHealthMetadata,
     ConfigurationChangeMetadata,
     HealthCheckMetadata,
 )
-from .model_health_response import (  # noqa: E402
+from .model_health_response import (
     ModelDependencyStatus,
     ModelHealthResponse,
     ModelResourceMetrics,
 )
-from .model_memory_data import (  # noqa: E402
+from .model_memory_data import (
     ModelMemoryDataContent,
     ModelMemoryDataValue,
     ModelMemoryRequestData,
     ModelMemoryResponseData,
 )
-from .model_metrics_response import (  # noqa: E402
+from .model_metrics_response import (
     ModelMetricsResponse,
     ModelOperationCounts,
     ModelPerformanceMetrics,
     ModelResourceMetricsDetailed,
 )
-from .model_migration_progress import (  # noqa: E402
+from .model_migration_progress import (
     BatchProcessingMetrics,
     FileProcessingInfo,
     FileProcessingStatus,
@@ -64,20 +64,20 @@ from .model_migration_progress import (  # noqa: E402
     MigrationProgressTracker,
     MigrationStatus,
 )
-from .model_notes import ModelNote, ModelNotesCollection  # noqa: E402
-from .model_progress_summary import (  # noqa: E402
+from .model_notes import ModelNote, ModelNotesCollection
+from .model_progress_summary import (
     ModelProgressPerformanceMetrics,
     ProgressSummaryResponse,
 )
-from .model_semver import ModelSemVer  # noqa: E402
-from .model_success_metrics import (  # noqa: E402
+from .model_semver import ModelSemVer
+from .model_success_metrics import (
     ModelConfidenceInterval,
     ModelConfidenceScore,
     ModelQualityMetrics,
     ModelSuccessRate,
 )
-from .model_system_health import ModelSystemHealth  # noqa: E402
-from .model_typed_collections import (  # noqa: E402
+from .model_system_health import ModelSystemHealth
+from .model_typed_collections import (
     ModelConfiguration,
     ModelConfigurationOption,
     ModelEventCollection,

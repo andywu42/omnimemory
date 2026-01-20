@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Optional, TypeVar
+from typing import Any, AsyncGenerator, Callable
 
 import structlog
 from pydantic import BaseModel, Field
@@ -53,9 +53,6 @@ def _sanitize_error(error: Exception) -> str:
     return _base_sanitize_error(
         error, context="resource_manager", level=SanitizationLevel.STANDARD
     )
-
-
-T = TypeVar("T")
 
 
 class CircuitState(Enum):
@@ -90,7 +87,7 @@ class CircuitBreakerStats:
 
     failure_count: int = 0
     success_count: int = 0
-    last_failure_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
     state_changed_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -106,9 +103,7 @@ class CircuitBreakerStatsResponse(BaseModel):
     success_count: int = Field(description="Number of successful calls")
     total_calls: int = Field(description="Total number of calls attempted")
     total_timeouts: int = Field(description="Total number of timeout failures")
-    last_failure_time: Optional[str] = Field(
-        description="ISO timestamp of last failure"
-    )
+    last_failure_time: str | None = Field(description="ISO timestamp of last failure")
     state_changed_at: str = Field(description="ISO timestamp when state last changed")
 
 
@@ -129,7 +124,7 @@ class AsyncCircuitBreaker:
     gracefully and provide fast failure when services are known to be down.
     """
 
-    def __init__(self, name: str, config: Optional[CircuitBreakerConfig] = None):
+    def __init__(self, name: str, config: CircuitBreakerConfig | None = None):
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.state = CircuitState.CLOSED
@@ -141,7 +136,7 @@ class AsyncCircuitBreaker:
         async with self._lock:
             if self.state == CircuitState.OPEN:
                 if self._should_attempt_reset():
-                    await self._transition_to_half_open()
+                    self._transition_to_half_open()
                 else:
                     raise CircuitBreakerError(self.name, self.state)
 
@@ -175,8 +170,12 @@ class AsyncCircuitBreaker:
         time_since_failure = datetime.now(timezone.utc) - self.stats.last_failure_time
         return time_since_failure.total_seconds() >= effective_timeout
 
-    async def _transition_to_half_open(self) -> None:
-        """Transition circuit breaker to half-open state."""
+    def _transition_to_half_open(self) -> None:
+        """Transition circuit breaker to half-open state.
+
+        Note: This is a synchronous method as it only modifies internal state.
+        No I/O operations are performed.
+        """
         self.state = CircuitState.HALF_OPEN
         self.stats.state_changed_at = datetime.now(timezone.utc)
         self.stats.success_count = 0
@@ -196,7 +195,7 @@ class AsyncCircuitBreaker:
             if self.state == CircuitState.HALF_OPEN:
                 self.stats.success_count += 1
                 if self.stats.success_count >= self.config.success_threshold:
-                    await self._transition_to_closed()
+                    self._transition_to_closed()
             elif self.state == CircuitState.CLOSED:
                 self.stats.failure_count = 0  # Reset failure count on success
 
@@ -211,12 +210,16 @@ class AsyncCircuitBreaker:
                 self.state == CircuitState.CLOSED
                 and self.stats.failure_count >= self.config.failure_threshold
             ):
-                await self._transition_to_open()
+                self._transition_to_open()
             elif self.state == CircuitState.HALF_OPEN:
-                await self._transition_to_open()
+                self._transition_to_open()
 
-    async def _transition_to_closed(self) -> None:
-        """Transition circuit breaker to closed state."""
+    def _transition_to_closed(self) -> None:
+        """Transition circuit breaker to closed state.
+
+        Note: This is a synchronous method as it only modifies internal state.
+        No I/O operations are performed.
+        """
         self.state = CircuitState.CLOSED
         self.stats.state_changed_at = datetime.now(timezone.utc)
         self.stats.failure_count = 0
@@ -228,8 +231,12 @@ class AsyncCircuitBreaker:
             reason="success_threshold_reached",
         )
 
-    async def _transition_to_open(self) -> None:
-        """Transition circuit breaker to open state."""
+    def _transition_to_open(self) -> None:
+        """Transition circuit breaker to open state.
+
+        Note: This is a synchronous method as it only modifies internal state.
+        No I/O operations are performed.
+        """
         self.state = CircuitState.OPEN
         self.stats.state_changed_at = datetime.now(timezone.utc)
 
@@ -259,7 +266,7 @@ class AsyncResourceManager:
         self._locks: dict[str, asyncio.Lock] = {}
 
     def get_circuit_breaker(
-        self, name: str, config: Optional[CircuitBreakerConfig] = None
+        self, name: str, config: CircuitBreakerConfig | None = None
     ) -> AsyncCircuitBreaker:
         """Get or create a circuit breaker for a service."""
         if name not in self._circuit_breakers:
@@ -283,9 +290,9 @@ class AsyncResourceManager:
         self,
         resource_name: str,
         acquire_func: Callable[..., Any],
-        release_func: Optional[Callable[[Any], None]] = None,
-        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
-        semaphore_limit: Optional[int] = None,
+        release_func: Callable[[Any], None] | None = None,
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
+        semaphore_limit: int | None = None,
         *args: Any,
         **kwargs: Any,
     ) -> AsyncGenerator[Any, None]:
@@ -383,7 +390,7 @@ resource_manager = AsyncResourceManager()
 async def with_circuit_breaker(
     service_name: str,
     func: Callable[..., Any],
-    config: Optional[CircuitBreakerConfig] = None,
+    config: CircuitBreakerConfig | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> Any:
@@ -460,7 +467,7 @@ class ResourceHandle:
     resource_type: ResourceType
     status: ResourceStatus = ResourceStatus.ACTIVE
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    ttl: Optional[float] = None
+    ttl: float | None = None
     _context: dict[str, Any] = field(default_factory=dict)
 
     def is_healthy(self) -> bool:
@@ -502,7 +509,7 @@ class ResourceHandle:
         """
         self._context[key] = value
 
-    def get_context(self, key: str) -> Optional[Any]:
+    def get_context(self, key: str) -> Any | None:
         """
         Get context data from the handle.
 
@@ -566,7 +573,7 @@ class ResourcePool:
             if self.available_resources:
                 self._available_event.set()
 
-    def _create_resource(self) -> Optional[Any]:
+    def _create_resource(self) -> Any | None:
         """Create a new resource."""
         if self._factory:
             try:
@@ -580,7 +587,7 @@ class ResourcePool:
                 return None
         return None
 
-    async def acquire(self, timeout: Optional[float] = None) -> ResourceHandle:
+    async def acquire(self, timeout: float | None = None) -> ResourceHandle:
         """
         Acquire a resource from the pool.
 
@@ -716,7 +723,7 @@ class ResourceManager:
         )
 
     async def acquire(
-        self, resource_type: ResourceType, timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: float | None = None
     ) -> ResourceHandle:
         """
         Acquire a resource of the specified type.
@@ -764,7 +771,7 @@ class ResourceManager:
 
     @contextlib.asynccontextmanager
     async def acquire_context(
-        self, resource_type: ResourceType, timeout: Optional[float] = None
+        self, resource_type: ResourceType, timeout: float | None = None
     ) -> AsyncGenerator[ResourceHandle, None]:
         """
         Context manager for resource acquisition.
@@ -845,12 +852,41 @@ class ResourceManager:
             "total_releases": self._metrics["total_releases"],
         }
 
+    async def _close_resource(self, resource: Any) -> None:
+        """
+        Close a resource if it has a close method.
+
+        Handles both sync and async close methods. Errors during close
+        are logged but not raised to ensure cleanup continues.
+
+        Args:
+            resource: The resource to close
+        """
+        if resource is None:
+            return
+
+        if hasattr(resource, "close"):
+            try:
+                close_method = resource.close
+                if asyncio.iscoroutinefunction(close_method):
+                    await close_method()
+                else:
+                    close_method()
+                logger.debug("resource_closed", resource_type=type(resource).__name__)
+            except Exception as e:
+                logger.warning(
+                    "resource_close_error",
+                    resource_type=type(resource).__name__,
+                    error=_sanitize_error(e),
+                )
+
     async def _check_resource_expiration(self, resource_type: ResourceType) -> None:
         """
         Check and handle expired resources in a pool.
 
         Filters out resources that have exceeded the pool's TTL configuration.
-        Resources without TTL configured are never expired.
+        Resources without TTL configured are never expired. Expired resources
+        are explicitly closed if they have a close() method.
 
         Args:
             resource_type: Type of resource pool to check
@@ -859,6 +895,7 @@ class ResourceManager:
             return
 
         pool = self.resource_pools[resource_type]
+        expired_resources: list[Any] = []
 
         async with pool._lock:
             # If no TTL configured, all resources are valid
@@ -867,36 +904,60 @@ class ResourceManager:
 
             current_time = time.time()
             valid_resources: list[tuple[Any, float]] = []
-            expired_count = 0
 
             for resource, added_time in pool.available_resources:
                 elapsed = current_time - added_time
                 if elapsed < pool._ttl:
                     valid_resources.append((resource, added_time))
                 else:
-                    expired_count += 1
+                    expired_resources.append(resource)
                     pool.current_size -= 1
 
-            if expired_count > 0:
+            if expired_resources:
                 logger.debug(
                     "expired_resources_cleaned",
                     resource_type=resource_type.value,
-                    expired_count=expired_count,
+                    expired_count=len(expired_resources),
                     remaining_count=len(valid_resources),
                 )
 
             pool.available_resources = valid_resources
 
+        # Close expired resources outside the lock to avoid blocking
+        for resource in expired_resources:
+            await self._close_resource(resource)
+
     async def shutdown(self) -> None:
-        """Shut down the resource manager and release all resources."""
+        """Shut down the resource manager and close all resources.
+
+        Explicitly closes all active and available resources that have
+        a close() method before clearing the pools.
+        """
         for resource_type, pool in self.resource_pools.items():
+            resources_to_close: list[Any] = []
+
             async with pool._lock:
-                # Release all active resources
+                # Collect active resources for closing
                 for handle in list(pool.active_resources.values()):
                     handle.status = ResourceStatus.RELEASED
+                    resources_to_close.append(handle.resource)
+
+                # Collect available resources for closing
+                for resource, _added_time in pool.available_resources:
+                    resources_to_close.append(resource)
 
                 pool.active_resources.clear()
                 pool.available_resources.clear()
                 pool.current_size = 0
+
+            # Close resources outside the lock to avoid blocking
+            for resource in resources_to_close:
+                await self._close_resource(resource)
+
+            logger.debug(
+                "resource_pool_shutdown",
+                resource_type=resource_type.value,
+                resources_closed=len(resources_to_close),
+            )
 
         logger.info("resource_manager_shutdown_completed")

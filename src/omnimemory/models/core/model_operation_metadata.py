@@ -2,7 +2,6 @@
 Operation metadata model for tracking operation-specific information.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,19 +23,19 @@ class ModelOperationMetadata(BaseModel):
     )
 
     # Request context
-    correlation_id: Optional[UUID] = Field(
+    correlation_id: UUID | None = Field(
         default=None, description="Correlation ID for tracing related operations"
     )
-    session_id: Optional[UUID] = Field(
+    session_id: UUID | None = Field(
         default=None, description="Session ID for multi-operation sessions"
     )
-    user_id: Optional[UUID] = Field(
+    user_id: UUID | None = Field(
         default=None, description="User identifier who initiated the operation"
     )
 
     # Source information
     source_component: str = Field(description="Component that initiated the operation")
-    source_version: Optional[str] = Field(
+    source_version: str | None = Field(
         default=None, description="Version of the source component"
     )
 
@@ -59,7 +58,7 @@ class ModelOperationMetadata(BaseModel):
     environment: str = Field(
         default="production", description="Environment where operation was executed"
     )
-    node_id: Optional[UUID] = Field(
+    node_id: UUID | None = Field(
         default=None, description="ONEX node identifier that processed the operation"
     )
 
@@ -67,7 +66,7 @@ class ModelOperationMetadata(BaseModel):
     feature_flags: dict[str, bool] = Field(
         default_factory=dict, description="Feature flags active during operation"
     )
-    experiment_id: Optional[str] = Field(
+    experiment_id: str | None = Field(
         default=None, description="A/B test or experiment identifier"
     )
 

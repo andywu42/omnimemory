@@ -415,23 +415,28 @@ class HealthCheckManager:
                     if isinstance(result, BaseException):
                         # Create error result for exceptions
                         config = self._configs[dependency_name]
-                        error_result = HealthCheckResult(
-                            config=config,
-                            status=HealthStatus.UNHEALTHY,
-                            latency_ms=0.0,
-                            error_message=f"Health check exception: {result!s}",
-                        )
-                        health_results.append(error_result)
 
-                        error_to_log = (
+                        # Sanitize exception before including in result to prevent
+                        # sensitive data leakage (connection strings, credentials, etc.)
+                        error_to_sanitize = (
                             result
                             if isinstance(result, Exception)
                             else Exception(str(result))
                         )
+                        sanitized_error = _sanitize_error(error_to_sanitize)
+
+                        error_result = HealthCheckResult(
+                            config=config,
+                            status=HealthStatus.UNHEALTHY,
+                            latency_ms=0.0,
+                            error_message=f"Health check exception: {sanitized_error}",
+                        )
+                        health_results.append(error_result)
+
                         logger.error(
                             "health_check_gather_exception",
                             dependency_name=dependency_name,
-                            error=_sanitize_error(error_to_log),
+                            error=sanitized_error,
                             error_type=type(result).__name__,
                         )
                     elif isinstance(result, HealthCheckResult):
@@ -793,6 +798,9 @@ async def create_pinecone_health_check(
     Note: Modern Pinecone SDK (v3+) determines region from the API key,
     so the environment parameter is only used for metadata/logging purposes.
 
+    Uses PineconeAsyncio for native async if available, otherwise falls back
+    to run_in_executor to avoid blocking the event loop.
+
     Args:
         api_key: Pinecone API key. If None, check returns UNKNOWN status.
         environment: Optional environment identifier for metadata. Not required
@@ -816,7 +824,15 @@ async def create_pinecone_health_check(
                 error_message="Pinecone not configured (missing api_key)",
             )
 
-        # Attempt to import Pinecone client
+        # Attempt to import Pinecone client - try async first, then sync
+        pinecone_async_available = False
+        try:
+            from pinecone import PineconeAsyncio  # type: ignore[import-untyped]
+
+            pinecone_async_available = True
+        except ImportError:
+            PineconeAsyncio = None  # noqa: N806
+
         try:
             from pinecone import Pinecone  # type: ignore[import-untyped]
         except ImportError:
@@ -830,10 +846,29 @@ async def create_pinecone_health_check(
         # Perform actual health check by calling Pinecone API
         start_time = time.time()
         try:
-            pc = Pinecone(api_key=api_key)
+            if pinecone_async_available and PineconeAsyncio is not None:
+                # Use native async client for non-blocking I/O
+                pc_async = PineconeAsyncio(api_key=api_key)
+                try:
+                    indexes = await pc_async.list_indexes()
+                finally:
+                    # Cleanup async client resources
+                    if hasattr(pc_async, "close"):
+                        await pc_async.close()
+            else:
+                # Fall back to synchronous client with run_in_executor
+                # to avoid blocking the event loop
+                loop = asyncio.get_running_loop()
+                pc = Pinecone(api_key=api_key)
 
-            # List indexes to verify connectivity - this is a lightweight API call
-            indexes = pc.list_indexes()
+                def _sync_list_indexes() -> list[str]:
+                    result = pc.list_indexes()
+                    return result.names() if result else []
+
+                index_names = await loop.run_in_executor(None, _sync_list_indexes)
+                # Create a simple namespace object to match async behavior
+                indexes = type("IndexList", (), {"names": lambda: index_names})()
+
             latency_ms = (time.time() - start_time) * 1000
 
             index_count = len(indexes.names()) if indexes else 0

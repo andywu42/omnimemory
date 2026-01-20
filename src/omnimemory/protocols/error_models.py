@@ -731,14 +731,14 @@ def create_error_summary(errors: list[OmniMemoryError]) -> ErrorSummary:
         ErrorSummary containing error summary statistics with all fields populated
     """
     if not errors:
-        return ErrorSummary(
-            total_errors=0,
-            recoverable_errors=0,
-            non_recoverable_errors=0,
-            error_counts_by_code={},
-            error_counts_by_category={},
-            recovery_rate=0.0,
-        )
+        return {
+            "total_errors": 0,
+            "recoverable_errors": 0,
+            "non_recoverable_errors": 0,
+            "error_counts_by_code": {},
+            "error_counts_by_category": {},
+            "recovery_rate": 0.0,
+        }
 
     error_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
@@ -758,11 +758,11 @@ def create_error_summary(errors: list[OmniMemoryError]) -> ErrorSummary:
         if error.is_recoverable():
             recoverable_count += 1
 
-    return ErrorSummary(
-        total_errors=len(errors),
-        recoverable_errors=recoverable_count,
-        non_recoverable_errors=len(errors) - recoverable_count,
-        error_counts_by_code=error_counts,
-        error_counts_by_category=category_counts,
-        recovery_rate=recoverable_count / len(errors) if errors else 0.0,
-    )
+    return {
+        "total_errors": len(errors),
+        "recoverable_errors": recoverable_count,
+        "non_recoverable_errors": len(errors) - recoverable_count,
+        "error_counts_by_code": error_counts,
+        "error_counts_by_category": category_counts,
+        "recovery_rate": recoverable_count / len(errors) if errors else 0.0,
+    }

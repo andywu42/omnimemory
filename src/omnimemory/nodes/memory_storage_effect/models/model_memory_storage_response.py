@@ -20,7 +20,7 @@ Example:
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
 from pydantic import BaseModel, Field
@@ -46,15 +46,15 @@ class ModelMemoryStorageResponse(BaseModel):
         ...,
         description="Operation status: success, error, not_found, permission_denied",
     )
-    snapshot: Optional[ModelMemorySnapshot] = Field(
+    snapshot: ModelMemorySnapshot | None = Field(
         default=None,
         description="Retrieved/stored snapshot",
     )
-    snapshot_ids: Optional[list[str]] = Field(
+    snapshot_ids: list[str] | None = Field(
         default=None,
         description="List of snapshot IDs (for list operation)",
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         default=None,
         description="Error details if status is error",
     )

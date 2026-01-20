@@ -142,7 +142,7 @@ def validate_container_creation() -> dict[str, Any]:
     print("🔍 Testing ONEX container creation...")
 
     try:
-        from omnibase_core.core.model_onex_container import ModelOnexContainer
+        from omnimemory.compat import ModelOnexContainer
 
         # Test container creation
         container = ModelOnexContainer()
@@ -171,21 +171,19 @@ def validate_base_implementations() -> dict[str, Any]:
     print("🔍 Testing base implementations...")
 
     try:
-        from omnimemory.core.base_implementations import (
-            BaseComputeService,
-            BaseEffectService,
-            BaseMemoryService,
-            BaseOrchestratorService,
-            BaseReducerService,
+        from omnimemory.nodes.base import (
+            BaseComputeNode,
+            BaseEffectNode,
+            BaseOrchestratorNode,
+            BaseReducerNode,
         )
 
         # Verify all base classes are importable and have expected structure
         base_classes = [
-            BaseMemoryService,
-            BaseEffectService,
-            BaseComputeService,
-            BaseReducerService,
-            BaseOrchestratorService,
+            BaseEffectNode,
+            BaseComputeNode,
+            BaseReducerNode,
+            BaseOrchestratorNode,
         ]
 
         class_methods = {}
@@ -211,12 +209,8 @@ async def validate_async_patterns() -> dict[str, Any]:
     print("🔍 Testing async patterns...")
 
     try:
-        # Import async components
-        from omnibase_core.core.model_onex_container import ModelOnexContainer
-        from omnibase_core.core.monadic.model_node_result import (  # noqa: F401
-            NodeResult,
-        )
-
+        # Import async components from local compat layer
+        from omnimemory.compat import ModelOnexContainer, NodeResult  # noqa: F401
         from omnimemory.protocols.data_models import UserContext  # noqa: F401
 
         # Create container and test ONEX patterns

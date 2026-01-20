@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -109,7 +108,7 @@ class UserContext(BaseMemoryModel):
 
     user_id: UUID = Field(description="Unique user identifier")
     agent_id: UUID = Field(description="Agent performing the operation")
-    session_id: Optional[UUID] = Field(None, description="Session identifier")
+    session_id: UUID | None = Field(None, description="Session identifier")
     permissions: ModelStringList = Field(
         default_factory=ModelStringList,
         description="User permissions for memory operations",
@@ -137,10 +136,10 @@ class StoragePreferences(BaseMemoryModel):
     encryption_required: bool = Field(
         True, description="Whether encryption is required"
     )
-    geographic_preference: Optional[str] = Field(
+    geographic_preference: str | None = Field(
         None, description="Geographic storage preference"
     )
-    retention_policy: Optional[str] = Field(
+    retention_policy: str | None = Field(
         None, description="Data retention policy identifier"
     )
 
@@ -157,10 +156,10 @@ class SearchFilters(BaseMemoryModel):
     access_levels: list[AccessLevel] | None = Field(
         None, description="Filter by access levels"
     )
-    tags: Optional[ModelOptionalStringList] = Field(
+    tags: ModelOptionalStringList | None = Field(
         None, description="Filter by tags (AND logic)"
     )
-    source_agents: Optional[ModelOptionalStringList] = Field(
+    source_agents: ModelOptionalStringList | None = Field(
         None, description="Filter by source agents"
     )
     date_range_start: datetime | None = Field(
@@ -379,7 +378,7 @@ class MemoryRetrieveRequest(BaseMemoryRequest):
 class MemoryRetrieveResponse(BaseMemoryResponse):
     """Response from memory retrieve operation."""
 
-    memory: MemoryRecord | None = Field(description="Retrieved memory record")
+    memory: MemoryRecord | None = Field(None, description="Retrieved memory record")
     related_memories: list[MemoryRecord] = Field(
         default_factory=list, description="Related memory records (if requested)"
     )
@@ -618,7 +617,7 @@ class EmbeddingRequest(BaseMemoryRequest):
     """Request for vector embedding generation."""
 
     text: str = Field(description="Text to embed")
-    model: Optional[str] = Field(None, description="Embedding model to use")
+    model: str | None = Field(None, description="Embedding model to use")
 
 
 class EmbeddingResponse(BaseMemoryResponse):

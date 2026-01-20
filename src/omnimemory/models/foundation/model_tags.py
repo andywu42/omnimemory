@@ -3,7 +3,6 @@ Tags model following ONEX standards.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -19,7 +18,7 @@ class ModelTag(BaseModel):
         min_length=1,
         max_length=100,
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         description="Optional tag category for organization",
         max_length=50,
@@ -28,7 +27,7 @@ class ModelTag(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the tag was created",
     )
-    created_by: Optional[UUID] = Field(
+    created_by: UUID | None = Field(
         default=None,
         description="User who created the tag",
     )
@@ -88,9 +87,9 @@ class ModelTagCollection(BaseModel):
     def add_tag(
         self,
         name: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         weight: float = 1.0,
-        created_by: Optional[UUID] = None,
+        created_by: UUID | None = None,
     ) -> None:
         """Add a new tag to the collection."""
         # Check if tag already exists
@@ -133,7 +132,7 @@ class ModelTagCollection(BaseModel):
 
     @classmethod
     def from_string_list(
-        cls, tag_names: list[str], created_by: Optional[UUID] = None
+        cls, tag_names: list[str], created_by: UUID | None = None
     ) -> "ModelTagCollection":
         """Create tag collection from legacy string list."""
         collection = cls()

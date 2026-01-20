@@ -181,7 +181,7 @@ class LabelValidationError(Exception):
 def validate_metric_labels(
     labels: dict[str, str],
     required_labels: set[str],
-    allowed_labels: Optional[set[str]] = None,
+    allowed_labels: set[str] | None = None,
     metric_name: str = "unknown",
     strict: bool = True,
 ) -> None:
@@ -353,12 +353,12 @@ class StructuredLogEntry(BaseModel):
     )
 
     # Optional fields (only on failure)
-    error_type: Optional[str] = Field(
+    error_type: str | None = Field(
         default=None,
         max_length=256,
         description="Exception class name (only on failure)",
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         default=None,
         max_length=1000,
         description="Sanitized error message (only on failure, PII-safe)",
@@ -373,7 +373,7 @@ class StructuredLogEntry(BaseModel):
 def validate_log_entry(
     log_data: dict[str, object],
     raise_on_error: bool = True,
-) -> Optional[StructuredLogEntry]:
+) -> StructuredLogEntry | None:
     """Validate a log entry against the structured log schema.
 
     This function validates that a log entry dictionary conforms to the
@@ -426,8 +426,8 @@ def create_validated_log_entry(
     handler: str,
     status: Literal["success", "failure"],
     latency_ms: float,
-    error_type: Optional[str] = None,
-    error_message: Optional[str] = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
 ) -> StructuredLogEntry:
     """Create a validated log entry with automatic timestamp generation.
 
@@ -556,12 +556,10 @@ def _sanitize_error(error: Exception) -> str:
 
 
 # Context variables for correlation tracking
-correlation_id_var: ContextVar[Optional[str]] = ContextVar(
-    "correlation_id", default=None
-)
-request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
-operation_var: ContextVar[Optional[str]] = ContextVar("operation", default=None)
+correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+operation_var: ContextVar[str | None] = ContextVar("operation", default=None)
 
 logger = structlog.get_logger(__name__)
 
@@ -1149,7 +1147,7 @@ class MetricsRegistry:
         registry.memory_storage_latency_ms.observe(45.2, operation="store")
     """
 
-    _instance: Optional["MetricsRegistry"] = None
+    _instance: MetricsRegistry | None = None
     _class_lock = (
         threading.Lock()
     )  # Class-level lock for singleton creation/destruction
@@ -1388,23 +1386,23 @@ class PerformanceMetrics:
     """Performance metrics for operations."""
 
     start_time: float
-    end_time: Optional[float] = None
-    duration: Optional[float] = None
-    memory_usage_start: Optional[float] = None
-    memory_usage_end: Optional[float] = None
-    memory_delta: Optional[float] = None
-    success: Optional[bool] = None
-    error_type: Optional[str] = None
+    end_time: float | None = None
+    duration: float | None = None
+    memory_usage_start: float | None = None
+    memory_usage_end: float | None = None
+    memory_delta: float | None = None
+    success: bool | None = None
+    error_type: str | None = None
 
 
 class CorrelationContext(BaseModel):
     """Context information for correlation tracking."""
 
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    request_id: Optional[str] = Field(default=None)
-    user_id: Optional[str] = Field(default=None)
-    operation: Optional[str] = Field(default=None)
-    parent_correlation_id: Optional[str] = Field(default=None)
+    request_id: str | None = Field(default=None)
+    user_id: str | None = Field(default=None)
+    operation: str | None = Field(default=None)
+    parent_correlation_id: str | None = Field(default=None)
     trace_level: TraceLevel = Field(default=TraceLevel.INFO)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -1451,10 +1449,10 @@ class ObservabilityManager:
     @asynccontextmanager
     async def correlation_context(
         self,
-        correlation_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        operation: Optional[str] = None,
+        correlation_id: str | None = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        operation: str | None = None,
         trace_level: TraceLevel = TraceLevel.INFO,
         **metadata: MetadataValue,
     ) -> AsyncGenerator[CorrelationContext, None]:
@@ -1553,7 +1551,7 @@ class ObservabilityManager:
         correlation_id = correlation_id_var.get()
 
         # Initialize performance metrics if requested
-        start_memory: Optional[float] = None
+        start_memory: float | None = None
         if trace_performance:
             # Only track memory if psutil is available
             if _PSUTIL_AVAILABLE and psutil is not None:
@@ -1639,7 +1637,7 @@ class ObservabilityManager:
             raise
         finally:
             # Complete performance metrics if requested (thread-safe)
-            final_metrics: Optional[PerformanceMetrics] = None
+            final_metrics: PerformanceMetrics | None = None
             if trace_performance:
                 # Get trace reference under lock
                 with self._traces_lock:
@@ -1735,10 +1733,10 @@ observability_manager = ObservabilityManager()
 # Convenience functions for common patterns
 @asynccontextmanager
 async def correlation_context(
-    correlation_id: Optional[str] = None,
-    request_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    operation: Optional[str] = None,
+    correlation_id: str | None = None,
+    request_id: str | None = None,
+    user_id: str | None = None,
+    operation: str | None = None,
     trace_level: TraceLevel = TraceLevel.INFO,
     **metadata: MetadataValue,
 ) -> AsyncGenerator[CorrelationContext, None]:
@@ -1779,12 +1777,12 @@ async def trace_operation(
         yield trace_id
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get current correlation ID from context."""
     return correlation_id_var.get()
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     """Get current request ID from context."""
     return request_id_var.get()
 
@@ -1869,12 +1867,12 @@ class HandlerMetrics:
     handler: str
     status: Literal["success", "failure"]
     latency_ms: float
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 def _get_safe_content_metadata(
-    content: Optional[str],
+    content: str | None,
     field_name: str = "content",
 ) -> dict[str, str | int | bool]:
     """Extract safe metadata from content without logging PII.
@@ -1988,7 +1986,7 @@ class HandlerObservabilityWrapper:
             )
 
         self.handler_name = handler_name
-        self._custom_registry = registry
+        self._custom_registry: Optional[MetricsRegistry] = registry
         self._validate_log_schema = validate_log_schema
         self._logger = structlog.get_logger(f"omnimemory.handler.{handler_name}")
 
@@ -2006,7 +2004,7 @@ class HandlerObservabilityWrapper:
     async def observe_operation(
         self,
         operation: str,
-        correlation_id: Optional[str] = None,
+        correlation_id: str | None = None,
     ) -> AsyncGenerator[dict[str, str], None]:
         """Context manager for observing handler operations.
 
@@ -2046,8 +2044,8 @@ class HandlerObservabilityWrapper:
         # Start timing
         start_time = time.perf_counter()
         status: Literal["success", "failure"] = "success"
-        error_type: Optional[str] = None
-        error_message: Optional[str] = None
+        error_type: str | None = None
+        error_message: str | None = None
 
         try:
             yield ctx

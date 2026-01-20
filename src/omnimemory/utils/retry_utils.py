@@ -14,6 +14,7 @@ __all__ = [
 ]
 
 import asyncio
+import concurrent.futures
 import functools
 import logging
 import random
@@ -314,15 +315,15 @@ def retry_decorator(
                 )
 
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're already in an event loop, create a task
-                    task = loop.create_task(async_operation())
-                    return cast(T, loop.run_until_complete(task))
-                else:
-                    return cast(T, loop.run_until_complete(async_operation()))
+                asyncio.get_running_loop()
+                # Loop is already running - run in separate thread to avoid
+                # blocking the current event loop. This handles the case where
+                # sync code is called from within an async context.
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(asyncio.run, async_operation())
+                    return cast(T, future.result())
             except RuntimeError:
-                # No event loop, create new one
+                # No running loop, safe to use asyncio.run directly
                 return cast(T, asyncio.run(async_operation()))
 
         if asyncio.iscoroutinefunction(func):

@@ -16,7 +16,6 @@ __all__ = [
 
 import re
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -134,7 +133,7 @@ class PIIPatternConfig(BaseModel):
 class PIIDetector:
     """Advanced PII detection with configurable patterns and sensitivity levels."""
 
-    def __init__(self, config: Optional[PIIDetectorConfig] = None):
+    def __init__(self, config: PIIDetectorConfig | None = None):
         """Initialize PII detector with configurable settings."""
         self.config = config or PIIDetectorConfig()
         self._patterns = self._initialize_patterns()
@@ -233,8 +232,8 @@ class PIIDetector:
             ],
             PIIType.CREDIT_CARD: [
                 PIIPatternConfig(
-                    # Visa (4xxx), Mastercard (51-55xx), Amex (34xx/37xx)
-                    # Discover (6011/65/644-649) not implemented
+                    # Implemented: Visa (4xxx), Mastercard (51-55xx), Amex (34xx/37xx)
+                    # NOT implemented: Discover (starts with 6011, 65, or 644-649)
                     pattern=r"\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b",
                     confidence=self.config.medium_confidence,
                     mask_template="****-****-****-****",

@@ -85,7 +85,8 @@ class ModelProcessingMetrics(BaseModel):
         Calculate percentage breakdown of processing time.
 
         Returns:
-            Dictionary with percentage breakdown of processing stages
+            Dictionary with percentage breakdown of processing stages.
+            Percentages are normalized to never exceed 100% total.
         """
         total_accounted = (
             self.validation_time_ms
@@ -103,27 +104,39 @@ class ModelProcessingMetrics(BaseModel):
                 "other": 100.0,
             }
 
-        # Calculate percentages based on total processing time, not just accounted time
-        # This allows "other" to capture untracked overhead
+        # Use total processing time as the denominator when available
         total = (
             self.processing_time_ms if self.processing_time_ms > 0 else total_accounted
         )
 
+        # Calculate raw percentages
         validation_pct = (self.validation_time_ms / total) * 100
         computation_pct = (self.computation_time_ms / total) * 100
         storage_pct = (self.storage_time_ms / total) * 100
         serialization_pct = (self.serialization_time_ms / total) * 100
 
-        # "other" = remainder to ensure percentages sum to exactly 100%
-        # This correctly handles edge cases where component times exceed total
-        # (due to measurement overlap) or where there's untracked overhead
         known_total = validation_pct + computation_pct + storage_pct + serialization_pct
-        other_pct = max(0.0, 100.0 - known_total)
 
-        return {
-            "validation": validation_pct,
-            "computation": computation_pct,
-            "storage": storage_pct,
-            "serialization": serialization_pct,
-            "other": other_pct,
-        }
+        # Handle two scenarios:
+        # 1. Overlap (components exceed total): Normalize proportionally to 100%
+        # 2. No overlap (components < total): "other" captures untracked time
+        if known_total > 100.0:
+            # Normalize proportionally - components overlap due to parallel execution
+            # or measurement imprecision, so scale them to fit within 100%
+            scale = 100.0 / known_total
+            return {
+                "validation": validation_pct * scale,
+                "computation": computation_pct * scale,
+                "storage": storage_pct * scale,
+                "serialization": serialization_pct * scale,
+                "other": 0.0,  # No untracked time when overlap exists
+            }
+        else:
+            # "other" captures untracked overhead time
+            return {
+                "validation": validation_pct,
+                "computation": computation_pct,
+                "storage": storage_pct,
+                "serialization": serialization_pct,
+                "other": 100.0 - known_total,
+            }

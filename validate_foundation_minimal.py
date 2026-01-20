@@ -11,14 +11,14 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 def validate_contract_specification() -> dict[str, Any]:
     """Validate contract.yaml structure."""
     print("🔍 Testing contract specification...")
 
     try:
-        import yaml
-
         contract_path = Path(__file__).parent / "contract.yaml"
         if not contract_path.exists():
             return {"success": False, "error": "contract.yaml not found"}

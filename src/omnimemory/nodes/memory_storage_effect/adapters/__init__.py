@@ -6,6 +6,10 @@ This module provides handler adapters for memory storage CRUD operations.
 The primary handler is the FileSystem adapter which wraps `HandlerFileSystem`
 from omnibase_infra to store memory snapshots as JSON files.
 
+Note:
+    The FileSystem adapter requires omnibase_infra (a dev dependency).
+    Install with: poetry install --with dev
+
 Available Handlers:
     - HandlerFileSystemAdapter: Stores snapshots as JSON files on disk
 

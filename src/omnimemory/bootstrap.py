@@ -4,17 +4,26 @@ Provides explicit, idempotent initialization that validates configuration
 and prepares handlers for use. Does not depend on FastAPI.
 
 Example:
-    from omnimemory.bootstrap import bootstrap, BootstrapResult
-    from omnimemory.models.config import ModelMemoryServiceConfig, ModelFilesystemConfig
-    from pathlib import Path
+    .. code-block:: python
 
-    config = ModelMemoryServiceConfig(
-        filesystem=ModelFilesystemConfig(base_path=Path("/data/memory"))
-    )
-    result = await bootstrap(config)
+        import asyncio
+        from omnimemory.bootstrap import bootstrap, BootstrapResult
+        from omnimemory.models.config import (
+            ModelFilesystemConfig,
+            ModelMemoryServiceConfig,
+        )
+        from pathlib import Path
 
-    if result.success:
-        print(f"Initialized backends: {result.initialized_backends}")
+        async def main() -> None:
+            config = ModelMemoryServiceConfig(
+                filesystem=ModelFilesystemConfig(base_path=Path("/data/memory"))
+            )
+            result = await bootstrap(config)
+
+            if result.success:
+                print(f"Initialized backends: {result.initialized_backends}")
+
+        asyncio.run(main())
 """
 
 from __future__ import annotations
@@ -87,20 +96,50 @@ _bootstrap_completed: bool = False
 _bootstrap_result: BootstrapResult | None = None
 # Lock to serialize bootstrap/shutdown operations and prevent race conditions
 _bootstrap_lock: asyncio.Lock | None = None
+# Track which event loop the lock was created for (to detect cross-loop reuse)
+_bootstrap_lock_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_bootstrap_lock() -> asyncio.Lock:
     """Get or create the bootstrap lock.
 
     Creates the lock lazily to avoid issues with event loop not being available
-    at module import time.
+    at module import time. Also handles cross-event-loop reuse by detecting when
+    the current event loop differs from the one the lock was created in, and
+    recreating the lock in that case.
+
+    This is important because asyncio.Lock is bound to an event loop - using a
+    lock from a different loop will raise RuntimeError. This commonly occurs
+    in test environments where each test may create a new event loop.
 
     Returns:
         The asyncio.Lock for serializing bootstrap/shutdown operations.
     """
-    global _bootstrap_lock
+    global _bootstrap_lock, _bootstrap_lock_loop
+
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - create lock anyway, it will be bound when first used
+        if _bootstrap_lock is None:
+            _bootstrap_lock = asyncio.Lock()
+            _bootstrap_lock_loop = None
+        return _bootstrap_lock
+
+    # Check if lock exists and was created in a different event loop
+    if _bootstrap_lock is not None and _bootstrap_lock_loop is not current_loop:
+        # Lock was created in a different event loop - recreate it
+        logger.debug(
+            "Detected event loop change, recreating bootstrap lock "
+            f"(old loop: {id(_bootstrap_lock_loop)}, new loop: {id(current_loop)})"
+        )
+        _bootstrap_lock = None
+        _bootstrap_lock_loop = None
+
     if _bootstrap_lock is None:
         _bootstrap_lock = asyncio.Lock()
+        _bootstrap_lock_loop = current_loop
+
     return _bootstrap_lock
 
 
@@ -252,15 +291,18 @@ async def bootstrap(
             config_block to indicate which configuration failed.
 
     Example:
-        config = ModelMemoryServiceConfig(
-            filesystem=ModelFilesystemConfig(base_path=Path("/data/memory"))
-        )
-        result = await bootstrap(config)
+        .. code-block:: python
 
-        if not result.success:
-            print("Bootstrap failed")
-        else:
-            print(f"Initialized: {result.initialized_backends}")
+            async def initialize_service() -> None:
+                config = ModelMemoryServiceConfig(
+                    filesystem=ModelFilesystemConfig(base_path=Path("/data/memory"))
+                )
+                result = await bootstrap(config)
+
+                if not result.success:
+                    print("Bootstrap failed")
+                else:
+                    print(f"Initialized: {result.initialized_backends}")
     """
     global _bootstrap_completed, _bootstrap_result
 

@@ -13,10 +13,14 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-# Add src and protocols paths to Python path (consolidated at top of file)
+import yaml
+
+# Add src and protocols paths to Python path
+# Note: Both paths needed - src for omnimemory package imports,
+# protocols for direct module imports
 _base_path = Path(__file__).parent
-sys.path.insert(0, str(_base_path / "src"))
-sys.path.insert(0, str(_base_path / "src" / "omnimemory" / "protocols"))
+for path in [_base_path / "src", _base_path / "src" / "omnimemory" / "protocols"]:
+    sys.path.insert(0, str(path))
 
 
 def validate_protocol_definitions() -> dict[str, Any]:
@@ -150,8 +154,6 @@ def validate_contract_specification() -> dict[str, Any]:
     print("🔍 Testing contract specification...")
 
     try:
-        import yaml
-
         contract_path = Path(__file__).parent / "contract.yaml"
         if not contract_path.exists():
             return {"success": False, "error": "contract.yaml not found"}

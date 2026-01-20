@@ -11,6 +11,9 @@ except ImportError:
     # Fallback for development environments without omnibase_core
     from enum import Enum
 
+    # NOTE: The type: ignore[no-redef] is required because this class redefines
+    # OnexErrorCode which is conditionally imported from omnibase_core above.
+    # When omnibase_core is not available, we provide this fallback implementation.
     class OnexErrorCode(str, Enum):  # type: ignore[no-redef]
         """Base class for ONEX error codes (fallback implementation)."""
 

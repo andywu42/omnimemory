@@ -15,7 +15,7 @@ These are documented exceptions to the zero-Any policy for compat modules.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -28,11 +28,22 @@ class NodeResult(Generic[T]):
 
     Provides Railway-oriented programming patterns for
     clean error handling in async operations.
+
+    None Semantics:
+        - Success results CAN have None as a valid value when T is Optional[X]
+        - The `is_success` flag determines success/failure, NOT the value
+        - Use `is_success` to check result state, not `value is not None`
+        - Example: NodeResult[Optional[str]].success(None) is valid
+
+    Type Safety:
+        - Methods like map/flat_map/unwrap work with any T, including Optional types
+        - The value field is Optional[T] to handle both failure (None) and
+          success-with-None-value cases
     """
 
-    value: Optional[T] = None
-    error: Optional[Exception] = None
-    error_message: Optional[str] = None
+    value: T | None = None
+    error: Exception | None = None
+    error_message: str | None = None
     is_success: bool = True
     provenance: list[str] = field(default_factory=list)
     trust_score: float = 1.0
@@ -80,8 +91,8 @@ class NodeResult(Generic[T]):
     @classmethod
     def failure(
         cls,
-        error: Optional[Exception] = None,
-        error_message: Optional[str] = None,
+        error: Exception | None = None,
+        error_message: str | None = None,
         provenance: list[str] | None = None,
         trust_score: float = 0.0,
         metadata: dict[str, Any] | None = None,
@@ -138,9 +149,11 @@ class NodeResult(Generic[T]):
             )
 
         try:
-            # Assert value is not None - guaranteed by is_success check above
-            assert self.value is not None
-            new_value = func(self.value)
+            # Note: self.value may be None if T is Optional[X] and
+            # success(None) was called. This is valid - we pass whatever
+            # value was stored to the function.
+            # The function signature Callable[[T], U] handles this.
+            new_value = func(self.value)  # type: ignore[arg-type]
             return NodeResult[U].success(
                 new_value,
                 provenance=self.provenance,
@@ -179,9 +192,10 @@ class NodeResult(Generic[T]):
             )
 
         try:
-            # Assert value is not None - guaranteed by is_success check above
-            assert self.value is not None
-            inner_result = func(self.value)
+            # Note: self.value may be None if T is Optional[X] and
+            # success(None) was called. This is valid - we pass whatever
+            # value was stored to the function.
+            inner_result = func(self.value)  # type: ignore[arg-type]
             # Combine provenance chains (outer first, then inner)
             combined_provenance = self.provenance + inner_result.provenance
             # Multiply trust scores for cumulative trust degradation
@@ -190,10 +204,10 @@ class NodeResult(Generic[T]):
             combined_metadata = {**self.metadata, **inner_result.metadata}
 
             if inner_result.is_success:
-                # Assert value is not None - guaranteed by inner_result.is_success
-                assert inner_result.value is not None
+                # Note: inner_result.value may be None if U is Optional[X].
+                # We preserve whatever value the inner result contains.
                 return NodeResult[U].success(
-                    inner_result.value,
+                    inner_result.value,  # type: ignore[arg-type]
                     provenance=combined_provenance,
                     trust_score=combined_trust,
                     metadata=combined_metadata,
@@ -218,8 +232,11 @@ class NodeResult(Generic[T]):
         """
         Get the success value or raise the error.
 
+        Note: If T is Optional[X] and success(None) was called, this returns None.
+        The return type is T, which may itself be Optional.
+
         Returns:
-            The success value
+            The success value (may be None if T is Optional)
 
         Raises:
             Exception: The stored error if this is a failure
@@ -228,25 +245,29 @@ class NodeResult(Generic[T]):
             if self.error:
                 raise self.error
             raise ValueError(self.error_message or "Unknown error")
-        # Assert value is not None - guaranteed by is_success check above
-        assert self.value is not None
-        return self.value
+        # Note: self.value may be None if T is Optional[X] and success(None) was called.
+        # This is valid - we return whatever value was stored.
+        return self.value  # type: ignore[return-value]
 
     def unwrap_or(self, default: T) -> T:
         """
         Get the success value or return a default.
 
+        Note: The default is ONLY used when is_success=False (failure case).
+        If this is a success result with value=None (when T is Optional[X]),
+        None is returned, NOT the default.
+
         Args:
             default: Value to return if this is a failure
 
         Returns:
-            The success value or the default
+            The success value (may be None if T is Optional) or the default on failure
         """
         if not self.is_success:
             return default
-        # Value may be None even on success if T is Optional, but the signature
-        # promises T. If user created success(None), they get None back.
-        # Use type: ignore since this is intentional behavior.
+        # Note: self.value may be None if T is Optional[X] and
+        # success(None) was called. This is valid and intentional -
+        # we return the stored success value, not the default.
         return self.value  # type: ignore[return-value]
 
     def __bool__(self) -> bool:

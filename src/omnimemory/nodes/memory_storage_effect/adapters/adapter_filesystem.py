@@ -40,11 +40,39 @@ import logging
 import uuid
 from pathlib import Path
 
-from omnibase_infra.errors.error_infra import InfraConnectionError
-from omnibase_infra.handlers.handler_filesystem import HandlerFileSystem
 from pydantic import BaseModel, Field, ValidationError
 
-from ..models import ModelMemoryStorageRequest, ModelMemoryStorageResponse
+# omnibase_infra is a dev dependency - make imports conditional
+# to allow test collection and provide clear error messages
+_OMNIBASE_INFRA_AVAILABLE = False
+_OMNIBASE_INFRA_IMPORT_ERROR: str | None = None
+
+try:
+    from omnibase_infra.errors.error_infra import InfraConnectionError
+    from omnibase_infra.handlers.handler_filesystem import HandlerFileSystem
+
+    _OMNIBASE_INFRA_AVAILABLE = True
+except ImportError as e:
+    _OMNIBASE_INFRA_IMPORT_ERROR = str(e)
+
+    # Provide stub types for type checking and to allow module to load
+    class InfraConnectionError(Exception):  # type: ignore[no-redef]
+        """Stub for InfraConnectionError when omnibase_infra is not installed."""
+
+        pass
+
+    class HandlerFileSystem:  # type: ignore[no-redef]
+        """Stub for HandlerFileSystem when omnibase_infra is not installed."""
+
+        def __init__(self) -> None:
+            raise ImportError(
+                f"omnibase_infra is required for HandlerFileSystemAdapter. "
+                f"Install it with: poetry install --with dev. "
+                f"Original error: {_OMNIBASE_INFRA_IMPORT_ERROR}"
+            )
+
+
+from ..models import ModelMemoryStorageRequest, ModelMemoryStorageResponse  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
