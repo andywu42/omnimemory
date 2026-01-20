@@ -814,10 +814,23 @@ class TestModelValidation:
 
 
 class TestPerformance:
-    """Performance tests for retrieval operations."""
+    """Performance tests for retrieval operations.
 
-    CI_THRESHOLD_SECONDS: float = 0.5  # 500ms for CI
-    CONTRACT_SLA_SECONDS: float = 0.1  # 100ms from acceptance criteria
+    This class uses a dual-threshold approach for performance validation:
+
+    1. CONTRACT_SLA_SECONDS (100ms): The target SLA from contract.yaml and
+       CLAUDE.md ("Sub-100ms Operations"). Exceeding this emits a warning
+       for compliance tracking but does not fail the test.
+
+    2. CI_THRESHOLD_SECONDS (500ms): The hard CI gate. Exceeding this fails
+       the test immediately, indicating a serious performance regression.
+
+    This approach allows CI to pass while still tracking contract compliance.
+    Performance degradation between 100-500ms is logged as a warning.
+    """
+
+    CI_THRESHOLD_SECONDS: float = 0.5  # 500ms - hard CI gate
+    CONTRACT_SLA_SECONDS: float = 0.1  # 100ms - contract SLA target
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -846,10 +859,23 @@ class TestPerformance:
         elapsed_time = time.perf_counter() - start_time
 
         assert response.status in ("success", "no_results")
+
+        # Hard CI gate - must pass
         assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
             f"Search took {elapsed_time:.3f}s, "
-            f"exceeds threshold of {self.CI_THRESHOLD_SECONDS}s"
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s"
         )
+
+        # Contract SLA verification - warn if exceeded
+        if elapsed_time >= self.CONTRACT_SLA_SECONDS:
+            import warnings
+
+            warnings.warn(
+                f"Performance: {elapsed_time * 1000:.1f}ms exceeds "
+                f"contract SLA of {self.CONTRACT_SLA_SECONDS * 1000:.0f}ms",
+                UserWarning,
+                stacklevel=1,
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -876,7 +902,23 @@ class TestPerformance:
         elapsed_time = time.perf_counter() - start_time
 
         assert response.status in ("success", "no_results")
-        assert elapsed_time < self.CI_THRESHOLD_SECONDS
+
+        # Hard CI gate - must pass
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Search text took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s"
+        )
+
+        # Contract SLA verification - warn if exceeded
+        if elapsed_time >= self.CONTRACT_SLA_SECONDS:
+            import warnings
+
+            warnings.warn(
+                f"Performance: {elapsed_time * 1000:.1f}ms exceeds "
+                f"contract SLA of {self.CONTRACT_SLA_SECONDS * 1000:.0f}ms",
+                UserWarning,
+                stacklevel=1,
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -912,4 +954,20 @@ class TestPerformance:
         elapsed_time = time.perf_counter() - start_time
 
         assert response.status == "success"
-        assert elapsed_time < self.CI_THRESHOLD_SECONDS
+
+        # Hard CI gate - must pass
+        assert elapsed_time < self.CI_THRESHOLD_SECONDS, (
+            f"Graph traversal took {elapsed_time:.3f}s, "
+            f"exceeds CI threshold of {self.CI_THRESHOLD_SECONDS}s"
+        )
+
+        # Contract SLA verification - warn if exceeded
+        if elapsed_time >= self.CONTRACT_SLA_SECONDS:
+            import warnings
+
+            warnings.warn(
+                f"Performance: {elapsed_time * 1000:.1f}ms exceeds "
+                f"contract SLA of {self.CONTRACT_SLA_SECONDS * 1000:.0f}ms",
+                UserWarning,
+                stacklevel=1,
+            )

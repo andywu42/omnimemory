@@ -36,6 +36,12 @@ Example::
 
     asyncio.run(example())
 
+Security:
+    This mock handler uses in-memory data structures with no SQL execution,
+    eliminating SQL injection risks. Production handlers (HandlerDb) prevent
+    SQL injection through parameterized queries - user-provided query_text
+    is never interpolated directly into SQL statements.
+
 .. versionadded:: 0.1.0
     Initial implementation for OMN-1387.
 """
