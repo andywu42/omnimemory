@@ -18,7 +18,6 @@ ONEX Compliance:
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import List
 from uuid import UUID, uuid4
 
 import structlog
@@ -45,7 +44,7 @@ class ONEXArchitectureDemo:
     def __init__(self):
         """Initialize demo with ONEX-compliant pattern."""
         self.demo_correlation_id = uuid4()
-        self.processed_memories: List[UUID] = []
+        self.processed_memories: list[UUID] = []
 
     async def demo_effect_node_operations(self) -> None:
         """Demonstrate EFFECT node - memory storage operations."""

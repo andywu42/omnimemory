@@ -60,6 +60,45 @@ class ModelSuccessRate(BaseModel):
         return self.rate * 100.0
 
 
+class ModelConfidenceInterval(BaseModel):
+    """Confidence interval for statistical predictions following ONEX standards."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lower_bound: float = Field(description="Lower bound of the confidence interval")
+    upper_bound: float = Field(description="Upper bound of the confidence interval")
+    confidence_level: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.95,
+        description="Confidence level (e.g., 0.95 for 95% confidence)",
+    )
+    point_estimate: float | None = Field(
+        default=None,
+        description="Point estimate (optional, typically the mean or median)",
+    )
+
+    @field_validator("upper_bound")
+    @classmethod
+    def validate_bounds(cls, v: float, info: ValidationInfo) -> float:
+        """Validate that upper bound is greater than or equal to lower bound."""
+        if hasattr(info, "data") and "lower_bound" in info.data:
+            lower = info.data["lower_bound"]
+            if v < lower:
+                raise ValueError("Upper bound must be >= lower bound")
+        return v
+
+    @property
+    def interval_width(self) -> float:
+        """Calculate the width of the confidence interval."""
+        return self.upper_bound - self.lower_bound
+
+    @property
+    def midpoint(self) -> float:
+        """Calculate the midpoint of the confidence interval."""
+        return (self.lower_bound + self.upper_bound) / 2
+
+
 class ModelConfidenceScore(BaseModel):
     """Confidence score metric following ONEX standards."""
 

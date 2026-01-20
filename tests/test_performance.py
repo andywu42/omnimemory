@@ -21,10 +21,11 @@ import asyncio
 import random
 import re
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum
-from typing import AsyncGenerator, Dict, List, Optional, Set, Union
+from typing import Optional
 from uuid import UUID, uuid4
 
 import pytest
@@ -38,7 +39,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 # Type alias for pattern configuration values
-PatternConfigValue = Union[str, float]
+PatternConfigValue = str | float
 
 
 class PIIType(str, Enum):
@@ -71,11 +72,11 @@ class PIIDetectionResult(BaseModel):
     """Result of PII detection scan."""
 
     has_pii: bool = Field(description="Whether any PII was detected")
-    matches: List[PIIMatch] = Field(
+    matches: list[PIIMatch] = Field(
         default_factory=list, description="List of PII matches found"
     )
     sanitized_content: str = Field(description="Content with PII masked/removed")
-    pii_types_detected: Set[PIIType] = Field(
+    pii_types_detected: set[PIIType] = Field(
         default_factory=set, description="Types of PII found"
     )
     scan_duration_ms: float = Field(
@@ -106,7 +107,7 @@ class PIIDetector:
 
     def _initialize_patterns(
         self,
-    ) -> Dict[PIIType, List[Dict[str, PatternConfigValue]]]:
+    ) -> dict[PIIType, list[dict[str, PatternConfigValue]]]:
         """Initialize regex patterns for different PII types."""
         return {
             PIIType.EMAIL: [
@@ -161,8 +162,8 @@ class PIIDetector:
             max_len = self.config.max_text_length
             raise ValueError(f"Content length {len(content)} exceeds max {max_len}")
 
-        matches: List[PIIMatch] = []
-        pii_types_detected: Set[PIIType] = set()
+        matches: list[PIIMatch] = []
+        pii_types_detected: set[PIIType] = set()
         sanitized_content = content
 
         confidence_threshold = {
@@ -213,7 +214,7 @@ class PIIDetector:
             scan_duration_ms=scan_duration_ms,
         )
 
-    def _deduplicate_matches(self, matches: List[PIIMatch]) -> List[PIIMatch]:
+    def _deduplicate_matches(self, matches: list[PIIMatch]) -> list[PIIMatch]:
         """Remove overlapping or duplicate matches."""
         if not matches:
             return matches
@@ -235,7 +236,7 @@ class PIIDetector:
 
         return deduplicated
 
-    def _sanitize_content(self, content: str, matches: List[PIIMatch]) -> str:
+    def _sanitize_content(self, content: str, matches: list[PIIMatch]) -> str:
         """Replace PII in content with masked values."""
         sorted_matches = sorted(matches, key=lambda x: x.start_index, reverse=True)
         sanitized = content
@@ -278,7 +279,7 @@ class FairSemaphore:
         self.name = name
         self._semaphore = asyncio.Semaphore(value)
         self._total_permits = value
-        self._active_holders: Dict[str, datetime] = {}
+        self._active_holders: dict[str, datetime] = {}
         self._stats = SemaphoreStats(value)
         self._lock = asyncio.Lock()
 
@@ -358,7 +359,6 @@ class PriorityLock:
         timeout: Optional[float] = None,
     ) -> AsyncGenerator[None, None]:
         """Acquire the lock with priority."""
-        _request_id = str(uuid4())  # noqa: F841 - tracked for debugging
         acquired_at = None
 
         try:
@@ -879,7 +879,7 @@ class TestConcurrencyPerformance:
         Target: Process 1000 operations in under 2 seconds with 10 workers.
         """
         semaphore = FairSemaphore(value=5, name="throughput_semaphore")
-        completed: List[tuple[int, int]] = []
+        completed: list[tuple[int, int]] = []
 
         async def worker(worker_id: int, num_ops: int) -> None:
             for i in range(num_ops):
@@ -972,7 +972,7 @@ class TestIntegratedPerformance:
         Benchmark: Concurrent memory operations under load.
         """
         semaphore = FairSemaphore(value=5, name="memory_ops_semaphore")
-        results: List[bool] = []
+        results: list[bool] = []
 
         async def memory_operation(op_id: int) -> None:
             async with semaphore.acquire(timeout=10.0):
@@ -1067,7 +1067,7 @@ class PercentileCalculator:
     Used to verify SLA targets like P95 response times.
     """
 
-    def __init__(self, measurements: List[float]):
+    def __init__(self, measurements: list[float]):
         """
         Initialize with a list of timing measurements.
 
@@ -1159,7 +1159,7 @@ class TestSLAVerification:
         percentile response time is under 100ms as specified in CLAUDE.md.
         """
         num_operations = 200
-        measurements: List[float] = []
+        measurements: list[float] = []
 
         for _ in range(num_operations):
             # Simulate memory operation: create + serialize + deserialize
@@ -1278,7 +1278,7 @@ class TestPIIDetectionOverhead:
             text = generate_clean_text(content_size)
 
             # Baseline: just processing without PII scan
-            baseline_times: List[float] = []
+            baseline_times: list[float] = []
             for _ in range(50):
                 start = time.perf_counter()
                 _ = len(text)  # Minimal processing
@@ -1288,7 +1288,7 @@ class TestPIIDetectionOverhead:
             baseline_avg = sum(baseline_times) / len(baseline_times)
 
             # With PII detection
-            pii_times: List[float] = []
+            pii_times: list[float] = []
             for _ in range(50):
                 start = time.perf_counter()
                 detector.detect_pii(text, sensitivity_level="medium")
@@ -1348,7 +1348,7 @@ class TestPIIDetectionOverhead:
         detector = PIIDetector()
         text = generate_text_with_pii(5000)  # 5KB with PII
 
-        measurements: List[float] = []
+        measurements: list[float] = []
         for _ in range(100):
             result = detector.detect_pii(text, sensitivity_level="medium")
             measurements.append(result.scan_duration_ms)
@@ -1521,7 +1521,7 @@ class TestVectorSearchPerformance:
                 [random.random() for _ in range(dim)] for _ in range(num_vectors)
             ]
 
-            def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+            def cosine_similarity(v1: list[float], v2: list[float]) -> float:
                 """Compute cosine similarity between two vectors."""
                 dot_product = sum(a * b for a, b in zip(v1, v2))
                 norm1 = math.sqrt(sum(a * a for a in v1))
@@ -1561,7 +1561,7 @@ class TestVectorSearchPerformance:
             [random.random() for _ in range(dimensions)] for _ in range(num_vectors)
         ]
 
-        def normalize_vector(v: List[float]) -> List[float]:
+        def normalize_vector(v: list[float]) -> list[float]:
             """L2 normalize a vector."""
             norm = math.sqrt(sum(x * x for x in v))
             return [x / norm for x in v] if norm > 0 else v
@@ -1603,7 +1603,7 @@ class TestEndToEndPerformance:
         Target: <100ms P95 for complete workflow.
         """
         detector = PIIDetector()
-        measurements: List[float] = []
+        measurements: list[float] = []
 
         for _ in range(100):
             start = time.perf_counter()
@@ -1646,7 +1646,7 @@ class TestEndToEndPerformance:
         """
         semaphore = FairSemaphore(value=10, name="sla_test_semaphore")
         detector = PIIDetector()
-        measurements: List[float] = []
+        measurements: list[float] = []
         measurements_lock = asyncio.Lock()
 
         async def workflow(item_id: int) -> None:
@@ -1696,7 +1696,7 @@ class TestBenchmarkSummary:
 
         This is a smoke test to catch regressions quickly.
         """
-        results: Dict[str, tuple] = {}
+        results: dict[str, tuple] = {}
 
         # 1. Memory operations <100ms
         item = create_memory_item(content_size=5000)

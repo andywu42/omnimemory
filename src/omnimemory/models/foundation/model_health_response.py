@@ -19,7 +19,7 @@ class ModelDependencyStatus(BaseModel):
     status: Literal["healthy", "degraded", "unhealthy"] = Field(
         description="Health status of the dependency"
     )
-    latency_ms: float = Field(description="Response latency in milliseconds")
+    latency_ms: float = Field(ge=0.0, description="Response latency in milliseconds")
     last_check: datetime = Field(description="When the dependency was last checked")
     error_message: str | None = Field(
         default=None, description="Error message if unhealthy"
@@ -34,7 +34,7 @@ class ModelResourceMetrics(BaseModel):
     cpu_usage_percent: float = Field(
         ge=0.0, le=100.0, description="CPU usage percentage"
     )
-    memory_usage_mb: float = Field(description="Memory usage in megabytes")
+    memory_usage_mb: float = Field(ge=0.0, description="Memory usage in megabytes")
     memory_usage_percent: float = Field(
         ge=0.0, le=100.0, description="Memory usage percentage"
     )
@@ -42,7 +42,7 @@ class ModelResourceMetrics(BaseModel):
         ge=0.0, le=100.0, description="Disk usage percentage"
     )
     network_throughput_mbps: float = Field(
-        description="Network throughput in megabits per second"
+        ge=0.0, description="Network throughput in megabits per second"
     )
 
 
@@ -54,7 +54,9 @@ class ModelHealthResponse(BaseModel):
     status: Literal["healthy", "degraded", "unhealthy"] = Field(
         description="Overall system health status"
     )
-    latency_ms: float = Field(description="Health check response time in milliseconds")
+    latency_ms: float = Field(
+        ge=0.0, description="Health check response time in milliseconds"
+    )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the health check was performed",
@@ -65,7 +67,7 @@ class ModelHealthResponse(BaseModel):
     dependencies: list[ModelDependencyStatus] = Field(
         default_factory=list, description="Status of system dependencies"
     )
-    uptime_seconds: int = Field(description="System uptime in seconds")
+    uptime_seconds: int = Field(ge=0, description="System uptime in seconds")
     version: str = Field(description="System version information")
     environment: str = Field(description="Deployment environment")
 

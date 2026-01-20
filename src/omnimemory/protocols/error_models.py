@@ -728,10 +728,17 @@ def create_error_summary(errors: list[OmniMemoryError]) -> ErrorSummary:
         errors: List of OmniMemoryError instances
 
     Returns:
-        Dictionary containing error summary statistics
+        ErrorSummary containing error summary statistics with all fields populated
     """
     if not errors:
-        return ErrorSummary(total_errors=0)
+        return ErrorSummary(
+            total_errors=0,
+            recoverable_errors=0,
+            non_recoverable_errors=0,
+            error_counts_by_code={},
+            error_counts_by_category={},
+            recovery_rate=0.0,
+        )
 
     error_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}

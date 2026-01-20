@@ -11,7 +11,7 @@ Tests only the components that don't depend on omnibase_core:
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Add src and protocols paths to Python path (consolidated at top of file)
 _base_path = Path(__file__).parent
@@ -19,7 +19,7 @@ sys.path.insert(0, str(_base_path / "src"))
 sys.path.insert(0, str(_base_path / "src" / "omnimemory" / "protocols"))
 
 
-def validate_protocol_definitions() -> Dict[str, Any]:
+def validate_protocol_definitions() -> dict[str, Any]:
     """Validate protocol definitions structure."""
     print("🔍 Testing protocol definitions...")
 
@@ -49,7 +49,7 @@ def validate_protocol_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_data_model_definitions() -> Dict[str, Any]:
+def validate_data_model_definitions() -> dict[str, Any]:
     """Validate data model definitions."""
     print("🔍 Testing data model definitions...")
 
@@ -74,7 +74,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
 
         # Test basic model creation (using simple types to avoid omnibase_core)
         from datetime import datetime, timezone
-        from typing import Any, Dict, Optional
+        from typing import Any
         from uuid import uuid4
 
         from pydantic import BaseModel, Field
@@ -88,7 +88,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
             created_at: datetime = Field(
                 default_factory=lambda: datetime.now(timezone.utc)
             )
-            metadata: Optional[Dict[str, Any]] = None
+            metadata: dict[str, Any] | None = None
 
         test_instance = TestMemoryModel(content="Test content", metadata={"test": True})
 
@@ -109,7 +109,7 @@ def validate_data_model_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_error_model_definitions() -> Dict[str, Any]:
+def validate_error_model_definitions() -> dict[str, Any]:
     """Validate error model definitions."""
     print("🔍 Testing error model definitions...")
 
@@ -145,7 +145,7 @@ def validate_error_model_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_contract_specification() -> Dict[str, Any]:
+def validate_contract_specification() -> dict[str, Any]:
     """Validate contract.yaml structure."""
     print("🔍 Testing contract specification...")
 
@@ -198,7 +198,7 @@ def validate_contract_specification() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_project_structure() -> Dict[str, Any]:
+def validate_project_structure() -> dict[str, Any]:
     """Validate overall project structure."""
     print("🔍 Testing project structure...")
 

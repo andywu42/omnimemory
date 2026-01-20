@@ -20,7 +20,10 @@ from omnimemory.enums import (
     MigrationStatus,
 )
 
-from .model_progress_summary import ProgressSummaryResponse
+from .model_progress_summary import (
+    ModelProgressPerformanceMetrics,
+    ProgressSummaryResponse,
+)
 from .model_typed_collections import ModelConfiguration, ModelMetadata
 
 
@@ -179,6 +182,15 @@ class MigrationProgressMetrics(BaseModel):
     def remaining_files(self) -> int:
         """Calculate number of remaining files."""
         return self.total_files - self.processed_files
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def average_processing_time_ms(self) -> float:
+        """Calculate average processing time per file in milliseconds."""
+        if self.processed_files == 0:
+            return 0.0
+        elapsed_ms = self.elapsed_time.total_seconds() * 1000
+        return elapsed_ms / self.processed_files
 
     def update_processing_rates(self) -> None:
         """Update processing rates based on current progress."""
@@ -381,7 +393,7 @@ class MigrationProgressTracker(BaseModel):
             processed_items=self.metrics.processed_files,
             successful_items=self.metrics.processed_files - self.metrics.failed_files,
             failed_items=self.metrics.failed_files,
-            current_batch_id=getattr(self.metrics, "current_batch", None),
+            current_batch_id=self.metrics.current_batch,
             active_workers=len(
                 [b for b in self.metrics.batch_metrics if b.end_time is None]
             ),
@@ -391,13 +403,11 @@ class MigrationProgressTracker(BaseModel):
                 if self.error_summary
                 else []
             ),
-            performance_metrics={
-                "files_per_second": self.metrics.files_per_second,
-                "bytes_per_second": self.metrics.bytes_per_second,
-                "average_processing_time": getattr(
-                    self.metrics, "average_processing_time_ms", 0.0
-                ),
-            },
+            performance_metrics=ModelProgressPerformanceMetrics(
+                files_per_second=self.metrics.files_per_second,
+                bytes_per_second=self.metrics.bytes_per_second,
+                average_processing_time=self.metrics.average_processing_time_ms,
+            ),
         )
 
     def _find_file(self, file_path: str) -> FileProcessingInfo | None:

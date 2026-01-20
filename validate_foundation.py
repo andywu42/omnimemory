@@ -13,13 +13,13 @@ Validates that the foundational ONEX implementation is working correctly:
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 
-def validate_protocol_imports() -> Dict[str, Any]:
+def validate_protocol_imports() -> dict[str, Any]:
     """Validate that all protocol imports work correctly."""
     print("🔍 Testing protocol imports...")
 
@@ -50,7 +50,7 @@ def validate_protocol_imports() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_data_models() -> Dict[str, Any]:
+def validate_data_models() -> dict[str, Any]:
     """Validate data model imports and basic functionality."""
     print("🔍 Testing data model imports...")
 
@@ -100,7 +100,7 @@ def validate_data_models() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_error_handling() -> Dict[str, Any]:
+def validate_error_handling() -> dict[str, Any]:
     """Validate error handling and monadic patterns."""
     print("🔍 Testing error handling...")
 
@@ -137,7 +137,7 @@ def validate_error_handling() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_container_creation() -> Dict[str, Any]:
+def validate_container_creation() -> dict[str, Any]:
     """Validate ONEX container creation and basic functionality."""
     print("🔍 Testing ONEX container creation...")
 
@@ -166,7 +166,7 @@ def validate_container_creation() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_base_implementations() -> Dict[str, Any]:
+def validate_base_implementations() -> dict[str, Any]:
     """Validate base implementation classes."""
     print("🔍 Testing base implementations...")
 
@@ -206,7 +206,7 @@ def validate_base_implementations() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-async def validate_async_patterns() -> Dict[str, Any]:
+async def validate_async_patterns() -> dict[str, Any]:
     """Validate async patterns and NodeResult usage."""
     print("🔍 Testing async patterns...")
 

@@ -9,16 +9,21 @@ from omnibase_infra to store memory snapshots as JSON files.
 Available Handlers:
     - HandlerFileSystemAdapter: Stores snapshots as JSON files on disk
 
-Example:
-    >>> from omnimemory.nodes.memory_storage_effect.handlers import (
-    ...     HandlerFileSystemAdapter,
-    ...     HandlerFileSystemAdapterConfig,
-    ... )
-    >>> from pathlib import Path
-    >>>
-    >>> config = HandlerFileSystemAdapterConfig(base_path=Path("/data/memory"))
-    >>> adapter = HandlerFileSystemAdapter(config)
-    >>> await adapter.initialize()
+Example::
+
+    import asyncio
+    from omnimemory.nodes.memory_storage_effect.handlers import (
+        HandlerFileSystemAdapter,
+        HandlerFileSystemAdapterConfig,
+    )
+    from pathlib import Path
+
+    async def example():
+        config = HandlerFileSystemAdapterConfig(base_path=Path("/data/memory"))
+        adapter = HandlerFileSystemAdapter(config)
+        await adapter.initialize()
+
+    asyncio.run(example())
 
 .. versionadded:: 0.1.0
     Initial implementation for OMN-1384.

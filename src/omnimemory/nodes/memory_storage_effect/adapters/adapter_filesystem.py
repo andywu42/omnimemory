@@ -9,20 +9,25 @@ snapshots as JSON files on the filesystem.
 The adapter translates between the memory storage request/response models and
 the underlying filesystem handler's envelope-based protocol.
 
-Example:
-    >>> from omnimemory.nodes.memory_storage_effect.handlers import (
-    ...     HandlerFileSystemAdapter,
-    ...     HandlerFileSystemAdapterConfig,
-    ... )
-    >>> from pathlib import Path
-    >>>
-    >>> config = HandlerFileSystemAdapterConfig(base_path=Path("/data/memory"))
-    >>> adapter = HandlerFileSystemAdapter(config)
-    >>> await adapter.initialize()
-    >>>
-    >>> # Store a snapshot
-    >>> request = ModelMemoryStorageRequest(operation="store", snapshot=my_snapshot)
-    >>> response = await adapter.execute(request)
+Example::
+
+    import asyncio
+    from omnimemory.nodes.memory_storage_effect.handlers import (
+        HandlerFileSystemAdapter,
+        HandlerFileSystemAdapterConfig,
+    )
+    from pathlib import Path
+
+    async def example():
+        config = HandlerFileSystemAdapterConfig(base_path=Path("/data/memory"))
+        adapter = HandlerFileSystemAdapter(config)
+        await adapter.initialize()
+
+        # Store a snapshot
+        request = ModelMemoryStorageRequest(operation="store", snapshot=my_snapshot)
+        response = await adapter.execute(request)
+
+    asyncio.run(example())
 
 .. versionadded:: 0.1.0
     Initial implementation for OMN-1384.
@@ -201,18 +206,20 @@ class HandlerFileSystemAdapter:
         config: The adapter configuration.
         handler: The underlying HandlerFileSystem instance.
 
-    Example:
-        >>> config = HandlerFileSystemAdapterConfig(base_path=Path("/data"))
-        >>> adapter = HandlerFileSystemAdapter(config)
-        >>> await adapter.initialize()
-        >>>
-        >>> # Store operation
-        >>> store_req = ModelMemoryStorageRequest(
-        ...     operation="store",
-        ...     snapshot=snapshot
-        ... )
-        >>> response = await adapter.execute(store_req)
-        >>> assert response.status == "success"
+    Example::
+
+        async def example():
+            config = HandlerFileSystemAdapterConfig(base_path=Path("/data"))
+            adapter = HandlerFileSystemAdapter(config)
+            await adapter.initialize()
+
+            # Store operation
+            store_req = ModelMemoryStorageRequest(
+                operation="store",
+                snapshot=snapshot
+            )
+            response = await adapter.execute(store_req)
+            assert response.status == "success"
     """
 
     def __init__(self, config: HandlerFileSystemAdapterConfig) -> None:

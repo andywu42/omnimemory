@@ -9,10 +9,10 @@ without omnibase_core dependencies.
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
-def validate_contract_specification() -> Dict[str, Any]:
+def validate_contract_specification() -> dict[str, Any]:
     """Validate contract.yaml structure."""
     print("🔍 Testing contract specification...")
 
@@ -95,7 +95,7 @@ def validate_contract_specification() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_project_structure() -> Dict[str, Any]:
+def validate_project_structure() -> dict[str, Any]:
     """Validate overall project structure."""
     print("🔍 Testing project structure...")
 
@@ -153,7 +153,7 @@ def validate_project_structure() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_file_syntax() -> Dict[str, Any]:
+def validate_file_syntax() -> dict[str, Any]:
     """Validate Python file syntax without importing."""
     print("🔍 Testing file syntax...")
 
@@ -199,7 +199,7 @@ def validate_file_syntax() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def validate_pyproject_configuration() -> Dict[str, Any]:
+def validate_pyproject_configuration() -> dict[str, Any]:
     """Validate pyproject.toml configuration."""
     print("🔍 Testing pyproject.toml configuration...")
 

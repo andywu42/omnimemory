@@ -65,9 +65,13 @@ from .model_migration_progress import (  # noqa: E402
     MigrationStatus,
 )
 from .model_notes import ModelNote, ModelNotesCollection  # noqa: E402
-from .model_progress_summary import ProgressSummaryResponse  # noqa: E402
+from .model_progress_summary import (  # noqa: E402
+    ModelProgressPerformanceMetrics,
+    ProgressSummaryResponse,
+)
 from .model_semver import ModelSemVer  # noqa: E402
 from .model_success_metrics import (  # noqa: E402
+    ModelConfidenceInterval,
     ModelConfidenceScore,
     ModelQualityMetrics,
     ModelSuccessRate,
@@ -138,6 +142,7 @@ __all__ = [
     # New foundation models
     "ModelSemVer",
     "ModelSuccessRate",
+    "ModelConfidenceInterval",
     "ModelConfidenceScore",
     "ModelQualityMetrics",
     "ModelNote",
@@ -157,6 +162,7 @@ __all__ = [
     "ConnectionMetadata",
     "ConnectionPoolStats",
     "SemaphoreMetrics",
+    "ModelProgressPerformanceMetrics",
     "ProgressSummaryResponse",
     # Contract versioning support
     "ModelContractVersion",

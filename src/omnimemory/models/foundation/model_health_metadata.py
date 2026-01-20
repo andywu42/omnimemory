@@ -63,7 +63,7 @@ class AggregateHealthMetadata(BaseModel):
     )
 
     overall_health_score: float = Field(
-        description="Calculated overall health score (0.0-1.0)"
+        ge=0.0, le=1.0, description="Calculated overall health score (0.0-1.0)"
     )
 
     last_update_timestamp: datetime = Field(

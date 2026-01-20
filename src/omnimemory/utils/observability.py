@@ -111,29 +111,20 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import (
-    AsyncGenerator,
-    Callable,
-    Dict,
-    List,
-    Literal,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Callable, Literal, Optional, TypeVar
 
 # Type variable for generic function types
 F = TypeVar("F", bound=Callable[..., object])
 
 # Type alias for metadata values - supports common serializable types
 # This replaces Any with explicit types for type safety
-MetadataValue = Union[str, int, float, bool, None]
+MetadataValue = str | int | float | bool | None
 
 import structlog  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
@@ -188,7 +179,7 @@ class LabelValidationError(Exception):
 
 
 def validate_metric_labels(
-    labels: Dict[str, str],
+    labels: dict[str, str],
     required_labels: set[str],
     allowed_labels: Optional[set[str]] = None,
     metric_name: str = "unknown",
@@ -380,7 +371,7 @@ class StructuredLogEntry(BaseModel):
 
 
 def validate_log_entry(
-    log_data: Dict[str, object],
+    log_data: dict[str, object],
     raise_on_error: bool = True,
 ) -> Optional[StructuredLogEntry]:
     """Validate a log entry against the structured log schema.
@@ -580,7 +571,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Default histogram buckets for latency measurements (in milliseconds)
-DEFAULT_LATENCY_BUCKETS: Tuple[float, ...] = (
+DEFAULT_LATENCY_BUCKETS: tuple[float, ...] = (
     1.0,
     5.0,
     10.0,
@@ -658,7 +649,7 @@ class Counter:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
+        label_names: list[str],
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -679,10 +670,10 @@ class Counter:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], CounterValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], CounterValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -752,16 +743,16 @@ class Counter:
             self._values.move_to_end(key)
             return self._values[key].get()
 
-    def get_all(self) -> Dict[Tuple[str, ...], int]:
+    def get_all(self) -> dict[tuple[str, ...], int]:
         """Get all counter values with their labels."""
         with self._lock:
             return {k: v.get() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -770,8 +761,8 @@ class Counter:
 class HistogramValue:
     """Thread-safe histogram value with buckets."""
 
-    buckets: Tuple[float, ...]
-    bucket_counts: List[int] = field(default_factory=list)
+    buckets: tuple[float, ...]
+    bucket_counts: list[int] = field(default_factory=list)
     sum_value: float = 0.0
     count: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -792,7 +783,7 @@ class HistogramValue:
             # Always increment +Inf bucket
             self.bucket_counts[-1] += 1
 
-    def get_snapshot(self) -> Dict[str, Union[float, int, List[int], List[float]]]:
+    def get_snapshot(self) -> dict[str, float | int | list[int] | list[float]]:
         """Get a snapshot of histogram values."""
         with self._lock:
             return {
@@ -837,8 +828,8 @@ class Histogram:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
-        buckets: Tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
+        label_names: list[str],
+        buckets: tuple[float, ...] = DEFAULT_LATENCY_BUCKETS,
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -883,10 +874,10 @@ class Histogram:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], HistogramValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], HistogramValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -946,9 +937,7 @@ class Histogram:
         # Safe to call outside lock - value_holder is our reference
         value_holder.observe(value)
 
-    def get(
-        self, **labels: str
-    ) -> Dict[str, Union[float, int, List[int], List[float]]]:
+    def get(self, **labels: str) -> dict[str, float | int | list[int] | list[float]]:
         """Get histogram snapshot for given labels."""
         key = self._labels_to_key(labels)
         with self._lock:
@@ -960,16 +949,16 @@ class Histogram:
 
     def get_all(
         self,
-    ) -> Dict[Tuple[str, ...], Dict[str, Union[float, int, List[int], List[float]]]]:
+    ) -> dict[tuple[str, ...], dict[str, float | int | list[int] | list[float]]]:
         """Get all histogram values with their labels."""
         with self._lock:
             return {k: v.get_snapshot() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -1028,7 +1017,7 @@ class Gauge:
     def __init__(
         self,
         name: str,
-        label_names: List[str],
+        label_names: list[str],
         max_entries: int = DEFAULT_MAX_METRIC_ENTRIES,
         strict_labels: bool = False,
     ) -> None:
@@ -1049,10 +1038,10 @@ class Gauge:
         self.strict_labels = strict_labels
         self._label_names_set = frozenset(label_names)
         # Use OrderedDict for LRU eviction (oldest entries evicted first)
-        self._values: "OrderedDict[Tuple[str, ...], GaugeValue]" = OrderedDict()
+        self._values: "OrderedDict[tuple[str, ...], GaugeValue]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def _validate_labels(self, labels: Dict[str, str]) -> None:
+    def _validate_labels(self, labels: dict[str, str]) -> None:
         """Validate labels against expected label names.
 
         Args:
@@ -1122,16 +1111,16 @@ class Gauge:
             self._values.move_to_end(key)
             return self._values[key].get()
 
-    def get_all(self) -> Dict[Tuple[str, ...], float]:
+    def get_all(self) -> dict[tuple[str, ...], float]:
         """Get all gauge values with their labels."""
         with self._lock:
             return {k: v.get() for k, v in self._values.items()}
 
-    def _labels_to_key(self, labels: Dict[str, str]) -> Tuple[str, ...]:
+    def _labels_to_key(self, labels: dict[str, str]) -> tuple[str, ...]:
         """Convert labels dict to hashable key tuple."""
         return tuple(labels.get(name, "") for name in self.label_names)
 
-    def labels_from_key(self, key: Tuple[str, ...]) -> Dict[str, str]:
+    def labels_from_key(self, key: tuple[str, ...]) -> dict[str, str]:
         """Convert key tuple back to labels dict."""
         return dict(zip(self.label_names, key))
 
@@ -1240,7 +1229,7 @@ class MetricsRegistry:
         # Mark as initialized AFTER all metrics are created
         self._initialized = True
 
-    def get_all_metrics(self) -> Dict[str, Dict[str, object]]:
+    def get_all_metrics(self) -> dict[str, dict[str, object]]:
         """Get snapshot of all metrics for reporting.
 
         Thread-safety: This method acquires the instance lock to ensure a
@@ -1715,7 +1704,7 @@ class ObservabilityManager:
                         if trace_id in self._active_traces:
                             del self._active_traces[trace_id]
 
-    def get_current_context(self) -> Dict[str, Optional[str]]:
+    def get_current_context(self) -> dict[str, str | None]:
         """Get current correlation context."""
         return {
             "correlation_id": correlation_id_var.get(),
@@ -1724,7 +1713,7 @@ class ObservabilityManager:
             "operation": operation_var.get(),
         }
 
-    def get_performance_metrics(self) -> Dict[str, PerformanceMetrics]:
+    def get_performance_metrics(self) -> dict[str, PerformanceMetrics]:
         """Get current performance metrics for active traces (thread-safe)."""
         with self._traces_lock:
             return dict(self._active_traces)
@@ -1887,7 +1876,7 @@ class HandlerMetrics:
 def _get_safe_content_metadata(
     content: Optional[str],
     field_name: str = "content",
-) -> Dict[str, Union[str, int, bool]]:
+) -> dict[str, str | int | bool]:
     """Extract safe metadata from content without logging PII.
 
     Instead of logging raw content, we log:
@@ -2018,7 +2007,7 @@ class HandlerObservabilityWrapper:
         self,
         operation: str,
         correlation_id: Optional[str] = None,
-    ) -> AsyncGenerator[Dict[str, str], None]:
+    ) -> AsyncGenerator[dict[str, str], None]:
         """Context manager for observing handler operations.
 
         Implements the core observability pattern:
@@ -2188,7 +2177,7 @@ class HandlerObservabilityWrapper:
 
         # Build log data with ALL required fields (schema compliance)
         # Note: All required fields must be non-None strings/floats
-        log_data: Dict[str, Union[str, float]] = {
+        log_data: dict[str, str | float] = {
             "correlation_id": metrics.correlation_id,  # Required: str
             "operation": metrics.operation,  # Required: str
             "handler": metrics.handler,  # Required: str
@@ -2234,7 +2223,7 @@ class HandlerObservabilityWrapper:
         """Explicitly mark handler as unhealthy."""
         self.registry.handler_health_status.set(0.0, handler=self.handler_name)
 
-    def get_handler_stats(self) -> Dict[str, object]:
+    def get_handler_stats(self) -> dict[str, object]:
         """Get statistics for this handler.
 
         Returns:

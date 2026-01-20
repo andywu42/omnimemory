@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..models.foundation import (
+    ModelConfidenceInterval,
     ModelConfiguration,
     ModelMetadata,
     ModelOptionalStringList,
@@ -701,8 +702,8 @@ class PatternPredictionResponse(BaseMemoryResponse):
     predictions: ModelResultCollection = Field(
         default_factory=ModelResultCollection, description="Pattern predictions"
     )
-    confidence_intervals: list[dict[str, float]] = Field(
-        description="Prediction confidence"
+    confidence_intervals: list[ModelConfidenceInterval] = Field(
+        default_factory=list, description="Prediction confidence intervals"
     )
 
 

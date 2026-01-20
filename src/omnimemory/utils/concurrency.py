@@ -25,11 +25,12 @@ import concurrent.futures
 import functools
 import threading
 from collections import deque
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar
 
 # Type variable for generic function return types
 F = TypeVar("F", bound=Callable[..., Any])
@@ -1138,15 +1139,39 @@ class ConnectionPool:
         """
         self.max_size = max_size
         self.timeout = timeout
-        self._connections: list = []
-        self._active: dict = {}
+        self._connections: list[object] = []
+        self._active: dict[str, object] = {}
         self._lock = asyncio.Lock()
         self._connection_counter = 0
+        # Thread-safe lock for synchronous accessor methods
+        self._sync_lock = threading.Lock()
 
     @property
     def active_connections(self) -> int:
-        """Return the number of currently active connections."""
-        return len(self._active)
+        """Return the number of currently active connections.
+
+        Thread-safe: Uses threading.Lock to ensure atomic read of active count.
+        """
+        with self._sync_lock:
+            return len(self._active)
+
+    @property
+    def available_connections(self) -> int:
+        """Return the number of available connections in the pool.
+
+        Thread-safe: Uses threading.Lock to ensure atomic read of pool size.
+        """
+        with self._sync_lock:
+            return len(self._connections)
+
+    @property
+    def total_connections(self) -> int:
+        """Return total connections (active + available).
+
+        Thread-safe: Uses threading.Lock to ensure atomic read.
+        """
+        with self._sync_lock:
+            return len(self._active) + len(self._connections)
 
     def _create_connection(self) -> object:
         """
@@ -1200,20 +1225,33 @@ class ConnectionPool:
                             f"Connection pool timeout after {elapsed:.2f}s"
                         )
 
-                    async with self._lock:
-                        # Try to get from pool first
-                        if self._connections:
-                            connection = self._connections.pop()
-                        elif len(self._active) < self.max_size:
-                            # Create new connection (may fail and trigger retry)
-                            connection = self._create_connection()
-                        else:
-                            # Pool exhausted - would need to wait
-                            raise asyncio.TimeoutError(
-                                f"Connection pool exhausted (max_size={self.max_size})"
-                            )
+                    # Acquire async lock with timeout support
+                    remaining_timeout = effective_timeout - elapsed
+                    try:
+                        await asyncio.wait_for(
+                            self._lock.acquire(), timeout=remaining_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        msg = f"Pool lock timeout after {effective_timeout:.2f}s"
+                        raise asyncio.TimeoutError(msg)
 
-                        self._active[connection_id] = connection
+                    try:
+                        # Thread-safe state access within async lock context
+                        with self._sync_lock:
+                            # Try to get from pool first
+                            if self._connections:
+                                connection = self._connections.pop()
+                            elif len(self._active) < self.max_size:
+                                # Create new connection (may fail and trigger retry)
+                                connection = self._create_connection()
+                            else:
+                                # Pool exhausted - would need to wait
+                                msg = f"Pool exhausted (max={self.max_size})"
+                                raise asyncio.TimeoutError(msg)
+
+                            self._active[connection_id] = connection
+                    finally:
+                        self._lock.release()
 
                     # Successfully acquired connection, break out of retry loop
                     break
@@ -1240,30 +1278,32 @@ class ConnectionPool:
         finally:
             if connection is not None:
                 async with self._lock:
-                    # Remove from active
-                    self._active.pop(connection_id, None)
-                    # Validate pool size before returning connection
-                    # Total pool size = available connections + active connections
-                    total_pool_size = len(self._connections) + len(self._active)
-                    if (
-                        total_pool_size < self.max_size
-                        and len(self._connections) < self.max_size
-                    ):
-                        self._connections.append(connection)
-                        logger.debug(
-                            "connection_returned_to_pool",
-                            connection_id=connection_id,
-                            pool_size=len(self._connections),
-                            active_connections=len(self._active),
-                        )
-                    else:
-                        # Pool is at capacity, discard excess connection
-                        logger.debug(
-                            "connection_discarded_pool_full",
-                            connection_id=connection_id,
-                            pool_size=len(self._connections),
-                            max_size=self.max_size,
-                        )
+                    # Thread-safe state modification
+                    with self._sync_lock:
+                        # Remove from active
+                        self._active.pop(connection_id, None)
+                        # Validate pool size before returning connection
+                        # Total pool size = available connections + active connections
+                        total_pool_size = len(self._connections) + len(self._active)
+                        if (
+                            total_pool_size < self.max_size
+                            and len(self._connections) < self.max_size
+                        ):
+                            self._connections.append(connection)
+                            logger.debug(
+                                "connection_returned_to_pool",
+                                connection_id=connection_id,
+                                pool_size=len(self._connections),
+                                active_connections=len(self._active),
+                            )
+                        else:
+                            # Pool is at capacity, discard excess connection
+                            logger.debug(
+                                "connection_discarded_pool_full",
+                                connection_id=connection_id,
+                                pool_size=len(self._connections),
+                                max_size=self.max_size,
+                            )
 
 
 # === DECORATOR UTILITIES ===
@@ -1370,7 +1410,7 @@ def with_timeout(timeout: float) -> Callable[[F], F]:
 
 
 def with_circuit_breaker(
-    circuit_breaker_or_threshold: Union[CircuitBreaker, int] = 5,
+    circuit_breaker_or_threshold: CircuitBreaker | int = 5,
     recovery_timeout: float = 60.0,
     success_threshold: int = 1,
 ) -> Callable[[F], F]:

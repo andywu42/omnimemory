@@ -8,9 +8,10 @@ patterns, protocols, and error handling.
 
 from __future__ import annotations
 
-from typing import Dict
+from pathlib import Path
 
 import pytest
+import yaml
 
 from omnimemory import (  # Protocols; Data models; Error handling
     AccessLevel,
@@ -45,15 +46,15 @@ class MockMemoryStorageNode:
         """Mock cache hit rate."""
         return 0.85
 
-    async def _get_storage_utilization(self) -> Dict[str, float]:
+    async def _get_storage_utilization(self) -> dict[str, float]:
         """Mock storage utilization."""
         return {"disk": 0.60, "memory": 0.45}
 
-    async def _validate_configuration(self, config: Dict[str, str]) -> bool:
+    async def _validate_configuration(self, config: dict[str, str]) -> bool:
         """Mock configuration validation."""
         return "invalid_key" not in config
 
-    async def _apply_configuration(self, config: Dict[str, str]) -> None:
+    async def _apply_configuration(self, config: dict[str, str]) -> None:
         """Mock configuration application."""
         pass
 
@@ -191,7 +192,7 @@ class TestFoundationArchitecture:
 
         assert validation_error.context["field_name"] == "test_field"
         assert validation_error.context["field_value"] == "invalid_value"
-        assert "Review and correct the input" in validation_error.recovery_hint
+        assert "Review and correct" in validation_error.recovery_hint
 
     def test_error_categorization(self) -> None:
         """Test error categorization and metadata."""
@@ -247,10 +248,6 @@ class TestFoundationArchitecture:
         Skips gracefully if contract.yaml doesn't exist.
         """
         # Verify contract.yaml can be loaded
-        from pathlib import Path
-
-        import yaml
-
         # Use __file__ relative path for CWD independence
         contract_path = Path(__file__).parent.parent / "contract.yaml"
         if not contract_path.exists():

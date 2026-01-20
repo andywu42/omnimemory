@@ -222,7 +222,7 @@ export OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS='[".json", ".txt", ".md"]'
 export OMNIMEMORY__FILESYSTEM__ALLOWED_EXTENSIONS=".json,.txt,.md"
 ```
 
-> **Note**: Comma-separated value support could be added by implementing a custom `settings_customise_sources()` method or using a `@field_validator` with `mode='before'` to parse comma-separated strings. The current implementation uses the pydantic-settings default behavior which expects JSON array format.
+> **Note**: Comma-separated value support could be added using a `@field_validator` with `mode='before'` to parse comma-separated strings. The current implementation uses the pydantic-settings v2 default behavior which expects JSON array format for list-type fields.
 
 ## Secrets Management
 

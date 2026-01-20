@@ -234,7 +234,7 @@ class PIIDetector:
             PIIType.CREDIT_CARD: [
                 PIIPatternConfig(
                     # Visa (4xxx), Mastercard (51-55xx), Amex (34xx/37xx)
-                    # Note: Does not cover Discover (6011/65/644-649) - add if needed
+                    # Discover (6011/65/644-649) not implemented
                     pattern=r"\b4\d{15}\b|\b5[1-5]\d{14}\b|\b3[47]\d{13}\b",
                     confidence=self.config.medium_confidence,
                     mask_template="****-****-****-****",
@@ -409,7 +409,7 @@ class PIIDetector:
             has_pii=len(matches) > 0,
             matches=matches,
             sanitized_content=sanitized_content,
-            pii_types_detected=set(pii_types_detected),
+            pii_types_detected=pii_types_detected,
             scan_duration_ms=scan_duration_ms,
         )
 
