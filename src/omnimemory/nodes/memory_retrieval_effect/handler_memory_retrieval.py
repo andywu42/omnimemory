@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
+from typing import assert_never
 
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
 from pydantic import BaseModel, Field
@@ -273,35 +274,42 @@ class HandlerMemoryRetrieval:
             await self.initialize()
 
         try:
-            if request.operation == "search":
-                if not self._qdrant_handler:
-                    return ModelMemoryRetrievalResponse(
-                        status="error",
-                        error_message="Qdrant handler not available",
-                    )
-                return await self._qdrant_handler.execute(request)
+            match request.operation:
+                case "search":
+                    if not self._qdrant_handler:
+                        return ModelMemoryRetrievalResponse(
+                            status="error",
+                            error_message=(
+                                f"{self.__class__.__name__}: Qdrant handler not "
+                                f"available for operation '{request.operation}'"
+                            ),
+                        )
+                    return await self._qdrant_handler.execute(request)
 
-            elif request.operation == "search_text":
-                if not self._db_handler:
-                    return ModelMemoryRetrievalResponse(
-                        status="error",
-                        error_message="Database handler not available",
-                    )
-                return await self._db_handler.execute(request)
+                case "search_text":
+                    if not self._db_handler:
+                        return ModelMemoryRetrievalResponse(
+                            status="error",
+                            error_message=(
+                                f"{self.__class__.__name__}: Database handler not "
+                                f"available for operation '{request.operation}'"
+                            ),
+                        )
+                    return await self._db_handler.execute(request)
 
-            elif request.operation == "search_graph":
-                if not self._graph_handler:
-                    return ModelMemoryRetrievalResponse(
-                        status="error",
-                        error_message="Graph handler not available",
-                    )
-                return await self._graph_handler.execute(request)
+                case "search_graph":
+                    if not self._graph_handler:
+                        return ModelMemoryRetrievalResponse(
+                            status="error",
+                            error_message=(
+                                f"{self.__class__.__name__}: Graph handler not "
+                                f"available for operation '{request.operation}'"
+                            ),
+                        )
+                    return await self._graph_handler.execute(request)
 
-            else:
-                return ModelMemoryRetrievalResponse(
-                    status="error",
-                    error_message=f"Unknown operation: {request.operation}",
-                )
+                case _:
+                    assert_never(request.operation)
 
         except Exception as e:
             logger.error(
@@ -312,7 +320,10 @@ class HandlerMemoryRetrieval:
             )
             return ModelMemoryRetrievalResponse(
                 status="error",
-                error_message=f"Retrieval failed: {e}",
+                error_message=(
+                    f"{self.__class__.__name__}: Retrieval failed: {e} "
+                    f"for operation '{request.operation}'"
+                ),
             )
 
     async def shutdown(self) -> None:

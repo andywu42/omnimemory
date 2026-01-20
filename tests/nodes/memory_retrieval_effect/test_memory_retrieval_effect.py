@@ -57,7 +57,7 @@ def handler() -> HandlerMemoryRetrieval:
     """
     config = HandlerMemoryRetrievalConfig(
         use_mock_handlers=True,
-        qdrant_config=HandlerQdrantMockConfig(embedding_dimension=1536),
+        qdrant_config=HandlerQdrantMockConfig(embedding_dimension=1024),
         db_config=HandlerDbMockConfig(case_sensitive=False),
         graph_config=HandlerGraphMockConfig(bidirectional=True),
     )
@@ -157,8 +157,8 @@ class TestSemanticSearch:
         snapshot = create_snapshot("test content")
         handler.seed_snapshots([snapshot])
 
-        # Search with a mock embedding (1536 dimensions)
-        mock_embedding = [0.1] * 1536
+        # Search with a mock embedding (1024 dimensions)
+        mock_embedding = [0.1] * 1024
         request = ModelMemoryRetrievalRequest(
             operation="search",
             query_embedding=mock_embedding,
@@ -739,7 +739,7 @@ class TestModelValidation:
 
     def test_valid_search_with_embedding(self) -> None:
         """Test creating a search request with embedding."""
-        embedding = [0.1] * 1536
+        embedding = [0.1] * 1024
         request = ModelMemoryRetrievalRequest(
             operation="search",
             query_embedding=embedding,

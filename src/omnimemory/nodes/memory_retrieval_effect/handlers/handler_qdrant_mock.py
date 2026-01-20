@@ -10,18 +10,33 @@ The mock uses simple text matching to simulate similarity scores, making it
 suitable for unit tests and local development. When the real Qdrant service
 is available, this can be swapped for the real HandlerQdrant.
 
+Optionally, the handler can use a real MLX embedding server for generating
+embeddings instead of mock embeddings. This enables more realistic semantic
+search during development while still using the mock storage backend.
+
 Example::
 
     import asyncio
+    import os
     from omnimemory.nodes.memory_retrieval_effect.handlers import (
         HandlerQdrantMock,
         HandlerQdrantMockConfig,
     )
 
     async def example():
+        # Use mock embeddings (default)
         config = HandlerQdrantMockConfig()
         handler = HandlerQdrantMock(config)
         await handler.initialize()
+
+        # Or use real MLX embeddings (URL from environment variable - REQUIRED)
+        embedding_url = os.environ["OMNIMEMORY__EMBEDDING__SERVER_URL"]
+        config_real = HandlerQdrantMockConfig(
+            use_real_embeddings=True,
+            embedding_server_url=embedding_url,
+        )
+        handler_real = HandlerQdrantMock(config_real)
+        await handler_real.initialize()
 
         # Seed with test data
         handler.seed_snapshots([snapshot1, snapshot2])
@@ -42,14 +57,20 @@ Example::
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
-import random
 from collections.abc import Sequence
 
 from omnibase_core.models.omnimemory import ModelMemorySnapshot
 from pydantic import BaseModel, Field
 
+from ..clients.embedding_client import (
+    EmbeddingClient,
+    EmbeddingClientConfig,
+    EmbeddingClientError,
+    EmbeddingConnectionError,
+)
 from ..models import (
     ModelMemoryRetrievalRequest,
     ModelMemoryRetrievalResponse,
@@ -59,6 +80,8 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "EmbeddingClientError",
+    "EmbeddingConnectionError",
     "HandlerQdrantMock",
     "HandlerQdrantMockConfig",
 ]
@@ -68,16 +91,22 @@ class HandlerQdrantMockConfig(BaseModel):
     """Configuration for the mock Qdrant handler.
 
     Attributes:
-        embedding_dimension: Dimension of embedding vectors. Defaults to 1536
-            (OpenAI text-embedding-3-small compatible).
+        embedding_dimension: Dimension of embedding vectors. Defaults to 1024
+            (MLX Qwen3-Embedding compatible).
         simulate_latency_ms: Simulated latency for operations in milliseconds.
             Set to 0 for instant responses.
-        embedding_endpoint: URL for embedding service (for future use when
-            real embeddings are available).
+        use_real_embeddings: Whether to use the real MLX embedding server
+            instead of mock embeddings. Defaults to False for backwards
+            compatibility and test determinism.
+        embedding_server_url: URL of the MLX embedding server. REQUIRED when
+            use_real_embeddings is True. Must be provided explicitly from
+            environment variable OMNIMEMORY__EMBEDDING__SERVER_URL.
+        embedding_timeout_seconds: Timeout for embedding requests in seconds.
+        embedding_max_retries: Maximum retries for embedding requests.
     """
 
     embedding_dimension: int = Field(
-        default=1536,
+        default=1024,
         description="Dimension of embedding vectors",
     )
     simulate_latency_ms: int = Field(
@@ -85,9 +114,26 @@ class HandlerQdrantMockConfig(BaseModel):
         ge=0,
         description="Simulated latency in milliseconds",
     )
-    embedding_endpoint: str | None = Field(
+    use_real_embeddings: bool = Field(
+        default=False,
+        description="Use real MLX embedding server instead of mock embeddings",
+    )
+    embedding_server_url: str | None = Field(
         default=None,
-        description="URL for embedding service (optional)",
+        description=(
+            "URL of MLX embedding server - REQUIRED when use_real_embeddings=True"
+        ),
+    )
+    embedding_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        description="Timeout for embedding requests in seconds",
+    )
+    embedding_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="Maximum retries for embedding requests",
     )
 
 
@@ -132,6 +178,7 @@ class HandlerQdrantMock:
         self._embeddings: dict[str, list[float]] = {}
         self._initialized = False
         self._init_lock = asyncio.Lock()
+        self._embedding_client: EmbeddingClient | None = None
 
     @property
     def config(self) -> HandlerQdrantMockConfig:
@@ -152,6 +199,16 @@ class HandlerQdrantMock:
         """Initialize the mock handler.
 
         Thread-safe: Uses asyncio.Lock to prevent concurrent initialization.
+        If use_real_embeddings is True, connects to the MLX embedding server.
+
+        FAIL-FAST POLICY: If use_real_embeddings is True but configuration
+        is invalid or the server is unreachable, this method raises an
+        exception immediately. NO silent fallback to mock embeddings.
+
+        Raises:
+            ValueError: If use_real_embeddings is True but embedding_server_url
+                is empty or invalid.
+            EmbeddingConnectionError: If the embedding server is unreachable.
         """
         if self._initialized:
             return
@@ -160,10 +217,40 @@ class HandlerQdrantMock:
             if self._initialized:
                 return
 
-            logger.info(
-                "Mock Qdrant handler initialized with embedding dim=%d",
-                self._config.embedding_dimension,
-            )
+            # Initialize embedding client if real embeddings are requested
+            if self._config.use_real_embeddings:
+                # Validate configuration - fail fast on invalid config
+                if not self._config.embedding_server_url:
+                    raise ValueError(
+                        "embedding_server_url is required when use_real_embeddings=True"
+                    )
+                if not self._config.embedding_server_url.startswith(
+                    ("http://", "https://")
+                ):
+                    raise ValueError(
+                        f"embedding_server_url must be a valid HTTP(S) URL, "
+                        f"got: {self._config.embedding_server_url!r}"
+                    )
+
+                embedding_config = EmbeddingClientConfig(
+                    base_url=self._config.embedding_server_url,
+                    timeout_seconds=self._config.embedding_timeout_seconds,
+                    max_retries=self._config.embedding_max_retries,
+                    embedding_dimension=self._config.embedding_dimension,
+                )
+                self._embedding_client = EmbeddingClient(embedding_config)
+                # Connect to server - let errors propagate, NO fallback
+                await self._embedding_client.connect()
+                logger.info(
+                    "Mock Qdrant handler initialized with real embeddings from %s",
+                    self._config.embedding_server_url,
+                )
+            else:
+                logger.info(
+                    "Mock Qdrant handler initialized with mock embeddings, dim=%d",
+                    self._config.embedding_dimension,
+                )
+
             self._initialized = True
 
     def seed_snapshots(
@@ -177,8 +264,20 @@ class HandlerQdrantMock:
             snapshots: List of snapshots to add to the mock store.
             embeddings: Optional pre-computed embeddings keyed by snapshot_id.
                 If not provided, mock embeddings will be generated.
+
+        Note:
+            Snapshots with invalid or empty IDs are skipped with a warning.
         """
+        valid_count = 0
         for snapshot in snapshots:
+            # Validate snapshot ID is non-empty
+            if not snapshot.snapshot_id or not str(snapshot.snapshot_id).strip():
+                logger.warning(
+                    "Skipping snapshot with invalid/empty ID: %r",
+                    snapshot.snapshot_id,
+                )
+                continue
+
             snapshot_id = str(snapshot.snapshot_id)
             self._snapshots[snapshot_id] = snapshot
 
@@ -188,7 +287,9 @@ class HandlerQdrantMock:
             else:
                 self._embeddings[snapshot_id] = self._generate_mock_embedding(snapshot)
 
-        logger.debug("Seeded %d snapshots into mock store", len(snapshots))
+            valid_count += 1
+
+        logger.debug("Seeded %d snapshots into mock store", valid_count)
 
     def clear(self) -> None:
         """Clear all snapshots from the mock store."""
@@ -215,8 +316,10 @@ class HandlerQdrantMock:
         if request.operation != "search":
             return ModelMemoryRetrievalResponse(
                 status="error",
-                error_message=f"HandlerQdrantMock only supports 'search', "
-                f"got '{request.operation}'",
+                error_message=(
+                    f"{self.__class__.__name__}: Only supports 'search', "
+                    f"got '{request.operation}'"
+                ),
             )
 
         # Simulate latency if configured
@@ -227,11 +330,14 @@ class HandlerQdrantMock:
         if request.query_embedding is not None:
             query_embedding = request.query_embedding
         elif request.query_text is not None:
-            query_embedding = self._text_to_mock_embedding(request.query_text)
+            query_embedding = await self._get_embedding(request.query_text)
         else:
             return ModelMemoryRetrievalResponse(
                 status="error",
-                error_message="Either query_text or query_embedding required",
+                error_message=(
+                    f"{self.__class__.__name__}: Either query_text or query_embedding "
+                    f"required for operation '{request.operation}'"
+                ),
             )
 
         # Score all snapshots
@@ -285,10 +391,7 @@ class HandlerQdrantMock:
         # Combine text fields for embedding - extract subject_key for searchable text
         text_parts = []
         if snapshot.subject:
-            if (
-                hasattr(snapshot.subject, "subject_key")
-                and snapshot.subject.subject_key
-            ):
+            if snapshot.subject.subject_key:
                 text_parts.append(snapshot.subject.subject_key)
         if snapshot.tags:
             text_parts.extend(snapshot.tags)
@@ -297,41 +400,69 @@ class HandlerQdrantMock:
         return self._text_to_mock_embedding(text)
 
     def _text_to_mock_embedding(self, text: str) -> list[float]:
-        """Convert text to a mock embedding vector.
+        """Generate deterministic mock embedding from text using hashlib.
 
-        This creates a deterministic embedding based on word hashes,
-        simulating the behavior of a real embedding model for testing.
+        This creates a fully deterministic embedding based on MD5 hash,
+        ensuring reproducible results across Python runs for testing.
 
         Args:
             text: The text to embed.
 
         Returns:
-            A mock embedding vector.
+            A normalized mock embedding vector.
         """
-        # Initialize with zeros
+        # Use deterministic hash
+        text_hash = hashlib.md5(text.encode()).digest()
         dim = self._config.embedding_dimension
-        embedding = [0.0] * dim
-
-        # Hash words into embedding dimensions
-        words = text.lower().split()
-        for word in words:
-            # Use hash to distribute word across dimensions
-            word_hash = hash(word)
-            for i in range(min(10, len(word))):
-                idx = (word_hash + i * 31) % dim
-                embedding[idx] += 1.0 / (i + 1)
-
+        # Convert to reproducible embedding
+        embedding = [
+            float((text_hash[i % len(text_hash)] % 100) / 100.0) for i in range(dim)
+        ]
         # Normalize to unit vector
-        magnitude = math.sqrt(sum(x * x for x in embedding))
-        if magnitude > 0:
-            embedding = [x / magnitude for x in embedding]
-        else:
-            # Random unit vector for empty text
-            embedding = [random.gauss(0, 1) for _ in range(dim)]
-            magnitude = math.sqrt(sum(x * x for x in embedding))
-            embedding = [x / magnitude for x in embedding]
+        norm = math.sqrt(sum(x * x for x in embedding))
+        return [x / norm if norm > 0 else 0.0 for x in embedding]
 
-        return embedding
+    async def _get_embedding(self, text: str) -> list[float]:
+        """Get embedding for text, using real embeddings if configured.
+
+        This method provides a unified interface for embedding generation.
+        When use_real_embeddings is enabled and the embedding client is
+        available, it will use the MLX embedding server. Otherwise, it
+        uses deterministic mock embeddings.
+
+        FAIL-FAST POLICY: If real embeddings are requested but the server
+        fails, this method raises an exception. NO silent fallback to mock
+        embeddings. This ensures production issues are visible immediately.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            A list of floats representing the embedding vector.
+
+        Raises:
+            EmbeddingClientError: If real embeddings are requested but the
+                embedding server fails. Errors propagate without fallback.
+
+        Example::
+
+            async def search_example():
+                handler = HandlerQdrantMock(HandlerQdrantMockConfig())
+                await handler.initialize()
+                embedding = await handler._get_embedding("hello world")
+        """
+        # Real embeddings requested - no fallback, fail if server fails
+        if self._embedding_client is not None:
+            embedding = await self._embedding_client.get_embedding(text)
+            logger.debug(
+                "Generated real embedding for text (len=%d, dim=%d)",
+                len(text),
+                len(embedding),
+            )
+            return embedding
+
+        # Mock mode - use mock embeddings
+        return self._text_to_mock_embedding(text)
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         """Compute cosine similarity between two vectors.
@@ -361,8 +492,17 @@ class HandlerQdrantMock:
         return max(0.0, min(1.0, similarity))
 
     async def shutdown(self) -> None:
-        """Shutdown the handler and release resources."""
+        """Shutdown the handler and release resources.
+
+        Closes the embedding client connection if one was created.
+        """
         if self._initialized:
+            # Close embedding client if it exists
+            if self._embedding_client is not None:
+                await self._embedding_client.close()
+                self._embedding_client = None
+                logger.debug("Embedding client closed")
+
             self._snapshots.clear()
             self._embeddings.clear()
             self._initialized = False

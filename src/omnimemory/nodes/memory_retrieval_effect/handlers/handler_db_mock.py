@@ -165,12 +165,25 @@ class HandlerDbMock:
 
         Args:
             snapshots: List of snapshots to add to the mock store.
+
+        Note:
+            Snapshots with invalid or empty IDs are skipped with a warning.
         """
+        valid_count = 0
         for snapshot in snapshots:
+            # Validate snapshot ID is non-empty
+            if not snapshot.snapshot_id or not str(snapshot.snapshot_id).strip():
+                logger.warning(
+                    "Skipping snapshot with invalid/empty ID: %r",
+                    snapshot.snapshot_id,
+                )
+                continue
+
             snapshot_id = str(snapshot.snapshot_id)
             self._snapshots[snapshot_id] = snapshot
+            valid_count += 1
 
-        logger.debug("Seeded %d snapshots into mock DB store", len(snapshots))
+        logger.debug("Seeded %d snapshots into mock DB store", valid_count)
 
     def clear(self) -> None:
         """Clear all snapshots from the mock store."""
@@ -196,14 +209,19 @@ class HandlerDbMock:
         if request.operation != "search_text":
             return ModelMemoryRetrievalResponse(
                 status="error",
-                error_message=f"HandlerDbMock only supports 'search_text', "
-                f"got '{request.operation}'",
+                error_message=(
+                    f"{self.__class__.__name__}: Only supports 'search_text', "
+                    f"got '{request.operation}'"
+                ),
             )
 
         if request.query_text is None:
             return ModelMemoryRetrievalResponse(
                 status="error",
-                error_message="query_text is required for search_text operation",
+                error_message=(
+                    f"{self.__class__.__name__}: query_text is required "
+                    f"for operation '{request.operation}'"
+                ),
             )
 
         # Simulate latency if configured
@@ -287,13 +305,10 @@ class HandlerDbMock:
 
         # Subject - extract subject_key which contains the searchable text
         if snapshot.subject:
-            if (
-                hasattr(snapshot.subject, "subject_key")
-                and snapshot.subject.subject_key
-            ):
+            if snapshot.subject.subject_key:
                 text_parts.append(snapshot.subject.subject_key)
             # Also include subject_type as text
-            if hasattr(snapshot.subject, "subject_type"):
+            if snapshot.subject.subject_type:
                 text_parts.append(str(snapshot.subject.subject_type))
 
         # Tags

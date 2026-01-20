@@ -59,7 +59,7 @@ from .models import (
     ModelSearchResult,
 )
 
-__all__ = [
+__all__: list[str] = [
     # Main handler
     "HandlerMemoryRetrieval",
     "HandlerMemoryRetrievalConfig",

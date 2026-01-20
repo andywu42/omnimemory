@@ -20,7 +20,7 @@ Example:
     >>> # Semantic search with pre-computed embedding
     >>> request = ModelMemoryRetrievalRequest(
     ...     operation="search",
-    ...     query_embedding=[0.1, 0.2, ...],  # 1536-dim vector
+    ...     query_embedding=[0.1, 0.2, ...],  # 1024-dim vector
     ...     limit=5,
     ... )
 
