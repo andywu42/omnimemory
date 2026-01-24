@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from omnimemory.models.foundation.model_semver import ModelSemVer
+
 from ...enums.enum_intelligence_operation_type import EnumIntelligenceOperationType
 
 
@@ -67,8 +69,8 @@ class ModelIntelligenceAnalysis(BaseModel):
         ge=0,
         description="Time taken to perform the analysis",
     )
-    model_version: str = Field(
-        description="Version of the analysis model used",
+    model_version: ModelSemVer = Field(
+        description="Semantic version of the analysis model used",
     )
     algorithm_used: str = Field(
         description="Algorithm or method used for analysis",
