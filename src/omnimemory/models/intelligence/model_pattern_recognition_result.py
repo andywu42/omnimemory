@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelPatternRecognitionResult(BaseModel):
     """Pattern recognition result following ONEX standards."""
 
-    model_config = ConfigDict(frozen=False)
+    model_config = ConfigDict(frozen=False, extra="forbid")
 
     # Result identification
     result_id: UUID = Field(
@@ -49,6 +49,7 @@ class ModelPatternRecognitionResult(BaseModel):
 
     # Pattern characteristics
     pattern_frequency: int = Field(
+        ge=0,
         description="Frequency of this pattern in the dataset",
     )
     pattern_significance: float = Field(
@@ -96,7 +97,8 @@ class ModelPatternRecognitionResult(BaseModel):
         description="Version of the pattern recognition model",
     )
     processing_time_ms: int = Field(
-        description="Time taken for pattern recognition",
+        ge=0,
+        description="Time taken for pattern recognition in milliseconds",
     )
 
     # Temporal information
