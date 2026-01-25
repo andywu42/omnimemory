@@ -14,6 +14,7 @@ from .enum_migration_status import (
     EnumMigrationStatus,
 )
 from .enum_priority_level import EnumPriorityLevel
+from .enum_subscription_status import EnumSubscriptionStatus
 from .enum_trust_level import EnumDecayFunction, EnumTrustLevel
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "EnumMigrationStatus",
     "EnumOmniMemoryErrorCode",
     "EnumPriorityLevel",
+    "EnumSubscriptionStatus",
     "EnumTrustLevel",
 ]

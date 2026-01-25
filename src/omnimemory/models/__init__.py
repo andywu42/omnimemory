@@ -8,6 +8,10 @@ Models are organized into functional domains following omnibase_core patterns:
 - service/: Service configurations, orchestration models
 - container/: Container configurations and DI models
 - foundation/: Base implementations and protocols
+- subscription/: Agent subscriptions and notification delivery models
+- adapters/: Adapter configuration models
+- config/: Configuration models
+- utils/: Utility models
 
 This __init__.py maintains compatibility by re-exporting
 all models at the package level following ONEX standards.
@@ -23,6 +27,7 @@ from . import (
     intelligence,
     memory,
     service,
+    subscription,
     utils,
 )
 
@@ -36,5 +41,6 @@ __all__ = [
     "intelligence",
     "memory",
     "service",
+    "subscription",
     "utils",
 ]

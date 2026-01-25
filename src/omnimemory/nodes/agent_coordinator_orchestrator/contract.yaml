@@ -1,0 +1,71 @@
+---
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 OmniNode Team
+
+# Agent Coordinator ORCHESTRATOR - ONEX Contract
+# Orchestrator node for cross-agent memory coordination.
+# Manages subscriptions and publishes notification events to Kafka.
+
+# === REQUIRED ROOT FIELDS ===
+name: "agent_coordinator_orchestrator"
+contract_version: {major: 0, minor: 2, patch: 0}
+node_version: {major: 0, minor: 2, patch: 0}
+description: "Orchestrator node for cross-agent memory coordination. Manages subscriptions and publishes
+  notification events to Kafka for subscriber consumption."
+node_type: "ORCHESTRATOR"
+input_model: "ModelAgentCoordinatorRequest"
+output_model: "ModelAgentCoordinatorResponse"
+
+# === DEPENDENCIES ===
+dependencies:
+  # Service Dependencies (Handlers)
+  - name: HandlerSubscription
+    dependency_type: service
+    description: Subscription management handler
+    required: true
+  - name: HandlerDb
+    dependency_type: service
+    description: Database handler for subscription persistence
+    required: true
+  - name: HandlerKafka
+    dependency_type: service
+    description: Kafka handler for event publishing
+    required: true
+
+  # Service Dependencies (Adapters)
+  - name: AdapterValkey
+    dependency_type: service
+    description: Valkey/Redis adapter for caching
+    required: true
+
+  # Protocol Dependencies
+  - name: ProtocolSubscriptionManager
+    dependency_type: protocol
+    description: Subscription lifecycle management protocol
+    required: true
+
+# === PERFORMANCE ===
+performance:
+  single_operation_max_ms: 100
+
+# === VALIDATION RULES ===
+validation_rules:
+  strict_typing_enabled: true
+  input_validation_enabled: true
+  output_validation_enabled: true
+  performance_validation_enabled: true
+  constraint_definitions:
+    action: "Literal['subscribe', 'unsubscribe', 'list_subscriptions', 'notify']"
+    agent_id: "string type for agent identifier"
+    topic: "string matching memory.<entity>.<event> pattern"
+    event: "ModelNotificationEvent for notification payload"
+
+# === TAGS ===
+tags:
+  - memory
+  - subscription
+  - notification
+  - orchestrator
+  - cross-agent
+  - kafka
+  - coordination

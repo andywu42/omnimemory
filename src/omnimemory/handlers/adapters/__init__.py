@@ -12,6 +12,7 @@ calls in OmniMemory. Direct use of httpx/requests is forbidden in business logic
 Available Adapters:
     - AdapterGraphMemory: Wraps HandlerGraph for relationship-based memory queries
     - AdapterIntentGraph: Wraps HandlerGraph for intent classification storage
+    - AdapterValkey: Valkey/Redis adapter for subscription caching
     - EmbeddingHttpClient: Wraps HandlerHttp for embedding API calls
     - ProviderRateLimiter: Rate limiting keyed by (provider, model)
 
@@ -22,6 +23,8 @@ Example::
         ModelGraphMemoryConfig,
         AdapterIntentGraph,
         ModelAdapterIntentGraphConfig,
+        AdapterValkey,
+        AdapterValkeyConfig,
         EmbeddingHttpClient,
         ModelEmbeddingHttpClientConfig,
     )
@@ -44,12 +47,19 @@ Example::
     intent_adapter = AdapterIntentGraph(intent_config)
     await intent_adapter.initialize(connection_uri="bolt://localhost:7687")
 
+    # Valkey adapter for caching
+    valkey_config = AdapterValkeyConfig(host="localhost", port=6379)
+    valkey = AdapterValkey(valkey_config)
+    await valkey.initialize()
+    await valkey.set_key("key", "value")
+
 .. versionadded:: 0.1.0
     Initial implementation with AdapterGraphMemory (OMN-1389).
 
 .. versionadded:: 0.2.0
     Added EmbeddingHttpClient and ProviderRateLimiter for OMN-1391.
     Added AdapterIntentGraph for OMN-1457.
+    Added AdapterValkey for OMN-1393.
 """
 
 from omnimemory.handlers.adapters.adapter_embedding_http import (
@@ -65,6 +75,11 @@ from omnimemory.handlers.adapters.adapter_intent_graph import (
 from omnimemory.handlers.adapters.adapter_rate_limiter import (
     ProviderRateLimiter,
     RateLimiterRegistry,
+)
+from omnimemory.handlers.adapters.adapter_valkey import (
+    AdapterValkey,
+    AdapterValkeyConfig,
+    ModelValkeyHealth,
 )
 from omnimemory.handlers.adapters.models import (
     ModelAdapterIntentGraphConfig,
@@ -104,6 +119,10 @@ __all__ = [
     "ModelMemoryConnection",
     "ModelRelatedMemory",
     "ModelRelatedMemoryResult",
+    # Valkey Adapter
+    "AdapterValkey",
+    "AdapterValkeyConfig",
+    "ModelValkeyHealth",
     # Embedding HTTP client (contract boundary)
     "EmbeddingHttpClient",
     "ModelEmbeddingHttpClientConfig",
