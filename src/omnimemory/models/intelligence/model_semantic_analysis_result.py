@@ -2,12 +2,16 @@
 Semantic analysis result model following ONEX standards.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from omnimemory.models.foundation.model_semver import ModelSemVer
+
+from .model_semantic_entity_list import ModelSemanticEntityList  # noqa: TC001
 
 
 class ModelSemanticAnalysisResult(BaseModel):
@@ -27,9 +31,9 @@ class ModelSemanticAnalysisResult(BaseModel):
     analyzed_content: str = Field(
         description="Content that was semantically analyzed",
     )
-    content_language: str = Field(
-        default="en",
-        description="Language of the analyzed content",
+    content_language: str | None = Field(
+        default=None,
+        description="Language of the analyzed content (None if not detected)",
     )
 
     # Semantic features
@@ -44,6 +48,11 @@ class ModelSemanticAnalysisResult(BaseModel):
     entities: list[str] = Field(
         default_factory=list,
         description="Named entities found in the content",
+    )
+    entity_list: ModelSemanticEntityList | None = Field(
+        default=None,
+        description="Full entity list with types, spans, and confidence scores. "
+        "Populated when analysis_type includes entity extraction.",
     )
     topics: list[str] = Field(
         default_factory=list,
@@ -61,10 +70,11 @@ class ModelSemanticAnalysisResult(BaseModel):
     )
 
     # Sentiment and emotion
-    sentiment_score: float = Field(
+    sentiment_score: float | None = Field(
+        default=None,
         ge=-1.0,
         le=1.0,
-        description="Sentiment score (-1 negative, +1 positive)",
+        description="Sentiment score (-1 negative, +1 positive). None if not computed.",
     )
     emotion_scores: dict[str, float] = Field(
         default_factory=dict,
@@ -84,15 +94,17 @@ class ModelSemanticAnalysisResult(BaseModel):
     )
 
     # Quality metrics
-    coherence_score: float = Field(
+    coherence_score: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
-        description="Coherence score of the content",
+        description="Coherence score of the content. None if not computed.",
     )
-    relevance_score: float = Field(
+    relevance_score: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
-        description="Relevance score to the domain",
+        description="Relevance score to the domain. None if not computed.",
     )
     confidence_score: float = Field(
         ge=0.0,
