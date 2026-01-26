@@ -60,6 +60,7 @@ from omnimemory.handlers.handler_subscription import (
     HandlerSubscription,
     ModelHandlerSubscriptionConfig,
     ModelSubscriptionHealth,
+    ModelSubscriptionMetadata,
     ModelSubscriptionMetrics,
 )
 from omnimemory.handlers.models import ModelHandlerIntentConfig
@@ -77,6 +78,7 @@ __all__ = [
     "HandlerSubscription",
     "ModelHandlerSubscriptionConfig",
     "ModelSubscriptionHealth",
+    "ModelSubscriptionMetadata",
     "ModelSubscriptionMetrics",
     # Graph Memory Adapter
     "AdapterGraphMemory",

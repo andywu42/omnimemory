@@ -22,6 +22,9 @@ Usage:
 
 .. versionadded:: 0.1.0
     Initial implementation for OMN-1390.
+
+.. versionchanged:: 0.2.0
+    Updated for container-driven pattern (OMN-1577).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 import pytest
+from omnibase_core.container import ModelONEXContainer
 
 from omnimemory.enums import EnumEntityExtractionMode, EnumSemanticEntityType
 from omnimemory.handlers import (
@@ -37,7 +41,6 @@ from omnimemory.handlers import (
     ModelHandlerSemanticComputeConfig,
 )
 from omnimemory.models.config import ModelSemanticComputePolicyConfig
-from omnimemory.models.foundation import ModelSemVer
 from omnimemory.models.intelligence import (
     ModelSemanticAnalysisResult,
     ModelSemanticEntity,
@@ -203,6 +206,12 @@ class FakeLLMProvider:
 
 
 @pytest.fixture
+def container() -> ModelONEXContainer:
+    """Create an ONEX container for testing."""
+    return ModelONEXContainer()
+
+
+@pytest.fixture
 def fake_embedding_provider() -> FakeEmbeddingProvider:
     """Create a fake embedding provider for testing."""
     return FakeEmbeddingProvider(dimension=1024)
@@ -248,29 +257,35 @@ def handler_config(
 
 
 @pytest.fixture
-def handler(
+async def handler(
+    container: ModelONEXContainer,
     handler_config: ModelHandlerSemanticComputeConfig,
     fake_embedding_provider: FakeEmbeddingProvider,
 ) -> HandlerSemanticCompute:
-    """Create a handler with fake embedding provider."""
-    return HandlerSemanticCompute(
+    """Create an initialized handler with fake embedding provider."""
+    h = HandlerSemanticCompute(container=container)
+    await h.initialize(
         config=handler_config,
         embedding_provider=fake_embedding_provider,
     )
+    return h
 
 
 @pytest.fixture
-def handler_with_llm(
+async def handler_with_llm(
+    container: ModelONEXContainer,
     handler_config: ModelHandlerSemanticComputeConfig,
     fake_embedding_provider: FakeEmbeddingProvider,
     fake_llm_provider: FakeLLMProvider,
 ) -> HandlerSemanticCompute:
-    """Create a handler with both embedding and LLM providers."""
-    return HandlerSemanticCompute(
+    """Create an initialized handler with both embedding and LLM providers."""
+    h = HandlerSemanticCompute(container=container)
+    await h.initialize(
         config=handler_config,
         embedding_provider=fake_embedding_provider,
         llm_provider=fake_llm_provider,
     )
+    return h
 
 
 @pytest.fixture
@@ -474,6 +489,7 @@ class TestExtractEntities:
     @pytest.mark.asyncio
     async def test_extract_entities_with_best_effort_uses_llm(
         self,
+        container: ModelONEXContainer,
         fake_embedding_provider: FakeEmbeddingProvider,
         fake_llm_provider: FakeLLMProvider,
     ) -> None:
@@ -482,7 +498,8 @@ class TestExtractEntities:
             entity_extraction_mode=EnumEntityExtractionMode.BEST_EFFORT,
         )
         handler_config = ModelHandlerSemanticComputeConfig(policy_config=policy_config)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=fake_embedding_provider,
             llm_provider=fake_llm_provider,
@@ -498,6 +515,7 @@ class TestExtractEntities:
     @pytest.mark.asyncio
     async def test_extract_entities_llm_failure_propagates(
         self,
+        container: ModelONEXContainer,
         fake_embedding_provider: FakeEmbeddingProvider,
     ) -> None:
         """LLM failures should propagate as exceptions (fail-fast)."""
@@ -507,7 +525,8 @@ class TestExtractEntities:
             entity_extraction_mode=EnumEntityExtractionMode.BEST_EFFORT,
         )
         handler_config = ModelHandlerSemanticComputeConfig(policy_config=policy_config)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=fake_embedding_provider,
             llm_provider=failing_llm,
@@ -520,6 +539,7 @@ class TestExtractEntities:
     @pytest.mark.asyncio
     async def test_extract_entities_best_effort_without_llm_raises(
         self,
+        container: ModelONEXContainer,
         fake_embedding_provider: FakeEmbeddingProvider,
     ) -> None:
         """Best effort mode without LLM provider should raise RuntimeError."""
@@ -527,7 +547,8 @@ class TestExtractEntities:
             entity_extraction_mode=EnumEntityExtractionMode.BEST_EFFORT,
         )
         handler_config = ModelHandlerSemanticComputeConfig(policy_config=policy_config)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=fake_embedding_provider,
             llm_provider=None,  # No LLM provider
@@ -633,6 +654,8 @@ class TestAnalyze:
         handler: HandlerSemanticCompute,
     ) -> None:
         """Analysis result should include model information."""
+        from omnimemory.models.foundation.model_semver import ModelSemVer
+
         result = await handler.analyze("Test content.")
 
         assert result.model_name == "fake-model-v1"
@@ -819,11 +842,13 @@ class TestCaching:
     @pytest.mark.asyncio
     async def test_caching_disabled_always_calls_provider(
         self,
+        container: ModelONEXContainer,
         fake_embedding_provider: FakeEmbeddingProvider,
     ) -> None:
         """With caching disabled, should always call provider."""
         config = ModelHandlerSemanticComputeConfig(enable_caching=False)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=config,
             embedding_provider=fake_embedding_provider,
         )
@@ -1390,7 +1415,10 @@ class TestRetryBehavior:
     """Tests for retry behavior with transient failures."""
 
     @pytest.mark.asyncio
-    async def test_embed_retries_on_timeout_error(self) -> None:
+    async def test_embed_retries_on_timeout_error(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """Embed should retry on TimeoutError and succeed after retries."""
         # Provider fails 2 times then succeeds
         provider = TransientFailingEmbeddingProvider(fail_times=2)
@@ -1404,7 +1432,8 @@ class TestRetryBehavior:
             policy_config=policy_config,
             enable_caching=False,
         )
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=provider,
         )
@@ -1418,7 +1447,10 @@ class TestRetryBehavior:
         assert provider.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_embed_retries_on_connection_error(self) -> None:
+    async def test_embed_retries_on_connection_error(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """Embed should retry on ConnectionError and succeed after retries."""
         # Provider fails 1 time then succeeds
         provider = TransientFailingEmbeddingProvider(
@@ -1433,7 +1465,8 @@ class TestRetryBehavior:
             policy_config=policy_config,
             enable_caching=False,
         )
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=provider,
         )
@@ -1444,7 +1477,10 @@ class TestRetryBehavior:
         assert provider.call_count == 2  # 1 failure + 1 success
 
     @pytest.mark.asyncio
-    async def test_embed_fails_when_retries_exhausted(self) -> None:
+    async def test_embed_fails_when_retries_exhausted(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """Embed should fail when all retries are exhausted."""
         # Provider fails more times than retries allow
         provider = TransientFailingEmbeddingProvider(fail_times=10)
@@ -1457,7 +1493,8 @@ class TestRetryBehavior:
             policy_config=policy_config,
             enable_caching=False,
         )
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=provider,
         )
@@ -1469,7 +1506,10 @@ class TestRetryBehavior:
         assert provider.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_embed_does_not_retry_non_transient_error(self) -> None:
+    async def test_embed_does_not_retry_non_transient_error(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """Embed should not retry on non-transient errors like ValueError."""
         # Using ValueError which is not in transient indicators
         provider = TransientFailingEmbeddingProvider(
@@ -1484,7 +1524,8 @@ class TestRetryBehavior:
             policy_config=policy_config,
             enable_caching=False,
         )
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=provider,
         )
@@ -1496,7 +1537,10 @@ class TestRetryBehavior:
         assert provider.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_llm_extraction_retries_on_connection_error(self) -> None:
+    async def test_llm_extraction_retries_on_connection_error(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """LLM entity extraction should retry on ConnectionError."""
         embedding_provider = FakeEmbeddingProvider()
         llm_provider = TransientFailingLLMProvider(
@@ -1521,7 +1565,8 @@ class TestRetryBehavior:
             retry_base_delay_ms=10,
         )
         handler_config = ModelHandlerSemanticComputeConfig(policy_config=policy_config)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=embedding_provider,
             llm_provider=llm_provider,
@@ -1535,7 +1580,10 @@ class TestRetryBehavior:
         assert llm_provider.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_llm_extraction_fails_when_retries_exhausted(self) -> None:
+    async def test_llm_extraction_fails_when_retries_exhausted(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """LLM entity extraction should fail when retries exhausted."""
         embedding_provider = FakeEmbeddingProvider()
         llm_provider = TransientFailingLLMProvider(
@@ -1549,7 +1597,8 @@ class TestRetryBehavior:
             retry_base_delay_ms=10,
         )
         handler_config = ModelHandlerSemanticComputeConfig(policy_config=policy_config)
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=embedding_provider,
             llm_provider=llm_provider,
@@ -1562,7 +1611,10 @@ class TestRetryBehavior:
         assert llm_provider.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_retry_with_zero_retries_fails_immediately(self) -> None:
+    async def test_retry_with_zero_retries_fails_immediately(
+        self,
+        container: ModelONEXContainer,
+    ) -> None:
         """With max_retries=0, should fail on first transient error."""
         provider = TransientFailingEmbeddingProvider(fail_times=1)
 
@@ -1574,7 +1626,8 @@ class TestRetryBehavior:
             policy_config=policy_config,
             enable_caching=False,
         )
-        handler = HandlerSemanticCompute(
+        handler = HandlerSemanticCompute(container=container)
+        await handler.initialize(
             config=handler_config,
             embedding_provider=provider,
         )
