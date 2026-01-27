@@ -53,6 +53,8 @@ from collections.abc import Mapping
 from urllib.parse import urlparse
 
 from omnibase_core.container import ModelONEXContainer  # noqa: TC002 - used at runtime
+from omnibase_infra.errors import InfraConnectionError
+from omnibase_infra.handlers.handler_graph import HandlerGraph
 
 from omnimemory.models.adapters import (
     ModelConnectionsResult,
@@ -63,33 +65,6 @@ from omnimemory.models.adapters import (
     ModelRelatedMemoryResult,
     PropertyValue,
 )
-
-# omnibase_infra is a dev dependency - make imports conditional
-_OMNIBASE_INFRA_AVAILABLE = False
-_OMNIBASE_INFRA_IMPORT_ERROR: str | None = None
-
-try:
-    from omnibase_infra.errors import InfraConnectionError
-    from omnibase_infra.handlers.handler_graph import HandlerGraph
-
-    _OMNIBASE_INFRA_AVAILABLE = True
-except ImportError as e:
-    _OMNIBASE_INFRA_IMPORT_ERROR = str(e)
-
-    # Provide stub types for type checking and to allow module to load
-    class InfraConnectionError(Exception):  # type: ignore[no-redef]
-        """Stub for InfraConnectionError when omnibase_infra is not installed."""
-
-    class HandlerGraph:  # type: ignore[no-redef]
-        """Stub for HandlerGraph when omnibase_infra is not installed."""
-
-        def __init__(self, container: object) -> None:
-            raise ImportError(
-                f"omnibase_infra is required for AdapterGraphMemory. "
-                f"Install it with: poetry install --with dev. "
-                f"Original error: {_OMNIBASE_INFRA_IMPORT_ERROR}"
-            )
-
 
 logger = logging.getLogger(__name__)
 

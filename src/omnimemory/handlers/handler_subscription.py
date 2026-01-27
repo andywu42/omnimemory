@@ -102,6 +102,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from omnibase_infra.event_bus.event_bus_kafka import EventBusKafka
+from omnibase_infra.handlers.handler_db import HandlerDb
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from omnimemory.enums.enum_subscription_status import EnumSubscriptionStatus
@@ -117,25 +119,6 @@ from omnimemory.models.subscription.constants import TOPIC_PATTERN
 
 if TYPE_CHECKING:
     from omnibase_core.container import ModelONEXContainer
-
-# Optional omnibase_infra imports for handler reuse
-_OMNIBASE_INFRA_AVAILABLE = False
-_OMNIBASE_INFRA_IMPORT_ERROR: str | None = None
-
-try:
-    from omnibase_infra.event_bus.event_bus_kafka import EventBusKafka
-    from omnibase_infra.handlers.handler_db import HandlerDb
-
-    _OMNIBASE_INFRA_AVAILABLE = True
-except ImportError as e:
-    _OMNIBASE_INFRA_IMPORT_ERROR = str(e)
-
-    # Provide stubs for type checking
-    class HandlerDb:  # type: ignore[no-redef]
-        """Stub for HandlerDb when omnibase_infra is not installed."""
-
-    class EventBusKafka:  # type: ignore[no-redef]
-        """Stub for EventBusKafka when omnibase_infra is not installed."""
 
 
 logger = logging.getLogger(__name__)
@@ -484,17 +467,7 @@ class HandlerSubscription:
             The container is stored for interface compliance with the standard
             ONEX handler pattern (def __init__(self, container: ModelONEXContainer))
             and to enable future DI-based service resolution.
-
-        Raises:
-            ImportError: If omnibase_infra is not installed.
         """
-        if not _OMNIBASE_INFRA_AVAILABLE:
-            raise ImportError(
-                f"omnibase_infra is required for HandlerSubscription. "
-                f"Install it with: poetry install --with dev. "
-                f"Original error: {_OMNIBASE_INFRA_IMPORT_ERROR}"
-            )
-
         self._container = container
         self._config: ModelHandlerSubscriptionConfig | None = None
         self._db_handler: HandlerDb | None = None

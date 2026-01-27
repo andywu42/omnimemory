@@ -65,6 +65,33 @@ validation_rules:
     is_match: "bool - True if similarity >= threshold"
     dimensions: "int - number of dimensions in input vectors"
 
+# === HANDLER ROUTING ===
+# Declarative handler dispatch configuration following ONEX patterns.
+# The node delegates to handlers based on operation type.
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # Calculate cosine distance between two vectors
+    - routing_key: "cosine_distance"
+      handler_key: "HandlerSimilarityCompute.cosine_distance"
+      priority: 0
+      output_events: []
+    # Calculate Euclidean (L2) distance between two vectors
+    - routing_key: "euclidean_distance"
+      handler_key: "HandlerSimilarityCompute.euclidean_distance"
+      priority: 0
+      output_events: []
+    # Full vector comparison with optional threshold matching
+    - routing_key: "compare"
+      handler_key: "HandlerSimilarityCompute.compare"
+      priority: 0
+      output_events: []
+  default_handler: null
+
 # === TAGS ===
 tags:
   - memory

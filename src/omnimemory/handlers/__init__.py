@@ -9,10 +9,39 @@ while adapters translate between memory-domain concepts and handler-level operat
 Available Handlers:
     - HandlerIntent: Direct protocol handler for intent storage and query operations
     - HandlerSubscription: Agent subscription and notification delivery management
-    - HandlerSemanticCompute: Semantic analysis with policy hooks
+    - HandlerSemanticCompute: Semantic analysis with policy hooks (lives in node's handlers/)
 
 Subpackages:
     - adapters: Adapter layers wrapping omnibase_infra handlers
+
+Note:
+    HandlerSemanticCompute now lives in its node's handlers directory following ONEX patterns:
+    ``omnimemory.nodes.semantic_analyzer_compute.handlers.handler_semantic_compute``
+
+    It is re-exported here for import convenience.
+
+Import Direction (CRITICAL):
+    This module creates a one-way import dependency:
+
+    ``omnimemory.handlers`` --> imports from --> ``omnimemory.nodes.*/handlers/``
+
+    **Why this exists**: Re-exporting node handlers here provides a convenient single
+    import location for consumers (``from omnimemory.handlers import HandlerSemanticCompute``).
+
+    **Circular Import Warning**: Node handler modules (anything under ``nodes/*/handlers/``)
+    MUST NOT import from ``omnimemory.handlers``. Doing so would create a circular import:
+
+        - ``omnimemory.handlers.__init__`` imports ``omnimemory.nodes.X.handlers``
+        - ``omnimemory.nodes.X.handlers`` imports ``omnimemory.handlers`` (CIRCULAR!)
+
+    If a node handler needs types or utilities from the handlers package, import directly
+    from the specific submodule instead:
+
+        # WRONG (causes circular import)
+        from omnimemory.handlers import HandlerIntent
+
+        # CORRECT (direct import from specific module)
+        from omnimemory.handlers.handler_intent import HandlerIntent
 
 Example::
 
@@ -51,11 +80,6 @@ from omnimemory.handlers.handler_intent import (
     HandlerIntent,
     ModelHandlerIntentMetadata,
 )
-from omnimemory.handlers.handler_semantic_compute import (
-    HandlerSemanticCompute,
-    HandlerSemanticComputePolicy,
-    ModelHandlerSemanticComputeConfig,
-)
 from omnimemory.handlers.handler_subscription import (
     HandlerSubscription,
     ModelHandlerSubscriptionConfig,
@@ -64,6 +88,13 @@ from omnimemory.handlers.handler_subscription import (
     ModelSubscriptionMetrics,
 )
 from omnimemory.handlers.models import ModelHandlerIntentConfig
+from omnimemory.models.config import ModelHandlerSemanticComputeConfig
+
+# Re-export from node's handlers directory for import convenience
+from omnimemory.nodes.semantic_analyzer_compute.handlers import (
+    HandlerSemanticCompute,
+    HandlerSemanticComputePolicy,
+)
 
 __all__ = [
     # Intent Handler

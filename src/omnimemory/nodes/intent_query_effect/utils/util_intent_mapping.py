@@ -14,7 +14,7 @@ The key difference between models:
 Example::
 
     from omnimemory.handlers.adapters.models import ModelIntentRecord
-    from omnimemory.nodes.intent_query_effect.models import map_to_intent_payload
+    from omnimemory.nodes.intent_query_effect.utils import map_to_intent_payload
 
     record = ModelIntentRecord(
         intent_id=uuid4(),
@@ -79,7 +79,9 @@ def map_to_intent_payload(record: ModelIntentRecord) -> IntentRecordPayload:
     )
 
 
-def map_intent_records(records: list[ModelIntentRecord]) -> list[IntentRecordPayload]:
+def map_intent_records(
+    records: list[ModelIntentRecord],
+) -> list[IntentRecordPayload]:
     """Convert a list of ModelIntentRecord to IntentRecordPayload.
 
     Convenience function for bulk conversion of intent records.

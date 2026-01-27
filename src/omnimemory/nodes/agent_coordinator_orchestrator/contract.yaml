@@ -69,3 +69,72 @@ tags:
   - cross-agent
   - kafka
   - coordination
+
+# =============================================================================
+# HANDLER ROUTING - ONEX Declarative Dispatch Configuration
+# =============================================================================
+# Maps action types to handler methods for the ONEX runtime.
+# This orchestrator uses action-based routing (via EnumAgentCoordinatorAction)
+# rather than event-type routing. All actions dispatch to HandlerSubscription.
+#
+# Routing Strategy:
+#   - operation_match: Match by action/operation field in request
+# =============================================================================
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # Register an agent's subscription to a memory topic
+    - routing_key: "subscribe"
+      handler_key: "HandlerSubscription.subscribe"
+      priority: 0
+      output_events: []
+    # Remove an agent's subscription from a memory topic
+    - routing_key: "unsubscribe"
+      handler_key: "HandlerSubscription.unsubscribe"
+      priority: 0
+      output_events: []
+    # List all subscriptions for a given agent
+    - routing_key: "list_subscriptions"
+      handler_key: "HandlerSubscription.list_subscriptions"
+      priority: 0
+      output_events: []
+    # Publish notification event to Kafka for subscriber consumption
+    - routing_key: "notify"
+      handler_key: "HandlerSubscription.notify"
+      priority: 0
+      output_events: ["omnimemory.memory.notification.v1"]
+  default_handler: null
+
+# =============================================================================
+# CONSUMED EVENTS - Event Subscriptions
+# =============================================================================
+# Events this orchestrator can receive for processing.
+# Uses action field to route to appropriate handler method.
+# =============================================================================
+consumed_events:
+  - event_pattern: "omnimemory.coordination.cmd.subscribe.v1"
+    handler_function: "handle_subscribe"
+
+  - event_pattern: "omnimemory.coordination.cmd.unsubscribe.v1"
+    handler_function: "handle_unsubscribe"
+
+  - event_pattern: "omnimemory.coordination.cmd.list-subscriptions.v1"
+    handler_function: "handle_list_subscriptions"
+
+  - event_pattern: "omnimemory.coordination.cmd.notify.v1"
+    handler_function: "handle_notify"
+
+# Published events - notification events go to Kafka
+published_events:
+  - event_pattern: "omnimemory.memory.notification.v1"
+    description: "Memory change notification published for subscriber consumption"
+
+# Orchestration configuration
+load_balancing_enabled: false
+failure_isolation_enabled: true
+monitoring_enabled: true
+metrics_collection_enabled: true

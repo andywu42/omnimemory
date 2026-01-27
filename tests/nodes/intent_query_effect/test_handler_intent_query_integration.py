@@ -298,7 +298,9 @@ class TestHandlerIntentQueryIntegration:
         initialized_handler: HandlerIntentQuery,
     ) -> None:
         """Test distribution query returns valid response even with no data."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         request = ModelIntentQueryRequestedEvent.create_distribution_query(
             time_range_hours=1,
@@ -320,7 +322,9 @@ class TestHandlerIntentQueryIntegration:
         test_session_id: str,
     ) -> None:
         """Test session query for non-existent session."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         request = ModelIntentQueryRequestedEvent.create_session_query(
             session_ref=test_session_id,
@@ -341,7 +345,9 @@ class TestHandlerIntentQueryIntegration:
         initialized_handler: HandlerIntentQuery,
     ) -> None:
         """Test recent query returns valid response."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         request = ModelIntentQueryRequestedEvent.create_recent_query(
             time_range_hours=1,
@@ -361,20 +367,27 @@ class TestHandlerIntentQueryIntegration:
         self,
         initialized_handler: HandlerIntentQuery,
     ) -> None:
-        """Test session query without session_ref returns error."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        """Test session query without session_ref returns error response.
 
-        # Manually create request without session_ref
+        Note: The omnibase_core model allows session_ref=None at creation time.
+        Validation happens at the handler level, which returns an error response.
+        """
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
+
+        # Create request with missing session_ref for a session query
         request = ModelIntentQueryRequestedEvent(
             query_type="session",
             session_ref=None,  # Missing!
             requester_name="test",
         )
 
+        # Handler-level validation returns error response
         response = await initialized_handler.execute(request)
 
         assert response.status == "error"
-        assert "session_ref" in (response.error_message or "").lower()
+        assert "session_ref is required" in (response.error_message or "").lower()
 
     @pytest.mark.asyncio
     async def test_correlation_id_preserved(
@@ -382,7 +395,9 @@ class TestHandlerIntentQueryIntegration:
         initialized_handler: HandlerIntentQuery,
     ) -> None:
         """Test correlation_id is echoed in response."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         correlation_id = uuid.uuid4()
         request = ModelIntentQueryRequestedEvent.create_distribution_query(
@@ -400,7 +415,9 @@ class TestHandlerIntentQueryIntegration:
         initialized_handler: HandlerIntentQuery,
     ) -> None:
         """Test execution time is tracked and positive."""
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         request = ModelIntentQueryRequestedEvent.create_distribution_query(
             time_range_hours=24,
@@ -428,7 +445,9 @@ class TestHandlerIntentQueryIntegration:
         adapter, then queried via the handler, and results are verified to
         match the stored data.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         # Skip if no intents were stored (indicates storage failure)
         if not test_intents_in_db:
@@ -470,7 +489,9 @@ class TestHandlerIntentQueryIntegration:
         Since test intents are created just before this test runs, they
         should appear in a recent query with a short time range.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if not test_intents_in_db:
             pytest.skip("No test intents were stored - storage may have failed")
@@ -503,7 +524,9 @@ class TestHandlerIntentQueryIntegration:
         The distribution query aggregates intent counts by category. Our
         test intents should appear in the distribution with correct counts.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if not test_intents_in_db:
             pytest.skip("No test intents were stored - storage may have failed")
@@ -540,7 +563,9 @@ class TestHandlerIntentQueryIntegration:
         Test data has confidence values: 0.80, 0.85, 0.90
         Filtering with min_confidence=0.84 should exclude the first intent.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if not test_intents_in_db:
             pytest.skip("No test intents were stored - storage may have failed")
@@ -584,7 +609,9 @@ class TestHandlerIntentQueryIntegration:
         Verify that the returned intent records have valid UUIDs that match
         the IDs returned during storage.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if not test_intents_in_db:
             pytest.skip("No test intents were stored - storage may have failed")
@@ -620,7 +647,9 @@ class TestHandlerIntentQueryIntegration:
         When limit is less than the number of stored intents, only
         that many should be returned.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if len(test_intents_in_db) < 2:
             pytest.skip("Need at least 2 intents for limit test")
@@ -651,7 +680,9 @@ class TestHandlerIntentQueryIntegration:
         Keywords are an important part of intent classification and should
         be accurately stored and returned.
         """
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         if not test_intents_in_db:
             pytest.skip("No test intents were stored - storage may have failed")
@@ -693,9 +724,11 @@ class TestHandlerIntentQueryUnit:
         """Test execute before initialize returns error."""
         pytest.importorskip("omnimemory.nodes.intent_query_effect.handlers")
         from omnibase_core.container import ModelONEXContainer
-        from omnibase_core.models.events import ModelIntentQueryRequestedEvent
 
         from omnimemory.nodes.intent_query_effect.handlers import HandlerIntentQuery
+        from omnimemory.nodes.intent_query_effect.models import (
+            ModelIntentQueryRequestedEvent,
+        )
 
         container = ModelONEXContainer()
         handler = HandlerIntentQuery(container)

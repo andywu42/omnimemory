@@ -69,6 +69,33 @@ validation_rules:
     confidence_score: "float (0.0-1.0) - analysis confidence score"
     processing_time_ms: "int - processing time in milliseconds"
 
+# === HANDLER ROUTING ===
+# Declarative handler dispatch configuration following ONEX patterns.
+# The node delegates to handlers based on operation type.
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # Generate embedding vector for content
+    - routing_key: "embed"
+      handler_key: "HandlerSemanticCompute.embed"
+      priority: 0
+      output_events: []
+    # Extract named entities from content
+    - routing_key: "extract_entities"
+      handler_key: "HandlerSemanticCompute.extract_entities"
+      priority: 0
+      output_events: []
+    # Full semantic analysis (embedding + entities + topics)
+    - routing_key: "analyze"
+      handler_key: "HandlerSemanticCompute.analyze"
+      priority: 0
+      output_events: []
+  default_handler: null
+
 # === TAGS ===
 tags:
   - memory

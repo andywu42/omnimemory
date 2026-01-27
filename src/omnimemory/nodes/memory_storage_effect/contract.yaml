@@ -88,6 +88,20 @@ actions:
     inputs: []
     outputs: ["status"]
 
+# === HANDLER ROUTING ===
+# Routes operations to the appropriate handler implementation.
+# P1A: FileSystem adapter is the sole handler for all operations.
+# All operations (store, retrieve, update, delete, list) route to the same handler,
+# so default_handler is sufficient - no per-operation handlers needed.
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers: []
+  default_handler: "HandlerFileSystemAdapter"
+
 # === DEPENDENCIES ===
 # P1A: FileSystem backend is primary, other backends deferred to Phase 2
 dependencies:

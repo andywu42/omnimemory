@@ -130,6 +130,33 @@ validation_rules:
     time_range_hours: "int, ge=1, le=720, default=24"
     user_context: "str, max_length=10000, PII-validated before processing"
 
+# === HANDLER ROUTING (Declarative Dispatch) ===
+# Maps operations to handler classes for ONEX-compliant routing.
+# routing_key values MUST match validation_rules.constraint_definitions.operation Literal values.
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # Store operation: persist a classified intent linked to a session
+    - routing_key: "store"
+      handler_key: "HandlerIntentStorageAdapter"
+      priority: 0
+      output_events: []
+    # Get session operation: retrieve intents for a specific session
+    - routing_key: "get_session"
+      handler_key: "HandlerIntentStorageAdapter"
+      priority: 0
+      output_events: []
+    # Get distribution operation: aggregate intent category distribution
+    - routing_key: "get_distribution"
+      handler_key: "HandlerIntentStorageAdapter"
+      priority: 0
+      output_events: []
+  default_handler: null
+
 # === TAGS ===
 tags:
   - intent

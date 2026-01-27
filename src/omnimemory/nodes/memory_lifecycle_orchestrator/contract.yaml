@@ -127,6 +127,42 @@ consumed_events:
 # See ARCHITECTURAL NOTES above for the event topics this orchestrator publishes
 published_events: []
 
+# =============================================================================
+# HANDLER ROUTING - ONEX Declarative Dispatch Configuration
+# =============================================================================
+# Maps event/command models to handler implementations for the ONEX runtime.
+# The routing strategy determines how incoming messages are matched to handlers.
+#
+# Routing Strategies:
+#   - payload_type_match: Match by event model class name
+#   - operation_match: Match by operation field in message
+#   - topic_pattern: Match by glob pattern against topic
+# =============================================================================
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # RuntimeTick handler - evaluates memory TTL expiration and archive candidates
+    - routing_key: "tick"
+      handler_key: "HandlerMemoryTick"
+      priority: 0
+      output_events: []
+    # Expire command handler - ACTIVE -> EXPIRED state transition
+    - routing_key: "expire"
+      handler_key: "HandlerMemoryExpire"
+      priority: 0
+      output_events: []
+    # Archive command handler - EXPIRED -> ARCHIVED state transition
+    - routing_key: "archive"
+      handler_key: "HandlerMemoryArchive"
+      priority: 0
+      output_events: []
+  # Future handlers (OMN-1453): restore, memory-accessed
+  default_handler: null
+
 # Orchestration configuration - use defaults
 load_balancing_enabled: true
 failure_isolation_enabled: true

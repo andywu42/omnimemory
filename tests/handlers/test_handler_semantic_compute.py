@@ -654,12 +654,16 @@ class TestAnalyze:
         handler: HandlerSemanticCompute,
     ) -> None:
         """Analysis result should include model information."""
-        from omnimemory.models.foundation.model_semver import ModelSemVer
 
         result = await handler.analyze("Test content.")
 
         assert result.model_name == "fake-model-v1"
-        assert result.model_version == ModelSemVer(major=1, minor=0, patch=0)
+        # ModelSemVer is used directly per NO BACKWARDS COMPATIBILITY policy
+        assert (
+            result.model_version.major,
+            result.model_version.minor,
+            result.model_version.patch,
+        ) == (1, 0, 0)
 
 
 # =============================================================================
@@ -900,7 +904,12 @@ class TestConfig:
         config = ModelHandlerSemanticComputeConfig()
 
         assert config.handler_name == "semantic-compute"
-        assert str(config.handler_version) == "1.0.0"
+        # ModelSemVer is used directly per NO BACKWARDS COMPATIBILITY policy
+        assert (
+            config.handler_version.major,
+            config.handler_version.minor,
+            config.handler_version.patch,
+        ) == (1, 0, 0)
         assert config.enable_caching is True
         assert config.max_cache_size == 1000
 

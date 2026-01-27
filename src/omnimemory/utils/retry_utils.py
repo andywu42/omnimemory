@@ -138,10 +138,12 @@ async def retry_with_backoff(
             attempts.append(attempt_info)
 
             # Execute operation
+            # Note: asyncio.iscoroutinefunction() narrows the type. For async
+            # functions we await to get T, for sync functions we get T directly.
             if asyncio.iscoroutinefunction(operation):
                 result: T = await operation(*args, **kwargs)
             else:
-                result = operation(*args, **kwargs)
+                result = operation(*args, **kwargs)  # pyright: ignore[reportAssignmentType]
 
             # Success - log if there were retries
             if attempt > 1:

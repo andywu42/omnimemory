@@ -44,11 +44,11 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
 
+from omnimemory.handlers.adapters import AdapterIntentGraph
 from omnimemory.handlers.adapters.models import ModelAdapterIntentGraphConfig
 from omnimemory.models.utils.model_circuit_breaker_config import (
     ModelCircuitBreakerConfig,
@@ -60,31 +60,6 @@ from omnimemory.nodes.intent_storage_effect.models import (
 )
 from omnimemory.utils.concurrency import CircuitBreaker, CircuitBreakerOpenError
 from omnimemory.utils.pii_detector import PIIDetector
-
-if TYPE_CHECKING:
-    from omnimemory.handlers.adapters import AdapterIntentGraph
-
-# Runtime conditional import
-_ADAPTER_AVAILABLE = False
-_ADAPTER_IMPORT_ERROR: str | None = None
-
-try:
-    from omnimemory.handlers.adapters import AdapterIntentGraph
-
-    _ADAPTER_AVAILABLE = True
-except ImportError as e:
-    _ADAPTER_IMPORT_ERROR = str(e)
-
-    class AdapterIntentGraph:  # type: ignore[no-redef]
-        """Stub for AdapterIntentGraph when dependencies not installed."""
-
-        def __init__(self, config: object) -> None:
-            raise ImportError(
-                f"AdapterIntentGraph dependencies not available. "
-                f"Ensure omnibase_infra is installed. "
-                f"Original error: {_ADAPTER_IMPORT_ERROR}"
-            )
-
 
 logger = logging.getLogger(__name__)
 structured_logger = structlog.get_logger(__name__)
@@ -160,11 +135,6 @@ class HandlerIntentStorageAdapter:
         """
         if self._initialized:
             return
-
-        if not _ADAPTER_AVAILABLE:
-            raise ImportError(
-                f"AdapterIntentGraph dependencies not available: {_ADAPTER_IMPORT_ERROR}"
-            )
 
         self._adapter = AdapterIntentGraph(self._config)
         await self._adapter.initialize(

@@ -2,9 +2,9 @@
 # Copyright (c) 2025 OmniNode Team
 """Handler for intent query operations via Kafka events.
 
-Processes intent query requests (distribution, session, recent) and returns
-responses via the event bus. Part of the event-driven architecture where
-OmniDash queries intent data without direct database access.
+Processes intent query requests (distribution, session, recent, health_check)
+and returns responses via the event bus. Part of the event-driven architecture
+where OmniDash queries intent data without direct database access.
 
 This handler follows the container-driven pattern where the handler owns
 the adapter lifecycle and manages all database connection setup internally.
@@ -38,15 +38,15 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from omnibase_core.models.events import (
-    ModelIntentQueryRequestedEvent,
-    ModelIntentQueryResponseEvent,
-)
 from pydantic import BaseModel, ConfigDict, Field
 
 from omnimemory.handlers.adapters import AdapterIntentGraph
 from omnimemory.handlers.adapters.models import ModelAdapterIntentGraphConfig
-from omnimemory.nodes.intent_query_effect.models import ModelHandlerIntentQueryConfig
+from omnimemory.nodes.intent_query_effect.models import (
+    ModelHandlerIntentQueryConfig,
+    ModelIntentQueryRequestedEvent,
+    ModelIntentQueryResponseEvent,
+)
 from omnimemory.nodes.intent_query_effect.utils import map_intent_records
 
 if TYPE_CHECKING:
@@ -202,6 +202,7 @@ class HandlerIntentQuery:
         - distribution: Get intent counts grouped by category
         - session: Get intents for a specific session
         - recent: Get recent intents across all sessions
+        - health_check: Check handler health and readiness status
 
     Attributes:
         container: The ONEX dependency injection container.
@@ -441,6 +442,8 @@ class HandlerIntentQuery:
                         return await self._handle_session(request, start)
                     case "recent":
                         return await self._handle_recent(request, start)
+                    case "health_check":
+                        return await self._handle_health_check(request, start)
                     case _:
                         return ModelIntentQueryResponseEvent.from_error(
                             query_id=request.query_id,
@@ -537,7 +540,7 @@ class HandlerIntentQuery:
         result = await self._adapter.get_session_intents(
             session_id=request.session_ref,
             min_confidence=request.min_confidence
-            if request.min_confidence is not None and request.min_confidence > 0
+            if request.min_confidence > 0
             else None,
             limit=request.limit,
         )
@@ -608,7 +611,7 @@ class HandlerIntentQuery:
         result = await self._adapter.get_recent_intents(
             time_range_hours=request.time_range_hours,
             min_confidence=request.min_confidence
-            if request.min_confidence is not None and request.min_confidence > 0
+            if request.min_confidence > 0
             else None,
             limit=request.limit,
         )
@@ -646,6 +649,32 @@ class HandlerIntentQuery:
             query_id=request.query_id,
             intents=payloads,
             time_range_hours=request.time_range_hours,
+            execution_time_ms=execution_time_ms,
+            correlation_id=request.correlation_id,
+        )
+
+    async def _handle_health_check(
+        self,
+        request: ModelIntentQueryRequestedEvent,
+        start: float,
+    ) -> ModelIntentQueryResponseEvent:
+        """Handle health check query - verify handler is initialized and ready.
+
+        Args:
+            request: The query request event.
+            start: Start time for execution timing.
+
+        Returns:
+            Response event with health status.
+        """
+        execution_time_ms = (time.monotonic() - start) * 1000
+
+        # Handler is initialized if we reached here (checked in execute())
+        # TODO(OMN-1589): query_type="health_check" not in Literal - need to update omnibase_core model
+        return ModelIntentQueryResponseEvent(
+            query_id=request.query_id,
+            query_type="health_check",  # pyright: ignore[reportArgumentType]
+            status="success",
             execution_time_ms=execution_time_ms,
             correlation_id=request.correlation_id,
         )

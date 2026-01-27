@@ -146,6 +146,33 @@ validation_rules:
     traversal_depth: "int (1-10) - maximum depth for graph traversal"
     relationship_types: "list[str] - filter graph traversal by relationship types"
 
+# === HANDLER ROUTING (ONEX Multi-Backend Effect Pattern) ===
+# Declarative routing configuration for backend handlers.
+# The main HandlerMemoryRetrieval acts as router, dispatching to backend handlers.
+handler_routing:
+  version:
+    major: 1
+    minor: 0
+    patch: 0
+  routing_strategy: operation_match
+  handlers:
+    # Semantic similarity search via Qdrant
+    - routing_key: "search"
+      handler_key: "HandlerQdrantMock"
+      priority: 0
+      output_events: []
+    # Full-text search via PostgreSQL
+    - routing_key: "search_text"
+      handler_key: "HandlerDbMock"
+      priority: 0
+      output_events: []
+    # Graph traversal via Neo4j/Memgraph
+    - routing_key: "search_graph"
+      handler_key: "HandlerGraphMock"
+      priority: 0
+      output_events: []
+  default_handler: "HandlerMemoryRetrieval"
+
 # === TAGS ===
 tags:
   - memory
