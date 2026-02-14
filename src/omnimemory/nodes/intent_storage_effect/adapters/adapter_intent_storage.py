@@ -302,7 +302,7 @@ class HandlerIntentStorageAdapter:
             str(request.correlation_id) if request.correlation_id else str(uuid4())
         )
 
-        # Call the adapter (user_context removed in omnibase-core 0.13.1)
+        # Call the adapter with classification output directly
         result = await self._adapter.store_intent(
             session_id=request.session_id,
             intent_data=request.intent_data,
@@ -350,7 +350,15 @@ class HandlerIntentStorageAdapter:
             limit=request.limit,
         )
 
-        if result.success:
+        # Handle no_results/not_found as valid (non-error) outcomes
+        if result.status in {"no_results", "not_found"}:
+            return ModelIntentStorageResponse(
+                status="no_results",
+                intents=[],
+                total_count=0,
+            )
+
+        if result.status == "success":
             if not result.intents:
                 return ModelIntentStorageResponse(
                     status="no_results",
@@ -358,21 +366,18 @@ class HandlerIntentStorageAdapter:
                     total_count=0,
                 )
             # Convert to response model format
-            intents = [
-                ModelIntentRecordResponse(
-                    intent_id=intent.intent_id,
-                    intent_category=intent.intent_category.value
-                    if hasattr(intent.intent_category, "value")
-                    else str(intent.intent_category),
-                    confidence=intent.confidence,
-                    keywords=intent.keywords,
-                    created_at_utc=intent.created_at.isoformat()
-                    if intent.created_at
-                    else "",
-                    correlation_id=intent.correlation_id,
+            intents: list[ModelIntentRecordResponse] = []
+            for intent in result.intents:
+                intents.append(
+                    ModelIntentRecordResponse(
+                        intent_id=intent.intent_id,
+                        intent_category=intent.intent_category,
+                        confidence=intent.confidence,
+                        keywords=intent.keywords,
+                        created_at_utc=intent.created_at_utc.isoformat(),
+                        correlation_id=intent.correlation_id,
+                    )
                 )
-                for intent in result.intents
-            ]
             return ModelIntentStorageResponse(
                 status="success",
                 intents=intents,

@@ -7,7 +7,7 @@
 
 # === REQUIRED ROOT FIELDS ===
 name: "memory_retrieval_effect"
-contract_version: {major: 0, minor: 1, patch: 0}
+contract_version: {major: 0, minor: 2, patch: 0}
 node_version: {major: 0, minor: 1, patch: 0}
 description: "Memory retrieval effect node for search operations. P2A: Qdrant semantic search, PostgreSQL
   full-text search, and Graph traversal backends."
@@ -150,6 +150,7 @@ validation_rules:
 # === HANDLER ROUTING (ONEX Multi-Backend Effect Pattern) ===
 # Declarative routing configuration for backend handlers.
 # The main HandlerMemoryRetrieval acts as router, dispatching to backend handlers.
+# Supports both orchestrator invocation and event subscription (OMN-1746/OMN-2212).
 handler_routing:
   version:
     major: 1

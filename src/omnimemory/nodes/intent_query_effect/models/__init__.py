@@ -12,6 +12,9 @@ Exports:
 
 .. versionadded:: 0.1.0
     Initial implementation for OMN-1504.
+
+.. versionchanged:: 0.3.0
+    Uses ModelIntentRecordPayload from omnibase-core 0.17.
 """
 
 from omnibase_core.models.events import (
@@ -25,8 +28,8 @@ from omnimemory.nodes.intent_query_effect.models.model_handler_intent_query_conf
 )
 
 __all__ = [
-    "ModelIntentRecordPayload",
     "ModelHandlerIntentQueryConfig",
     "ModelIntentQueryRequestedEvent",
     "ModelIntentQueryResponseEvent",
+    "ModelIntentRecordPayload",
 ]
