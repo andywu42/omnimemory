@@ -2,13 +2,15 @@
 # Copyright (c) 2025 OmniNode Team
 """OmniMemory Runtime Package.
 
-Provides contract-driven topic discovery, protocol adapters, and dispatch
-handlers for the OmniMemory domain.
+Provides contract-driven topic discovery, protocol adapters, dispatch
+handlers, and the PluginMemory domain plugin for the OmniMemory domain.
 
 This package contains:
     - Contract-driven topic discovery (contract_topics module)
     - Protocol adapters bridging infrastructure to handler protocols (adapters module)
     - Dispatch handlers routing events through MessageDispatchEngine (dispatch_handlers module)
+    - PluginMemory domain plugin for kernel bootstrap (plugin module)
+    - Handler wiring for plugin initialization (wiring module)
 
 Usage:
     from omnimemory.runtime.contract_topics import (
@@ -29,6 +31,9 @@ Usage:
         create_memory_dispatch_engine,
         create_dispatch_callback,
     )
+
+    from omnimemory.runtime.plugin import PluginMemory
+    from omnimemory.runtime.wiring import wire_memory_handlers
 """
 
 # Eager imports: adapters module is lightweight and used by all handler consumers.
@@ -63,6 +68,7 @@ def __getattr__(name: str) -> object:
         "DISPATCH_ALIAS_EXPIRE_MEMORY",
         "DISPATCH_ALIAS_INTENT_CLASSIFIED",
         "DISPATCH_ALIAS_INTENT_QUERY_REQUESTED",
+        "DISPATCH_ALIAS_MEMORY_RETRIEVAL_REQUESTED",
         "DISPATCH_ALIAS_RUNTIME_TICK",
         "create_dispatch_callback",
         "create_memory_dispatch_engine",
@@ -71,6 +77,37 @@ def __getattr__(name: str) -> object:
         from omnimemory.runtime import dispatch_handlers
 
         return getattr(dispatch_handlers, name)
+
+    _plugin_symbols = {
+        "MEMORY_SUBSCRIBE_TOPICS",
+        "PluginMemory",
+    }
+    if name in _plugin_symbols:
+        from omnimemory.runtime import plugin
+
+        return getattr(plugin, name)
+
+    _wiring_symbols = {
+        "wire_memory_handlers",
+    }
+    if name in _wiring_symbols:
+        from omnimemory.runtime import wiring
+
+        return getattr(wiring, name)
+
+    _introspection_symbols = {
+        "MEMORY_NODES",
+        "IntrospectionResult",
+        "MemoryNodeIntrospectionProxy",
+        "publish_memory_introspection",
+        "publish_memory_shutdown",
+        "reset_introspection_guard",
+    }
+    if name in _introspection_symbols:
+        from omnimemory.runtime import introspection
+
+        return getattr(introspection, name)
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -91,7 +128,20 @@ __all__ = [
     "DISPATCH_ALIAS_EXPIRE_MEMORY",
     "DISPATCH_ALIAS_INTENT_CLASSIFIED",
     "DISPATCH_ALIAS_INTENT_QUERY_REQUESTED",
+    "DISPATCH_ALIAS_MEMORY_RETRIEVAL_REQUESTED",
     "DISPATCH_ALIAS_RUNTIME_TICK",
     "create_dispatch_callback",
     "create_memory_dispatch_engine",
+    # Plugin (lazy-imported via __getattr__)
+    "MEMORY_SUBSCRIBE_TOPICS",
+    "PluginMemory",
+    # Wiring (lazy-imported via __getattr__)
+    "wire_memory_handlers",
+    # Introspection (lazy-imported via __getattr__)
+    "MEMORY_NODES",
+    "IntrospectionResult",
+    "MemoryNodeIntrospectionProxy",
+    "publish_memory_introspection",
+    "publish_memory_shutdown",
+    "reset_introspection_guard",
 ]
