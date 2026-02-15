@@ -57,11 +57,11 @@ from omnimemory.runtime.contract_topics import (
 
 
 def __getattr__(name: str) -> object:
-    """Lazy-import dispatch handler symbols on first access.
+    """Lazy-import runtime symbols on first access.
 
-    This avoids pulling omnibase_core.runtime into the module namespace at
-    package import time while still allowing ``from omnimemory.runtime import
-    create_memory_dispatch_engine`` to work.
+    This avoids pulling heavier modules into the namespace at package import
+    time while still allowing direct imports of dispatch, plugin, wiring,
+    introspection, and message-type registration symbols.
     """
     _dispatch_symbols = {
         "DISPATCH_ALIAS_ARCHIVE_MEMORY",
@@ -108,6 +108,18 @@ def __getattr__(name: str) -> object:
 
         return getattr(introspection, name)
 
+    _message_type_symbols = {
+        "EXPECTED_MESSAGE_TYPE_COUNT",
+        "MEMORY_DOMAIN",
+        "get_registration_metrics",
+        "is_registry_ready",
+        "register_memory_message_types",
+    }
+    if name in _message_type_symbols:
+        from omnimemory.runtime import message_type_registration
+
+        return getattr(message_type_registration, name)
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -144,4 +156,10 @@ __all__ = [
     "publish_memory_introspection",
     "publish_memory_shutdown",
     "reset_introspection_guard",
+    # Message type registration (lazy-imported via __getattr__)
+    "EXPECTED_MESSAGE_TYPE_COUNT",
+    "MEMORY_DOMAIN",
+    "get_registration_metrics",
+    "is_registry_ready",
+    "register_memory_message_types",
 ]
