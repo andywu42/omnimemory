@@ -15,6 +15,7 @@ from omnimemory.models.events.model_intent_classified_event import (
 )
 
 
+@pytest.mark.unit
 class TestModelIntentClassifiedEventJsonDeserialization:
     """Tests for JSON deserialization behavior (the Kafka use case)."""
 
@@ -80,10 +81,10 @@ class TestModelIntentClassifiedEventJsonDeserialization:
         }
         event = ModelIntentClassifiedEvent.model_validate(data)
 
-        assert event.keywords == ["python", "fastapi", "async"]
+        assert event.keywords == ("python", "fastapi", "async")
 
-    def test_keywords_defaults_to_empty_list(self) -> None:
-        """Ensure keywords field defaults to empty list when not provided."""
+    def test_keywords_defaults_to_empty_tuple(self) -> None:
+        """Ensure keywords field defaults to empty tuple when not provided."""
         data = {
             "event_type": "IntentClassified",
             "session_id": "sess-789",
@@ -94,9 +95,10 @@ class TestModelIntentClassifiedEventJsonDeserialization:
         }
         event = ModelIntentClassifiedEvent.model_validate(data)
 
-        assert event.keywords == []
+        assert event.keywords == ()
 
 
+@pytest.mark.unit
 class TestModelIntentClassifiedEventValidation:
     """Tests for validation constraints."""
 

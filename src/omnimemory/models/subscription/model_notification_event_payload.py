@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ModelNotificationEventPayload(BaseModel):
     """Structured payload for notification events following ONEX standards."""
 
-    model_config = ConfigDict(frozen=False, extra="forbid", strict=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     entity_type: str = Field(
         description="Type of entity that changed (e.g., 'item', 'collection')",
@@ -21,6 +21,9 @@ class ModelNotificationEventPayload(BaseModel):
     action: str = Field(
         description="Action that occurred (e.g., 'created', 'updated', 'deleted')",
     )
+    # NOTE: dict contents remain mutable even on frozen models; this is a known
+    # Pydantic v2 limitation.  frozen=True prevents field *reassignment* but not
+    # in-place mutation of mutable containers.
     changes: dict[str, str] | None = Field(
         default=None,
         description="Key-value pairs of fields that changed (for updates)",

@@ -380,8 +380,12 @@ class ModelConfiguration(BaseModel):
 class ModelEventData(BaseModel):
     """Strongly typed event data for system events."""
 
+    # Defense-in-depth: validate_assignment=True is retained alongside frozen=True.
+    # While frozen=True prevents normal field assignment, validate_assignment ensures
+    # that Pydantic-aware mutation paths (e.g., model_copy(update=...)) also enforce
+    # type validation. This is a deliberate redundancy for safety.
     model_config = ConfigDict(
-        str_strip_whitespace=True, validate_assignment=True, extra="forbid"
+        frozen=True, validate_assignment=True, str_strip_whitespace=True, extra="forbid"
     )
 
     event_type: str = Field(

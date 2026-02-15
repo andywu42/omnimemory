@@ -9,6 +9,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ..foundation.model_semver import ModelSemVer
 from .constants import TOPIC_PATTERN, TOPIC_VALIDATION_ERROR
 from .model_notification_event_payload import (
     ModelNotificationEventPayload,  # noqa: TC001 - runtime import for Pydantic field type
@@ -18,7 +19,7 @@ from .model_notification_event_payload import (
 class ModelNotificationEvent(BaseModel):
     """Notification event for memory changes following ONEX standards."""
 
-    model_config = ConfigDict(frozen=False, extra="forbid", strict=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     event_id: str = Field(
         description="Unique event identifier (non-empty string)",
@@ -33,6 +34,9 @@ class ModelNotificationEvent(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="When the event was created",
     )
+    # NOTE: dict contents remain mutable even on frozen models; this is a known
+    # Pydantic v2 limitation.  frozen=True prevents field *reassignment* but not
+    # in-place mutation of mutable containers.
     metadata: dict[str, str] | None = Field(
         default=None,
         description="Optional event metadata for routing or filtering",
@@ -41,8 +45,8 @@ class ModelNotificationEvent(BaseModel):
         default=None,
         description="Source system or service that generated this event",
     )
-    version: str = Field(
-        default="1.0",
+    version: ModelSemVer = Field(
+        default_factory=lambda: ModelSemVer(major=1, minor=0, patch=0),
         description="Event schema version for forward compatibility",
     )
 

@@ -11,6 +11,7 @@ from omnimemory.nodes.intent_event_consumer_effect.utils import (
 )
 
 
+@pytest.mark.unit
 class TestMapEventToStorageRequest:
     """Tests for map_event_to_storage_request function."""
 
@@ -33,7 +34,8 @@ class TestMapEventToStorageRequest:
         assert result.intent_data is not None
         assert result.intent_data.intent_category == "debugging"
         assert result.intent_data.confidence == 0.85
-        assert result.intent_data.keywords == []  # Default empty list
+        assert isinstance(result.intent_data.keywords, list)
+        assert result.intent_data.keywords == []
 
     def test_maps_event_with_keywords_forward_compat(self) -> None:
         """Test mapping event with keywords (OMN-1626 forward compatibility)."""
@@ -50,6 +52,7 @@ class TestMapEventToStorageRequest:
         result = map_event_to_storage_request(event)
 
         assert result.intent_data is not None
+        assert isinstance(result.intent_data.keywords, list)
         assert result.intent_data.keywords == ["pull", "request", "review"]
 
     def test_preserves_all_fields(self) -> None:
@@ -74,7 +77,7 @@ class TestMapEventToStorageRequest:
         # intent_category is now an enum, compare with .value
         assert result.intent_data.intent_category.value == event.intent_category
         assert result.intent_data.confidence == event.confidence
-        assert result.intent_data.keywords == event.keywords
+        assert result.intent_data.keywords == list(event.keywords)
 
     def test_maps_empty_keywords_correctly(self) -> None:
         """Test mapping event with explicit empty keywords list."""
@@ -95,11 +98,12 @@ class TestMapEventToStorageRequest:
         assert isinstance(result.intent_data.keywords, list)
 
 
+@pytest.mark.unit
 class TestModelIntentClassifiedEvent:
     """Tests for the ModelIntentClassifiedEvent model."""
 
-    def test_keywords_defaults_to_empty_list(self) -> None:
-        """Test that keywords field defaults to empty list."""
+    def test_keywords_defaults_to_empty_tuple(self) -> None:
+        """Test that keywords field defaults to empty tuple."""
         event = ModelIntentClassifiedEvent(
             session_id="session_test",
             correlation_id=UUID("880e8400-e29b-41d4-a716-446655440003"),
@@ -108,8 +112,8 @@ class TestModelIntentClassifiedEvent:
             timestamp=datetime.now(timezone.utc),
         )
 
-        assert event.keywords == []
-        assert isinstance(event.keywords, list)
+        assert event.keywords == ()
+        assert isinstance(event.keywords, tuple)
 
     def test_validates_confidence_range_too_high(self) -> None:
         """Test that confidence must be <= 1.0."""

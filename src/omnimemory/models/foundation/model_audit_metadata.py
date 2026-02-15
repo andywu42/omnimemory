@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class AuditEventDetails(BaseModel):
     """Strongly typed details for audit events."""
 
-    model_config = ConfigDict(extra="forbid", frozen=False)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     operation_type: str = Field(
         default="unknown", description="Type of operation being audited"
@@ -31,6 +31,10 @@ class AuditEventDetails(BaseModel):
 
     new_value: str | None = Field(default=None, description="New value after change")
 
+    # NOTE: dict contents remain mutable even on frozen models; this is a known
+    # Pydantic v2 limitation.  frozen=True prevents field *reassignment* but not
+    # in-place mutation of mutable containers.  A MappingProxyType wrapper is not
+    # Pydantic-friendly, so we accept this trade-off and rely on convention.
     request_parameters: dict[str, str] | None = Field(
         default=None, description="Parameters passed with the request"
     )
@@ -55,7 +59,7 @@ class AuditEventDetails(BaseModel):
 class ResourceUsageMetadata(BaseModel):
     """Strongly typed resource usage metrics."""
 
-    model_config = ConfigDict(extra="forbid", frozen=False)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     cpu_usage_percent: float | None = Field(
         default=None,
@@ -96,7 +100,7 @@ class ResourceUsageMetadata(BaseModel):
 class SecurityAuditDetails(BaseModel):
     """Strongly typed security audit information."""
 
-    model_config = ConfigDict(extra="forbid", frozen=False)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     authentication_method: str | None = Field(
         default=None, description="Authentication method used"
@@ -114,7 +118,7 @@ class SecurityAuditDetails(BaseModel):
         default=False, description="Whether permission was granted"
     )
 
-    security_scan_results: list[str] | None = Field(
+    security_scan_results: tuple[str, ...] | None = Field(
         default=None, description="Results of security scanning"
     )
 
@@ -137,7 +141,7 @@ class SecurityAuditDetails(BaseModel):
 class PerformanceAuditDetails(BaseModel):
     """Strongly typed performance audit information."""
 
-    model_config = ConfigDict(extra="forbid", frozen=False)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     operation_latency_ms: float = Field(
         ge=0.0, description="Operation latency in milliseconds"
