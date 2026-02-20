@@ -1,3 +1,5 @@
+> **Navigation**: [Home](./INDEX.md) > Reference
+
 # Performance Testing Guide
 
 This document describes how to run and interpret performance benchmarks for OmniMemory.
@@ -13,7 +15,7 @@ This document describes how to run and interpret performance benchmarks for Omni
 
 ## SLA Targets
 
-OmniMemory has the following documented performance targets (from CLAUDE.md):
+OmniMemory has the following documented performance targets:
 
 | Metric | Target | Test Class |
 |--------|--------|------------|
@@ -280,7 +282,7 @@ performance-tests:
         python-version: '3.12'
     - name: Install dependencies
       run: |
-        pip install poetry
+        pipx install poetry==2.2.1  # pin to match POETRY_VERSION in .github/workflows/test.yml
         poetry install
     - name: Run performance benchmarks
       run: |

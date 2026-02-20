@@ -122,10 +122,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           # Restore-keys use prefix matching for better fallback:
           # - First tries exact OS + Python + lock hash
           # - Falls back to OS + Python (different lock hash)
@@ -184,10 +181,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           # Restore-keys use prefix matching for better fallback:
           # - First tries exact OS + Python + lock hash
           # - Falls back to OS + Python (different lock hash)
@@ -236,10 +230,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           # Restore-keys use prefix matching for better fallback:
           # - First tries exact OS + Python + lock hash
           # - Falls back to OS + Python (different lock hash)
@@ -360,10 +351,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           restore-keys: |
             venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
             venv-${{ runner.os }}-
@@ -417,10 +405,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           restore-keys: |
             venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
             venv-${{ runner.os }}-
@@ -513,10 +498,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
-            ${{ hashFiles('**/poetry.lock') }}-
-            ${{ env.CACHE_VERSION }}
+          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ env.CACHE_VERSION }}
           # Restore-keys use prefix matching for better fallback:
           # - First tries exact OS + Python + lock hash
           # - Falls back to OS + Python (different lock hash)

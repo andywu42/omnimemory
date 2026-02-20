@@ -1,3 +1,5 @@
+> **Navigation**: [Home](./INDEX.md) > Reference
+
 # Stub Protocols and Compatibility Layer
 
 ## Overview
@@ -62,7 +64,7 @@ else:
 
 **Upstream Target**: `omnibase_core.core.errors.core_errors.OnexError`
 
-**Status**: Local stub - awaiting upstream availability
+**Status**: Active (core 0.17) - Local stub still required. The upstream package exposes `ModelOnexError` (at `omnibase_core.models.errors.model_onex_error.ModelOnexError`) but does not export `OnexError` or `BaseOnexError` under the originally targeted module path. The local stub remains the canonical source until upstream aligns naming or an explicit migration is performed. Target: tracked in omnibase-core upstream; check CHANGELOG for resolution.
 
 **Usage**:
 ```python
@@ -85,18 +87,15 @@ raise OnexError(
 
 **Purpose**: Dependency injection container for ONEX nodes, providing service registration and resolution.
 
-**Upstream Target**: `omnibase_core.core.model_onex_container.ModelONEXContainer`
+**Upstream Target**: `omnibase_core.container.ModelONEXContainer`
 
-**Status**: Local stub - awaiting upstream availability
+**Status**: **MIGRATED** — use `omnibase_core` directly. `ModelONEXContainer` is now available in the installed package (omnibase-core 0.17+) at:
 
-**Usage**:
 ```python
-from omnimemory.compat import ModelOnexContainer
-
-container = ModelOnexContainer()
-container.register("db_handler", HandlerDb())
-db = container.resolve("db_handler")
+from omnibase_core.container import ModelONEXContainer
 ```
+
+Any remaining imports from `omnimemory.compat` for this class should be updated to the upstream path above. The local stub file (`src/omnimemory/compat/model_onex_container.py`) can be deleted once all callers are migrated.
 
 ---
 
@@ -106,10 +105,10 @@ db = container.resolve("db_handler")
 
 Monitor `omnibase_core` releases for availability of:
 - `omnibase_core.core.errors.core_errors` (OnexError, BaseOnexError)
-- `omnibase_core.core.model_onex_container` (ModelOnexContainer)
 
 **Already migrated** (no longer monitoring):
 - ~~`omnibase_core.core.monadic.model_node_result`~~ - Migrated to `ModelBaseResult` (see Section 1)
+- ~~`omnibase_core.core.model_onex_container`~~ - Migrated to `omnibase_core.container.ModelONEXContainer` (see Section 3)
 
 ### Phase 2: Migration
 
@@ -181,14 +180,7 @@ Contains a placeholder for health check aggregation logic that returns healthy s
 
 ## Dependency on omnibase_infra
 
-The handler reuse matrix (`docs/handler_reuse_matrix.md`) references handlers from `omnibase_infra`. This package should be added as a dependency when it becomes available on PyPI.
-
-**Current Status**: Commented in `pyproject.toml` dev dependencies
-
-**Add when available**:
-```bash
-poetry add --group dev omnibase-infra
-```
+The handler reuse matrix (`docs/handler_reuse_matrix.md`) references handlers from `omnibase_infra`. This package is declared as a dependency in `pyproject.toml`.
 
 ---
 
@@ -196,4 +188,5 @@ poetry add --group dev omnibase-infra
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2026-02-19 | Audit stub status: ModelONEXContainer marked MIGRATED (upstream available at omnibase_core.container); OnexError/BaseOnexError confirmed still active (upstream exposes ModelOnexError, not OnexError) |
 | 1.0.0 | 2025-01-18 | Initial documentation |

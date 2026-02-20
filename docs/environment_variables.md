@@ -1,10 +1,14 @@
+> **Navigation**: [Home](./INDEX.md) > Reference
+
 # OmniMemory Environment Variables
+
+**Last Updated**: 2026-02-19
 
 This document describes all environment variables used to configure OmniMemory.
 
 ## Overview
 
-OmniMemory uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management. All environment variables use the `OMNIMEMORY__` prefix with `__` as the nested delimiter.
+OmniMemory uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration management. All environment variables use the `OMNIMEMORY__` prefix with `__` as the nested delimiter, **except** `OMNIMEMORY_DB_URL` which uses a single underscore and is read as a top-level variable via a `validation_alias` in pydantic-settings (not as a nested `OMNIMEMORY__POSTGRES__` variable).
 
 **Example**: `OMNIMEMORY__FILESYSTEM__BASE_PATH=/data/memory`
 
@@ -71,6 +75,7 @@ Top-level settings that control service behavior.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
+| `OMNIMEMORY_ENABLED` | bool | unset (disabled) | Activate the OmniMemory plugin in the ONEX kernel. When set to `true`, the `PluginMemory` domain plugin initializes and subscribes to Kafka topics. When unset or `false`, the plugin is skipped entirely, allowing graceful degradation in kernels that do not require the memory domain. Expected values: `true` or `false`. See also: [Runtime Plugins](./runtime/RUNTIME_PLUGINS.md). |
 | `OMNIMEMORY__POSTGRES_ENABLED` | bool | `false` | Enable PostgreSQL backend |
 | `OMNIMEMORY__QDRANT_ENABLED` | bool | `false` | Enable Qdrant vector backend |
 | `OMNIMEMORY__EMBEDDING_ENABLED` | bool | `false` | Enable real embedding server (requires `EMBEDDING__SERVER_URL`) |
@@ -102,9 +107,29 @@ Set `OMNIMEMORY__POSTGRES_ENABLED=true` to enable PostgreSQL backend for persist
 |----------|------|---------|-------------|-------------|
 | `OMNIMEMORY_DB_URL` | str | **required if enabled** | Valid PostgreSQL URL | Full PostgreSQL connection URL with credentials |
 
+> **Important — naming convention exception**: While all other OmniMemory variables use the `OMNIMEMORY__` prefix with `__` as the nested delimiter (see [Overview](#overview)), `OMNIMEMORY_DB_URL` is the **one exception**: it uses a **single underscore** between `OMNIMEMORY` and `DB`. It is read as a top-level environment variable via a `validation_alias` in pydantic-settings, not as a nested `OMNIMEMORY__POSTGRES__` variable. Setting `OMNIMEMORY__POSTGRES__DB_URL` will have no effect.
+
 The service fails fast on startup if `OMNIMEMORY_DB_URL` is not set when postgres is enabled. No silent fallback to shared databases.
 
-**URL Format**: `postgresql://user:password@host:port/database`
+**URL Format**:
+
+```
+postgresql://user:password@host:port/database
+```
+
+When using the `asyncpg` driver (used internally for health checks and lifecycle handlers), the `postgresql+asyncpg://` scheme is a SQLAlchemy dialect specifier and is **not** accepted directly by `asyncpg.connect()`. OmniMemory normalizes the URL before passing it to asyncpg, stripping the `+asyncpg` suffix so that asyncpg receives the standard `postgresql://` form it expects. The standard `postgresql://` scheme is sufficient and preferred for the pydantic-settings `PostgresDsn` field.
+
+**Examples**:
+
+```bash
+# Local development
+OMNIMEMORY_DB_URL=postgresql://omnimemory:dev_password@localhost:5432/omnimemory_dev
+
+# Remote shared infrastructure (OmniNode standard)
+OMNIMEMORY_DB_URL=postgresql://postgres:secret@<db-host>:<db-port>/omninode_bridge
+```
+
+> **Breaking change (0.2.0 → 0.3.0)**: The database connection URL is now read **exclusively** from `OMNIMEMORY_DB_URL`. Any previous mechanism for supplying the database URL no longer applies. Update your `.env` file to include this variable before upgrading.
 
 **Tuning variables** (prefix: `OMNIMEMORY__POSTGRES__`):
 
@@ -144,16 +169,18 @@ Set `OMNIMEMORY__EMBEDDING_ENABLED=true` to enable the real embedding server for
 
 | Variable | Type | Default | Constraints | Description |
 |----------|------|---------|-------------|-------------|
-| `OMNIMEMORY__EMBEDDING__SERVER_URL` | str | **REQUIRED** | Valid HTTP(S) URL | URL of the embedding server (e.g., MLX server) |
+| `OMNIMEMORY__EMBEDDING__SERVER_URL` | str | **REQUIRED** | Valid HTTP(S) URL | URL of the embedding server (set from `LLM_EMBEDDING_URL` in `.env`) |
 | `OMNIMEMORY__EMBEDDING__TIMEOUT_SECONDS` | float | `5.0` | > 0 | Request timeout in seconds |
 | `OMNIMEMORY__EMBEDDING__MAX_RETRIES` | int | `3` | 0 - 10 | Maximum retry attempts for transient failures |
 | `OMNIMEMORY__EMBEDDING__DIMENSION` | int | `1024` | > 0 | Expected embedding vector dimension |
 
 **Example**:
 ```bash
-# Enable real embeddings with explicit server URL
+# Enable real embeddings with explicit server URL.
+# This repo uses LLM_EMBEDDING_URL=http://192.168.86.200:8100 (Qwen3-Embedding-8B-4bit
+# on M2 Ultra, port 8100). Always verify the value in .env before use.
 export OMNIMEMORY__EMBEDDING_ENABLED=true
-export OMNIMEMORY__EMBEDDING__SERVER_URL=http://192.168.86.200:8102
+export OMNIMEMORY__EMBEDDING__SERVER_URL=http://192.168.86.200:8100
 ```
 
 **Note**: When using `ModelHandlerQdrantMockConfig` with `use_real_embeddings=True`, the `embedding_server_url` must be provided explicitly (typically loaded from this environment variable). The handler will fail fast with a clear error if the URL is missing or invalid.
@@ -191,9 +218,9 @@ OMNIMEMORY__QDRANT__URL=http://localhost:6333
 OMNIMEMORY__QDRANT__COLLECTION_NAME=omnimemory_dev
 OMNIMEMORY__QDRANT__VECTOR_SIZE=1024
 
-# Embedding (for real semantic search)
+# Embedding (for real semantic search - M2 Ultra, Qwen3-Embedding-8B-4bit)
 OMNIMEMORY__EMBEDDING_ENABLED=true
-OMNIMEMORY__EMBEDDING__SERVER_URL=http://192.168.86.200:8102
+OMNIMEMORY__EMBEDDING__SERVER_URL=http://192.168.86.200:8100
 ```
 
 ### Production
@@ -233,6 +260,54 @@ OMNIMEMORY__QDRANT__PREFER_GRPC=true
 OMNIMEMORY__QDRANT__GRPC_PORT=6334
 OMNIMEMORY__QDRANT__ON_DISK=true
 ```
+
+## Utilities
+
+### `safe_db_url_display`
+
+**Module**: `omnimemory.utils.db_url`
+**Import**: `from omnimemory.utils import safe_db_url_display`
+
+A helper that strips credentials from a PostgreSQL connection URL so the result is safe to include in log messages, error text, and diagnostic output.
+
+**Signature**:
+
+```python
+def safe_db_url_display(url: str) -> str: ...
+```
+
+**What it does**:
+
+- Parses the URL with `urllib.parse.urlparse` (no fragile string splitting)
+- Validates that the URL scheme starts with `postgres` — returns `"(unparseable URL)"` for any other scheme (e.g. `https://`) to prevent misleading output
+- Strips the username and password from the result entirely
+- Wraps IPv6 host addresses in brackets to avoid ambiguous `host:port` output
+- Returns a string in the form `host:port/database`
+
+**When to use it**: Any time you need to log or display the value of `OMNIMEMORY_DB_URL` — whether in startup banners, health-check output, or error messages. Never log the raw URL; always pass it through `safe_db_url_display` first.
+
+**Example**:
+
+```python
+from omnimemory.utils import safe_db_url_display
+
+url = "postgresql://omnimemory:super_secret@<db-host>:5436/omninode_bridge"
+print(safe_db_url_display(url))
+# Output: <db-host>:5436/omninode_bridge
+```
+
+**Edge cases**:
+
+| Input | Output |
+|-------|--------|
+| `postgresql://user:pass@localhost:5432/mydb` | `localhost:5432/mydb` |
+| `postgresql://user:pass@<db-host>:5436/omninode_bridge` | `<db-host>:5436/omninode_bridge` |
+| `postgresql://user:pass@[::1]:5432/mydb` (IPv6) | `[::1]:5432/mydb` |
+| `postgresql://host_only/mydb` (no port) | `host_only/mydb` |
+| `https://not-a-db-url` (wrong scheme) | `(unparseable URL)` |
+| Malformed / unparseable string | `(unparseable URL)` |
+
+**Which env var it masks**: `OMNIMEMORY_DB_URL`. The full URL (including password) must never appear in logs; `safe_db_url_display` is the only approved way to surface connection target information.
 
 ## Type Reference
 

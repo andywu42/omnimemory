@@ -1,3 +1,5 @@
+> **Navigation**: [Home](./INDEX.md) > Reference
+
 # PII Handling Guide for Memory Systems
 
 ## Overview
@@ -599,7 +601,7 @@ PII detection is a critical component of memory operations and must meet OmniMem
 
 ### Performance Targets
 
-The PIIDetector is designed to meet OmniMemory's overall performance specifications from CLAUDE.md:
+The PIIDetector is designed to meet OmniMemory's overall performance specifications from [architecture requirements](./architecture/ONEX_FOUR_NODE_ARCHITECTURE.md):
 
 | Metric | Target | Context |
 |--------|--------|---------|
