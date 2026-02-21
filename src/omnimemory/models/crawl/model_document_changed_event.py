@@ -56,6 +56,7 @@ class ModelDocumentChangedEvent(BaseModel):
     )
     crawl_scope: str = Field(
         ...,
+        min_length=1,
         description="Scope string from the originating crawl tick",
     )
     trigger_source: TriggerSource = Field(
@@ -66,6 +67,7 @@ class ModelDocumentChangedEvent(BaseModel):
     # Document identity
     source_ref: str = Field(
         ...,
+        min_length=1,
         description="Absolute path, URL, or Linear ID",
     )
     source_type: EnumContextSourceType = Field(
@@ -80,10 +82,12 @@ class ModelDocumentChangedEvent(BaseModel):
     # Current content
     content_fingerprint: str = Field(
         ...,
+        pattern=r"^[0-9a-f]{64}$",
         description="SHA-256 hex digest of the new content",
     )
     content_blob_ref: str = Field(
         ...,
+        min_length=1,
         description="Pointer to blob storage entry for the new content",
     )
     token_estimate: int = Field(
@@ -95,6 +99,7 @@ class ModelDocumentChangedEvent(BaseModel):
     # Scope and classification
     scope_ref: str = Field(
         ...,
+        min_length=1,
         description="Resolved scope assignment",
     )
     detected_doc_type: EnumDetectedDocType = Field(
@@ -115,6 +120,7 @@ class ModelDocumentChangedEvent(BaseModel):
     # Previous version fields (what changed)
     previous_content_fingerprint: str = Field(
         ...,
+        pattern=r"^[0-9a-f]{64}$",
         description="SHA-256 hex digest of the content before the change",
     )
     previous_source_version: str | None = Field(
