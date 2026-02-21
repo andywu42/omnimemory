@@ -49,7 +49,10 @@ class ModelCrawlStateRecord(BaseModel):
     content_fingerprint: str = Field(
         ...,
         pattern=r"^[0-9a-f]{64}$",
-        description="SHA-256 hex digest of the document content at last crawl",
+        description=(
+            "SHA-256 hex digest of the document content at last crawl. "
+            "Must be exactly 64 lowercase hexadecimal characters."
+        ),
     )
     source_version: str | None = Field(
         default=None,

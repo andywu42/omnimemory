@@ -36,8 +36,10 @@ import asyncio
 import logging
 import time
 from collections.abc import Mapping
+from datetime import timezone
 from typing import TYPE_CHECKING
 
+from omnibase_core.models.events import ModelIntentRecordPayload
 from pydantic import BaseModel, ConfigDict, Field
 
 from omnimemory.handlers.adapters import AdapterIntentGraph
@@ -72,7 +74,7 @@ class ModelIntentQueryConfigInfo(  # omnimemory-model-exempt: handler metadata
         default_min_confidence: Default minimum confidence threshold.
     """
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     timeout_seconds: float = Field(
         ...,
@@ -110,6 +112,7 @@ class ModelIntentQueryHealth(  # omnimemory-model-exempt: handler health
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
         strict=True,
     )
@@ -159,7 +162,7 @@ class ModelIntentQueryMetadata(  # omnimemory-model-exempt: handler metadata
         config: Current configuration (None if not initialized).
     """
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     name: str = Field(
         ...,
@@ -507,7 +510,7 @@ class HandlerIntentQuery:
 
         return ModelIntentQueryResponseEvent.create_distribution_response(
             query_id=request.query_id,
-            distribution=result.distribution,
+            distribution=dict(result.distribution),
             time_range_hours=request.time_range_hours,
             execution_time_ms=execution_time_ms,
             correlation_id=request.correlation_id,
@@ -572,8 +575,22 @@ class HandlerIntentQuery:
             )
 
         try:
-            payloads = map_intent_records(result.intents)
-        except ValueError as e:
+            payloads: list[ModelIntentRecordPayload] = []
+            for record in result.intents:
+                created_at = record.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                payloads.append(
+                    ModelIntentRecordPayload(
+                        intent_id=record.intent_id,
+                        session_ref=record.session_id,
+                        intent_category=record.intent_category.value,
+                        confidence=record.confidence,
+                        keywords=list(record.keywords),
+                        created_at=created_at,
+                    )
+                )
+        except (ValueError, AttributeError) as e:
             logger.warning("Failed to map intent records: %s", e)
             return ModelIntentQueryResponseEvent.from_error(
                 query_id=request.query_id,
@@ -623,7 +640,7 @@ class HandlerIntentQuery:
                 _CONTRACT_MAX_RESPONSE_TIME_MS,
             )
 
-        if not result.success:
+        if result.status == "error":
             return ModelIntentQueryResponseEvent.from_error(
                 query_id=request.query_id,
                 query_type="recent",

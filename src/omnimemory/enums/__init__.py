@@ -5,6 +5,8 @@ All enums are centralized here for better maintainability and ONEX compliance.
 """
 
 from .crawl import EnumContextSourceType, EnumCrawlerType, EnumDetectedDocType
+from .enum_attribution_signal_type import EnumAttributionSignalType
+from .enum_context_item_type import EnumContextItemType
 from .enum_entity_extraction_mode import EnumEntityExtractionMode
 from .enum_error_code import EnumOmniMemoryErrorCode
 from .enum_intelligence_operation_type import EnumIntelligenceOperationType
@@ -17,11 +19,14 @@ from .enum_migration_status import (
     EnumMigrationStatus,
 )
 from .enum_priority_level import EnumPriorityLevel
+from .enum_promotion_tier import EnumPromotionTier
 from .enum_semantic_entity_type import EnumSemanticEntityType
 from .enum_subscription_status import EnumSubscriptionStatus
 from .enum_trust_level import EnumDecayFunction, EnumTrustLevel
 
 __all__ = [
+    "EnumAttributionSignalType",
+    "EnumContextItemType",
     "EnumContextSourceType",
     "EnumCrawlerType",
     "EnumDecayFunction",
@@ -36,6 +41,7 @@ __all__ = [
     "EnumMigrationStatus",
     "EnumOmniMemoryErrorCode",
     "EnumPriorityLevel",
+    "EnumPromotionTier",
     "EnumSemanticEntityType",
     "EnumSubscriptionStatus",
     "EnumTrustLevel",

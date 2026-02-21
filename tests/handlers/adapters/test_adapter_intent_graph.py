@@ -49,7 +49,10 @@ pytest.importorskip(
     "omnibase_infra", reason="omnibase_infra required for adapter tests"
 )
 
-from omnibase_core.enums.intelligence import EnumIntentCategory
+from omnibase_core.enums.intelligence.enum_intent_category import EnumIntentCategory
+from omnibase_core.models.intelligence import (
+    ModelIntentClassificationOutput as CoreModelIntentClassificationOutput,
+)
 
 from omnimemory.handlers.adapters import (
     AdapterIntentGraph,
@@ -121,9 +124,10 @@ def adapter_with_mock(
 
 
 @pytest.fixture
-def sample_intent_classification() -> ModelIntentClassificationOutput:
-    """Create a sample intent classification for testing."""
-    return ModelIntentClassificationOutput(
+def sample_intent_classification() -> CoreModelIntentClassificationOutput:
+    """Create a sample intent classification for testing (core type used by adapter)."""
+    return CoreModelIntentClassificationOutput(
+        success=True,
         intent_category=EnumIntentCategory.DEBUGGING,
         confidence=0.92,
         keywords=["error", "traceback", "fix"],
@@ -336,16 +340,14 @@ class TestModels:
     def test_intent_classification_output_all_fields(self) -> None:
         """Test ModelIntentClassificationOutput with all fields."""
         classification = ModelIntentClassificationOutput(
-            intent_category=EnumIntentCategory.CODE_GENERATION,
+            intent_category="code_generation",
             confidence=0.95,
             keywords=["python", "function", "async"],
             raw_text="Write a python async function",
             metadata={"model_version": "1.0"},
         )
 
-        assert (
-            classification.intent_category == EnumIntentCategory.CODE_GENERATION.value
-        )
+        assert classification.intent_category == "code_generation"
         assert classification.confidence == 0.95
         assert classification.keywords == ["python", "function", "async"]
         assert classification.raw_text == "Write a python async function"
@@ -412,7 +414,7 @@ class TestModels:
         record = ModelIntentRecord(
             intent_id=TEST_INTENT_ID_1,
             session_ref="session_123",
-            intent_category=EnumIntentCategory.DEBUGGING.value,
+            intent_category="debugging",
             confidence=0.92,
             keywords=["error", "fix"],
             created_at_utc=TEST_CREATED_AT_1,
@@ -421,7 +423,7 @@ class TestModels:
 
         assert record.intent_id == TEST_INTENT_ID_1
         assert record.session_ref == "session_123"
-        assert record.intent_category == EnumIntentCategory.DEBUGGING.value
+        assert record.intent_category == "debugging"
         assert record.confidence == 0.92
         assert record.keywords == ["error", "fix"]
         assert record.created_at_utc == TEST_CREATED_AT_1
@@ -432,7 +434,7 @@ class TestModels:
         record = ModelIntentRecord(
             intent_id=TEST_INTENT_ID_1,
             session_ref="session_123",
-            intent_category=EnumIntentCategory.UNKNOWN.value,
+            intent_category="unknown",
             confidence=0.5,
             created_at_utc=TEST_CREATED_AT_1,
         )
@@ -446,14 +448,14 @@ class TestModels:
             ModelIntentRecord(
                 intent_id=TEST_INTENT_ID_1,
                 session_ref="session_123",
-                intent_category=EnumIntentCategory.DEBUGGING.value,
+                intent_category="debugging",
                 confidence=0.9,
                 created_at_utc=TEST_CREATED_AT_1,
             ),
             ModelIntentRecord(
                 intent_id=TEST_INTENT_ID_2,
                 session_ref="session_123",
-                intent_category=EnumIntentCategory.CODE_GENERATION.value,
+                intent_category="code_generation",
                 confidence=0.85,
                 created_at_utc=TEST_CREATED_AT_2,
             ),
@@ -553,20 +555,30 @@ class TestModels:
 
 
 class TestProtocolConformance:
-    """Tests that AdapterIntentGraph conforms to ProtocolIntentGraph."""
+    """Tests that AdapterIntentGraph conforms to ProtocolIntentGraphAdapter."""
 
     def test_isinstance_check(self, config: ModelAdapterIntentGraphConfig) -> None:
-        """Test that AdapterIntentGraph is an instance of ProtocolIntentGraph."""
-        from omnibase_spi.protocols import ProtocolIntentGraph
+        """Test that AdapterIntentGraph is an instance of ProtocolIntentGraphAdapter."""
+        from omnimemory.protocols.protocol_intent_graph_adapter import (
+            ProtocolIntentGraphAdapter,
+        )
 
         adapter = AdapterIntentGraph(config)
-        assert isinstance(adapter, ProtocolIntentGraph)
+        assert isinstance(adapter, ProtocolIntentGraphAdapter)
 
     def test_inherits_from_protocol(self) -> None:
-        """Test that AdapterIntentGraph explicitly inherits from ProtocolIntentGraph."""
-        from omnibase_spi.protocols import ProtocolIntentGraph
+        """Test that AdapterIntentGraph explicitly inherits from ProtocolIntentGraphAdapter.
 
-        assert issubclass(AdapterIntentGraph, ProtocolIntentGraph)
+        Note: issubclass() cannot be used here because Python raises
+        TypeError for Protocols with non-method members (e.g., properties).
+        Instead we verify via MRO that the protocol appears in the
+        inheritance chain, which confirms explicit inheritance.
+        """
+        from omnimemory.protocols.protocol_intent_graph_adapter import (
+            ProtocolIntentGraphAdapter,
+        )
+
+        assert ProtocolIntentGraphAdapter in AdapterIntentGraph.__mro__
 
 
 # =============================================================================
@@ -1065,7 +1077,8 @@ class TestContextManager:
                     # Store an intent
                     result = await adapter.store_intent(
                         session_id="session_123",
-                        intent_data=ModelIntentClassificationOutput(
+                        intent_data=CoreModelIntentClassificationOutput(
+                            success=True,
                             intent_category=EnumIntentCategory.DEBUGGING,
                             confidence=0.9,
                         ),
@@ -1121,7 +1134,7 @@ class TestStoreIntent:
         self,
         adapter_with_mock: AdapterIntentGraph,
         mock_handler: MagicMock,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test successful intent storage."""
         mock_handler.execute_query.return_value = MagicMock(
@@ -1158,7 +1171,7 @@ class TestStoreIntent:
         self,
         adapter_with_mock: AdapterIntentGraph,
         mock_handler: MagicMock,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test storing intent that merges with existing."""
         mock_handler.execute_query.return_value = MagicMock(
@@ -1184,7 +1197,7 @@ class TestStoreIntent:
     async def test_store_intent_not_initialized(
         self,
         config: ModelAdapterIntentGraphConfig,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test store_intent returns error when not initialized."""
         adapter = AdapterIntentGraph(config)
@@ -1204,7 +1217,7 @@ class TestStoreIntent:
         self,
         adapter_with_mock: AdapterIntentGraph,
         mock_handler: MagicMock,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test store_intent handles connection errors gracefully."""
         mock_handler.execute_query.side_effect = Exception("Connection lost")
@@ -1224,7 +1237,7 @@ class TestStoreIntent:
         self,
         adapter_with_mock: AdapterIntentGraph,
         mock_handler: MagicMock,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test store_intent passes through correlation_id correctly."""
         mock_handler.execute_query.return_value = MagicMock(
@@ -1245,7 +1258,7 @@ class TestStoreIntent:
     async def test_store_intent_rejects_empty_session_id(
         self,
         adapter_with_mock: AdapterIntentGraph,
-        sample_intent_classification: ModelIntentClassificationOutput,
+        sample_intent_classification: CoreModelIntentClassificationOutput,
     ) -> None:
         """Test store_intent returns error for empty or whitespace-only session_id."""
         # Test empty string
@@ -1314,7 +1327,7 @@ class TestGetSessionIntents:
         assert result.success is True
         assert len(result.intents) == 2
 
-        # Verify first intent (core ModelIntentRecord uses EnumIntentCategory, not str)
+        # Verify first intent
         assert result.intents[0].intent_id == TEST_INTENT_ID_1
         assert result.intents[0].intent_category == EnumIntentCategory.DEBUGGING
         assert result.intents[0].confidence == 0.92
@@ -1668,7 +1681,8 @@ class TestErrorHandling:
         """Test adapter handles unexpected exceptions."""
         mock_handler.execute_query.side_effect = RuntimeError("Unexpected error")
 
-        classification = ModelIntentClassificationOutput(
+        classification = CoreModelIntentClassificationOutput(
+            success=True,
             intent_category=EnumIntentCategory.UNKNOWN,
             confidence=0.5,
         )
@@ -1735,7 +1749,8 @@ class TestErrorHandling:
         await adapter_with_mock.shutdown()
 
         # All operations should return error status
-        classification = ModelIntentClassificationOutput(
+        classification = CoreModelIntentClassificationOutput(
+            success=True,
             intent_category=EnumIntentCategory.UNKNOWN,
             confidence=0.5,
         )

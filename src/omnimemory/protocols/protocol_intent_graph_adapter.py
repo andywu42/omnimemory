@@ -35,9 +35,7 @@ Example::
             self,
             session_id: str,
             intent_data: ModelIntentClassificationOutput,
-            correlation_id: UUID,
-            *,
-            user_context: str = "",
+            correlation_id: str,
         ) -> ModelIntentStorageResult:
             return ModelIntentStorageResult(
                 status="success",
@@ -58,14 +56,17 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
-    from omnimemory.handlers.adapters.models import (
+    from omnibase_core.models.intelligence import (
         ModelIntentClassificationOutput,
-        ModelIntentDistributionResult,
-        ModelIntentGraphHealth,
         ModelIntentQueryResult,
         ModelIntentStorageResult,
+    )
+
+    from omnimemory.handlers.adapters.models import (
+        ModelIntentDistributionResult,
+    )
+    from omnimemory.handlers.adapters.models import (
+        ModelIntentQueryResult as LocalModelIntentQueryResult,
     )
 
 __all__ = [
@@ -153,9 +154,7 @@ class ProtocolIntentGraphAdapter(Protocol):
         self,
         session_id: str,
         intent_data: ModelIntentClassificationOutput,
-        correlation_id: UUID,
-        *,
-        user_context: str = "",
+        correlation_id: str,
     ) -> ModelIntentStorageResult:
         """Store an intent classification linked to a session.
 
@@ -167,7 +166,6 @@ class ProtocolIntentGraphAdapter(Protocol):
             session_id: Unique identifier for the session.
             intent_data: The intent classification output to store.
             correlation_id: Correlation ID for request tracing.
-            user_context: Optional user context string for the session.
 
         Returns:
             ModelIntentStorageResult indicating success or failure.
@@ -183,7 +181,7 @@ class ProtocolIntentGraphAdapter(Protocol):
     async def get_session_intents(
         self,
         session_id: str,
-        min_confidence: float | None = None,
+        min_confidence: float = 0.0,
         limit: int | None = None,
     ) -> ModelIntentQueryResult:
         """Get intents for a session with optional filtering.
@@ -199,19 +197,11 @@ class ProtocolIntentGraphAdapter(Protocol):
                 Defaults to implementation-specific maximum.
 
         Returns:
-            Local ``ModelIntentQueryResult`` with string-based status.
-            Possible status values:
-            - "success": Query completed with results
-            - "no_results": Session exists but has no intents matching criteria
-            - "not_found": Session not found (reserved for future use)
-            - "error": Query failed
+            Core ``ModelIntentQueryResult`` with bool success field.
 
         Note:
             This method never raises on business errors - it returns
-            an error status in the result model instead.  The local
-            ``ModelIntentQueryResult`` (string ``status``) is distinct
-            from the core ``ModelIntentQueryResult`` (boolean ``success``)
-            returned by ``ProtocolIntentGraph`` from ``omnibase_spi``.
+            success=False with error_message in the result model instead.
         """
         ...
 
@@ -220,7 +210,7 @@ class ProtocolIntentGraphAdapter(Protocol):
         time_range_hours: int = 24,
         min_confidence: float | None = None,
         limit: int | None = None,
-    ) -> ModelIntentQueryResult:
+    ) -> LocalModelIntentQueryResult:
         """Get recent intents across all sessions within a time range.
 
         Retrieves intent classifications created within the specified time
@@ -285,15 +275,10 @@ class ProtocolIntentGraphAdapter(Protocol):
         """
         ...
 
-    async def health_check(self) -> ModelIntentGraphHealth:
+    async def health_check(self) -> bool:
         """Check if the graph connection is healthy.
 
-        Performs connectivity check and optionally gathers graph
-        statistics (session and intent counts).
-
         Returns:
-            ModelIntentGraphHealth with detailed health status.
-            This method never raises - errors are captured in the
-            result model.
+            True if the graph is healthy and accessible, False otherwise.
         """
         ...

@@ -12,8 +12,6 @@ import logging
 from typing import Literal, Self
 from uuid import UUID
 
-# Runtime import required for Pydantic model validation
-# (TYPE_CHECKING imports are not available at runtime for field type resolution)
 from omnibase_core.models.intelligence import (
     ModelIntentClassificationOutput,  # noqa: TC002
 )
@@ -50,8 +48,9 @@ class ModelIntentStorageRequest(BaseModel):
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     operation: Literal["store", "get_session", "get_distribution"] = Field(

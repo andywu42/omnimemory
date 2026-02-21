@@ -21,10 +21,12 @@ class EnumContextSourceType(str, Enum):
             QUARANTINE tier.
         MEMORY_HOOK: Items derived from agent execution hook events
             (existing v0 system). Unchanged from v0 promotion rules.
+        MEMORY_PATTERN: Aggregated patterns extracted from MEMORY_HOOK items.
         LINEAR_TICKET: Issues and documents fetched from Linear.
     """
 
     STATIC_STANDARDS = "static_standards"
     REPO_DERIVED = "repo_derived"
     MEMORY_HOOK = "memory_hook"
+    MEMORY_PATTERN = "memory_pattern"
     LINEAR_TICKET = "linear_ticket"

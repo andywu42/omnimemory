@@ -43,6 +43,7 @@ Example::
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -87,8 +88,9 @@ class ModelIntentClassificationOutput(  # omnimemory-model-exempt: adapter inter
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     intent_category: str = Field(
@@ -105,7 +107,7 @@ class ModelIntentClassificationOutput(  # omnimemory-model-exempt: adapter inter
         le=1.0,
         description="Confidence score from 0.0 (no confidence) to 1.0 (full confidence)",
     )
-    keywords: list[str] = Field(
+    keywords: Sequence[str] = Field(
         default_factory=list,
         description="Keywords extracted from the text that contributed to classification",
     )
@@ -116,7 +118,7 @@ class ModelIntentClassificationOutput(  # omnimemory-model-exempt: adapter inter
             "use only; not stored in the graph database."
         ),
     )
-    metadata: dict[str, JsonType] = Field(
+    metadata: Mapping[str, JsonType] = Field(
         default_factory=dict,
         description=(
             "Additional key-value metadata (e.g., model version, timestamp). "
@@ -145,8 +147,9 @@ class ModelIntentStorageResult(BaseModel):  # omnimemory-model-exempt: adapter i
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     status: Literal["success", "error"] = Field(
@@ -179,19 +182,14 @@ class ModelIntentStorageResult(BaseModel):  # omnimemory-model-exempt: adapter i
 class ModelIntentRecord(BaseModel):  # omnimemory-model-exempt: adapter internal
     """A single intent record returned from query operations.
 
-    This is the handler-local version, distinct from the identically-named
-    ``ModelIntentRecord`` in ``omnibase_core.models.intelligence``.  The core
-    model is used by the adapter/protocol layer and carries richer typing
-    (e.g., ``EnumIntentCategory`` enum values).  This local version serves
-    the handler's public API surface, exposing simplified string-based fields
-    that are easier for callers to consume without depending on core enums.
-
     Represents an intent classification that was previously stored in the
-    graph database, including its metadata and timestamps.
+    graph database, including its metadata and timestamps. Exposes
+    simplified string-based fields so callers do not depend on internal
+    enum types.
 
     Attributes:
         intent_id: Unique identifier (UUID) for the intent node in the graph.
-        session_ref: Optional session reference this intent belongs to, used
+        session_ref: Session reference this intent belongs to, used
             for mapping to ModelIntentRecordPayload.
         intent_category: The classified intent category.
         confidence: Confidence score from the original classification.
@@ -202,16 +200,17 @@ class ModelIntentRecord(BaseModel):  # omnimemory-model-exempt: adapter internal
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     intent_id: UUID = Field(
         ...,
         description="Unique identifier for the intent node",
     )
-    session_ref: str | None = Field(
-        default=None,
+    session_ref: str = Field(
+        ...,
         description="Session reference this intent belongs to",
     )
     intent_category: str = Field(
@@ -224,7 +223,7 @@ class ModelIntentRecord(BaseModel):  # omnimemory-model-exempt: adapter internal
         le=1.0,
         description="Confidence score from 0.0 to 1.0",
     )
-    keywords: list[str] = Field(
+    keywords: Sequence[str] = Field(
         default_factory=list,
         description="Keywords associated with this intent",
     )
@@ -241,16 +240,10 @@ class ModelIntentRecord(BaseModel):  # omnimemory-model-exempt: adapter internal
 class ModelIntentQueryResult(BaseModel):  # omnimemory-model-exempt: adapter internal
     """Result of an intent query operation.
 
-    This is the handler-local version, distinct from the identically-named
-    ``ModelIntentQueryResult`` in ``omnibase_core.models.intelligence``.  The
-    core model is used by the adapter/protocol layer and carries a boolean
-    ``success`` field plus typed intent records.  This local version serves
-    the handler's public API surface, using a string ``status`` literal
+    Returned by adapter query operations to provide the list of intents
+    associated with a session. Uses a string ``status`` literal
     (``"success"``, ``"error"``, ``"not_found"``, ``"no_results"``) to give
-    callers more granular outcome information without depending on core types.
-
-    Returned by ``HandlerIntent.query_session()`` to provide the list of
-    intents associated with a session.
+    callers granular outcome information.
 
     Attributes:
         status: Query status indicating the outcome:
@@ -266,15 +259,16 @@ class ModelIntentQueryResult(BaseModel):  # omnimemory-model-exempt: adapter int
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     status: Literal["success", "error", "not_found", "no_results"] = Field(
         ...,
         description="Query status: 'success', 'error', 'not_found', or 'no_results'",
     )
-    intents: list[ModelIntentRecord] = Field(
+    intents: Sequence[ModelIntentRecord] = Field(
         default_factory=list,
         description="Intent records found, ordered by creation time",
     )
@@ -312,15 +306,16 @@ class ModelIntentDistributionResult(  # omnimemory-model-exempt: adapter interna
     """
 
     model_config = ConfigDict(
+        frozen=True,
         extra="forbid",
-        validate_assignment=True,
+        from_attributes=True,
     )
 
     status: Literal["success", "error"] = Field(
         ...,
         description="Query status - 'success' or 'error'",
     )
-    distribution: dict[str, int] = Field(
+    distribution: Mapping[str, int] = Field(
         default_factory=dict,
         description="Intent category counts",
     )

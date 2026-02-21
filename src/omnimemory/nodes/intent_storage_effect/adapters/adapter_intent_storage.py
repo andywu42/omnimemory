@@ -191,13 +191,15 @@ class HandlerIntentStorageAdapter:
             - ValueError: Invalid input data or configuration
             - Exception: Any other unexpected errors
         """
+        start_time = time.perf_counter()
+
         if not self._initialized or self._adapter is None:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
             return ModelIntentStorageResponse(
                 status="error",
                 error_message="Adapter not initialized. Call initialize() first.",
+                execution_time_ms=elapsed_ms,
             )
-
-        start_time = time.perf_counter()
         response: ModelIntentStorageResponse
 
         try:
@@ -363,15 +365,15 @@ class HandlerIntentStorageAdapter:
                 total_count=0,
             )
 
-        # Convert core ModelIntentRecord to response model format
+        # Convert local ModelIntentRecord to response model format
         intents: list[ModelIntentRecordResponse] = []
         for intent in result.intents:
             intents.append(
                 ModelIntentRecordResponse(
                     intent_id=intent.intent_id,
-                    intent_category=intent.intent_category.value,
+                    intent_category=intent.intent_category,
                     confidence=intent.confidence,
-                    keywords=intent.keywords,
+                    keywords=list(intent.keywords),
                     created_at_utc=intent.created_at.isoformat(),
                     correlation_id=intent.correlation_id,
                 )
@@ -408,7 +410,7 @@ class HandlerIntentStorageAdapter:
         if result.status == "success":
             return ModelIntentStorageResponse(
                 status="success",
-                distribution=result.distribution,
+                distribution=dict(result.distribution),
                 total_intents=result.total_intents,
                 time_range_hours=result.time_range_hours,
                 execution_time_ms=result.execution_time_ms,

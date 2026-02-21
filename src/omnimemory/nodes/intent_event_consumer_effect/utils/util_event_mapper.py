@@ -4,7 +4,9 @@ Maps incoming intent-classified events to storage requests.
 """
 
 from omnibase_core.enums.intelligence import EnumIntentCategory
-from omnibase_core.models.intelligence import ModelIntentClassificationOutput
+from omnibase_core.models.intelligence import (
+    ModelIntentClassificationOutput,
+)
 
 from omnimemory.models.events import ModelIntentClassifiedEvent
 from omnimemory.nodes.intent_storage_effect.models import ModelIntentStorageRequest
@@ -20,10 +22,13 @@ def map_event_to_storage_request(
 
     Returns:
         A storage request ready for HandlerIntentStorageAdapter.
+
+    Note:
+        Unknown intent_category values (from newer omniintelligence versions) are
+        mapped to EnumIntentCategory.UNKNOWN for forward compatibility.
     """
-    # Convert event intent_category string to EnumIntentCategory
     try:
-        intent_category = EnumIntentCategory(event.intent_category)
+        intent_category: EnumIntentCategory = EnumIntentCategory(event.intent_category)
     except ValueError:
         intent_category = EnumIntentCategory.UNKNOWN
 
