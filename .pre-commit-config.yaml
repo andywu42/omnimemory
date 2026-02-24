@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025 OmniNode.ai Inc.
+# SPDX-License-Identifier: MIT
 ---
 # OmniMemory Pre-commit Configuration
 # Aligned with ONEX ecosystem standards from omnibase_core
@@ -33,14 +35,14 @@
 # migration-freeze-check (pre-commit)| migration-freeze        | ./scripts/check_migration_freeze.sh [--ci]
 # ruff-format (pre-commit)          | lint                     | ruff format --check src/ tests/
 # ruff (pre-commit)                 | lint                     | ruff check src/ tests/
-# mypy (pre-push)                   | lint                     | mypy --show-error-codes --no-error-summary src/omnimemory
-# pyright (pre-push)                | pyright                  | pyright src/omnimemory
+# mypy-type-check (pre-push)        | lint                     | mypy --show-error-codes --no-error-summary src/omnimemory
+# pyright-type-check (pre-push)     | pyright                  | pyright src/omnimemory
 # validate-pydantic-patterns        | onex-validation          | python scripts/validation/validate_pydantic_patterns.py src/
 # validate-single-class-per-file    | onex-validation          | python scripts/validation/validate_single_class_per_file.py src/omnimemory/models/
 # validate-enum-casing              | onex-validation          | python scripts/validation/validate_enum_casing.py src/omnimemory/enums/
 # validate-no-backward-compatibility| onex-validation          | python scripts/validation/validate_no_backward_compatibility.py -d src/
 # validate-secrets                  | onex-validation          | python scripts/validation/validate_secrets.py src/
-# validate-naming-conventions       | onex-validation          | python scripts/validation/validate_naming.py src/
+# onex-validate-naming              | onex-validation          | python scripts/validation/validate_naming.py src/
 # validate-http-imports             | onex-validation          | python scripts/validation/validate_http_imports.py src/
 # validate-kafka-imports            | onex-validation          | python scripts/validation/validate_kafka_imports.py src/
 # validate-model-locations          | onex-validation          | python scripts/validation/validate_model_locations.py src/
@@ -144,7 +146,7 @@ repos:
   # pick up pyproject.toml overrides for redis modules.
   - repo: local
     hooks:
-      - id: mypy
+      - id: mypy-type-check
         name: mypy (type checking - strict)
         # SYNCHRONIZED WITH CI: Identical to .github/workflows/test.yml lint job
         entry: poetry run mypy --show-error-codes --no-error-summary src/omnimemory
@@ -157,7 +159,7 @@ repos:
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.391
     hooks:
-      - id: pyright
+      - id: pyright-type-check
         name: pyright (type checking - basic)
         # SYNCHRONIZED WITH CI: Must match .github/workflows/test.yml pyright job
         # Uses pyrightconfig.json for project-level settings
@@ -190,7 +192,7 @@ repos:
         stages: [pre-commit]
 
       # Cleanup: Clear tmp/ directory before commits
-      - id: clean-tmp-directory
+      - id: onex-validate-clean-root
         name: Clean tmp directory
         entry: bash -c "rm -rf tmp/* 2>/dev/null || true"
         language: system
@@ -253,7 +255,7 @@ repos:
       # Naming Convention Validation
       # SYNCHRONIZED WITH CI: Runs at pre-commit stage to match CI Phase 1
       # Both local and CI validate naming conventions at the same point
-      - id: validate-naming-conventions
+      - id: onex-validate-naming
         name: ONEX Naming Convention Validation
         entry: python scripts/validation/validate_naming.py
         args: ['src/']
@@ -361,6 +363,20 @@ repos:
         pass_filenames: false
         types: [python]
         files: ^(src/omnimemory/nodes/|src/omnimemory/audit/)
+        stages: [pre-commit]
+
+      - id: no-internal-ips
+        name: Block hardcoded internal IPs
+        language: system
+        entry: >
+          bash -c 'grep -rInE
+          --include="*.py" --include="*.sh" --include="*.yml"
+          --include="*.yaml" --include="*.toml" --include="*.md"
+          "(192\.168\.|10\.(0|1|2)\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)"
+          src/ tests/ docs/ .github/ 2>/dev/null
+          | grep -v "onex-allow-internal-ip"
+          && echo "ERROR: hardcoded internal IP found (add # onex-allow-internal-ip to suppress)" && exit 1 || exit 0'
+        pass_filenames: false
         stages: [pre-commit]
 
 # Configuration
