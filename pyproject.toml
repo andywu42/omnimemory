@@ -6,7 +6,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "omnimemory"
+name = "omninode-memory"
 version = "0.4.0"
 description = "OmniNode document ingestion and semantic retrieval"
 readme = "README.md"

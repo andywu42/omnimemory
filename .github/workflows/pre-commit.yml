@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      # SKIP hooks that require the full project installed (poetry + omnimemory).
+      # SKIP hooks that require the full project installed (uv + omnimemory).
       # These hooks have dedicated CI jobs in .github/workflows/test.yml:
       #   - contract-linter  -> contract-validation job
       #   - io-audit         -> io-audit job
