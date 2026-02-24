@@ -42,7 +42,7 @@ EXPECTED_ALIGNMENTS: list[tuple[str, str, str]] = [
     ("ruff-format", "lint", "ruff format --check"),
     ("ruff", "lint", "ruff check"),
     ("mypy-type-check", "lint", "mypy"),
-    ("pyright-type-check", "pyright", "pyright"),
+    ("pyright", "pyright", "pyright"),
     # ONEX validation hooks
     ("validate-pydantic-patterns", "onex-validation", "validate_pydantic_patterns.py"),
     (
