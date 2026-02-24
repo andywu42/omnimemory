@@ -1,4 +1,6 @@
+# SPDX-FileCopyrightText: 2025 OmniNode.ai Inc.
 # SPDX-License-Identifier: MIT
+
 # Copyright (c) 2025 OmniNode Team
 """Unit tests for HandlerFilesystemCrawler.
 
@@ -104,12 +106,10 @@ def make_mock_repo() -> MagicMock:
     return repo
 
 
-def make_publish_capture() -> (
-    tuple[
-        Callable[[str, dict[str, object]], Coroutine[object, object, None]],
-        list[PublishRecord],
-    ]
-):
+def make_publish_capture() -> tuple[
+    Callable[[str, dict[str, object]], Coroutine[object, object, None]],
+    list[PublishRecord],
+]:
     published: list[PublishRecord] = []
 
     async def capture(topic: str, payload: dict[str, object]) -> None:
