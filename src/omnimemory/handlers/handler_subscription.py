@@ -128,6 +128,9 @@ from omnimemory.runtime.adapters import (
 
 if TYPE_CHECKING:
     from omnibase_core.container import ModelONEXContainer
+    from omnibase_infra.handlers.handler_db import HandlerDb as _DbHandlerType
+else:
+    _DbHandlerType = object
 
 
 logger = logging.getLogger(__name__)
@@ -145,15 +148,22 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Local protocol for database handler decoupling (GAP-002 / OMN-2816)
 # ---------------------------------------------------------------------------
-# Instead of importing HandlerDb directly from omnibase_infra, we define the
-# minimal interface as a Protocol and resolve the concrete class lazily via
-# importlib.  This removes the hard coupling to omnibase_infra at import time.
+# Instead of importing HandlerDb directly from omnibase_infra at module
+# level, we:
+#   1. Import HandlerDb only inside TYPE_CHECKING so mypy still resolves
+#      the concrete type (via ignore_missing_imports -> Any).
+#   2. Define a runtime-checkable _DbHandlerProtocol for construction-time
+#      validation.
+#   3. Resolve the concrete class lazily via importlib in
+#      _create_db_handler().
+# This removes the hard import-time coupling while preserving both type
+# safety and runtime validation.
 # ---------------------------------------------------------------------------
 
 
 @runtime_checkable
 class _DbHandlerProtocol(Protocol):
-    """Minimal interface required from the database handler."""
+    """Minimal runtime-checkable interface for the database handler."""
 
     async def initialize(self, config: dict[str, object]) -> None: ...
 
@@ -162,11 +172,11 @@ class _DbHandlerProtocol(Protocol):
     async def shutdown(self) -> None: ...
 
 
-def _create_db_handler() -> _DbHandlerProtocol:
+def _create_db_handler() -> _DbHandlerType:
     """Lazily resolve the concrete HandlerDb class via importlib.
 
     Returns:
-        An instance satisfying ``_DbHandlerProtocol``.
+        An instance of ``HandlerDb`` (typed as ``_DbHandlerType`` for mypy).
 
     Raises:
         ImportError: If omnibase_infra is not installed or the handler
@@ -523,7 +533,7 @@ class HandlerSubscription:
         """
         self._container = container
         self._config: ModelHandlerSubscriptionConfig | None = None
-        self._db_handler: _DbHandlerProtocol | None = None
+        self._db_handler: _DbHandlerType | None = None
         self._event_bus: ProtocolEventBusPublish | None = None
         self._event_bus_lifecycle: ProtocolEventBusLifecycle | None = None
         self._event_bus_health: ProtocolEventBusHealthCheck | None = None
@@ -714,7 +724,7 @@ class HandlerSubscription:
         self,
     ) -> tuple[
         AdapterValkey,
-        _DbHandlerProtocol,
+        _DbHandlerType,
         AdapterKafkaPublisher,
         ModelHandlerSubscriptionConfig,
     ]:
