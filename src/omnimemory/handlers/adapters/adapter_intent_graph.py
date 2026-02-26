@@ -62,6 +62,7 @@ Example::
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import time
 from collections.abc import Mapping
@@ -86,7 +87,9 @@ from omnibase_core.models.intelligence import (
     ModelIntentStorageResult as CoreModelIntentStorageResult,
 )
 from omnibase_core.types.type_json import JsonType
-from omnibase_infra.handlers.handler_graph import HandlerGraph
+from omnibase_spi.protocols.storage.protocol_graph_database_handler import (
+    ProtocolGraphDatabaseHandler,
+)
 
 from omnimemory.handlers.adapters.models import (
     ModelAdapterIntentGraphConfig,
@@ -102,6 +105,36 @@ from omnimemory.protocols.protocol_intent_graph_adapter import (
 __all__ = ["AdapterIntentGraph", "IntentCypherTemplates"]
 
 logger = logging.getLogger(__name__)
+
+
+def _create_graph_handler(
+    container: ModelONEXContainer,
+) -> ProtocolGraphDatabaseHandler:
+    """Lazily resolve and instantiate the concrete HandlerGraph at runtime.
+
+    Uses ``importlib`` to import the concrete ``HandlerGraph`` class from
+    ``omnibase_infra`` so that this module depends only on the SPI protocol
+    at import time, not on the concrete infrastructure implementation.
+
+    Args:
+        container: The ONEX container for dependency injection.
+
+    Returns:
+        A concrete handler instance satisfying ProtocolGraphDatabaseHandler.
+
+    Raises:
+        RuntimeError: If the concrete class cannot be imported or instantiated.
+    """
+    try:
+        module = importlib.import_module("omnibase_infra.handlers.handler_graph")
+        handler_cls = module.HandlerGraph
+    except (ImportError, AttributeError) as e:
+        raise RuntimeError(
+            "Failed to resolve concrete HandlerGraph from omnibase_infra. "
+            "Ensure omnibase_infra is installed."
+        ) from e
+    handler: ProtocolGraphDatabaseHandler = handler_cls(container)
+    return handler
 
 
 class IntentCypherTemplates:
@@ -253,7 +286,7 @@ class IntentCypherTemplates:
 
 
 class AdapterIntentGraph(ProtocolIntentGraphAdapter):
-    """Adapter that wraps HandlerGraph for intent classification storage.
+    """Adapter that wraps a ProtocolGraphDatabaseHandler for intent classification storage.
 
     Implements the ProtocolIntentGraphAdapter protocol from
     omnimemory.protocols.protocol_intent_graph_adapter, providing a
@@ -283,7 +316,7 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
 
     Attributes:
         config: The adapter configuration.
-        handler: The underlying HandlerGraph instance.
+        handler: The underlying ProtocolGraphDatabaseHandler instance.
 
     Example::
 
@@ -335,7 +368,7 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
         """
         self._config = config
         self._container = container
-        self._handler: HandlerGraph | None = None
+        self._handler: ProtocolGraphDatabaseHandler | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
 
@@ -371,7 +404,7 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
         return self._config
 
     @property
-    def handler(self) -> HandlerGraph | None:
+    def handler(self) -> ProtocolGraphDatabaseHandler | None:
         """Get the underlying graph handler (None if not initialized)."""
         return self._handler
 
@@ -403,7 +436,7 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
         Args:
             connection_uri: Graph database URI (e.g., "bolt://localhost:7687").
             auth: Optional (username, password) tuple for authentication.
-            options: Additional connection options passed to HandlerGraph.
+            options: Additional connection options passed to the graph handler.
 
         Raises:
             RuntimeError: If initialization fails or times out.
@@ -436,8 +469,8 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
                         if self._container is None:
                             self._container = ModelONEXContainer()
 
-                        # Create and initialize handler
-                        self._handler = HandlerGraph(self._container)
+                        # Create and initialize handler via lazy resolution
+                        self._handler = _create_graph_handler(self._container)
                         # Assert for type narrowing: pyright doesn't narrow instance
                         # attributes after assignment due to potential concurrent modification
                         assert self._handler is not None
@@ -557,11 +590,11 @@ class AdapterIntentGraph(ProtocolIntentGraphAdapter):
             self._initialized = False
             logger.info("AdapterIntentGraph shutdown complete")
 
-    def _ensure_initialized(self) -> HandlerGraph:
+    def _ensure_initialized(self) -> ProtocolGraphDatabaseHandler:
         """Ensure adapter is initialized and return handler.
 
         Returns:
-            The initialized HandlerGraph.
+            The initialized ProtocolGraphDatabaseHandler.
 
         Raises:
             RuntimeError: If adapter is not initialized.

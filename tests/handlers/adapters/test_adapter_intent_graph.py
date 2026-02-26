@@ -763,7 +763,7 @@ class TestLifecycle:
         adapter = AdapterIntentGraph(config)
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -788,7 +788,7 @@ class TestLifecycle:
         adapter = AdapterIntentGraph(config)
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -877,7 +877,7 @@ class TestLifecycle:
         ]
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -923,7 +923,7 @@ class TestLifecycle:
         adapter = AdapterIntentGraph(config)
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -953,7 +953,7 @@ class TestLifecycle:
         adapter = AdapterIntentGraph(config)
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -979,7 +979,7 @@ class TestLifecycle:
         adapter = AdapterIntentGraph(config)
 
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
@@ -1056,7 +1056,7 @@ class TestContextManager:
     ) -> None:
         """Test full lifecycle with context manager: create, initialize, use, shutdown."""
         with patch(
-            "omnimemory.handlers.adapters.adapter_intent_graph.HandlerGraph"
+            "omnimemory.handlers.adapters.adapter_intent_graph._create_graph_handler"
         ) as MockHandler:
             mock_instance = MagicMock()
             mock_instance.initialize = AsyncMock()
