@@ -98,14 +98,14 @@ Example::
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
-from omnibase_infra.handlers.handler_db import HandlerDb
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from omnimemory.enums.enum_subscription_status import EnumSubscriptionStatus
@@ -128,6 +128,9 @@ from omnimemory.runtime.adapters import (
 
 if TYPE_CHECKING:
     from omnibase_core.container import ModelONEXContainer
+    from omnibase_infra.handlers.handler_db import HandlerDb as _DbHandlerType
+else:
+    _DbHandlerType = object
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +143,57 @@ __all__ = [
     "ModelSubscriptionMetadata",
     "ModelSubscriptionMetrics",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Local protocol for database handler decoupling (GAP-002 / OMN-2816)
+# ---------------------------------------------------------------------------
+# Instead of importing HandlerDb directly from omnibase_infra at module
+# level, we:
+#   1. Import HandlerDb only inside TYPE_CHECKING so mypy still resolves
+#      the concrete type (via ignore_missing_imports -> Any).
+#   2. Define a runtime-checkable _DbHandlerProtocol for construction-time
+#      validation.
+#   3. Resolve the concrete class lazily via importlib in
+#      _create_db_handler().
+# This removes the hard import-time coupling while preserving both type
+# safety and runtime validation.
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class _DbHandlerProtocol(Protocol):
+    """Minimal runtime-checkable interface for the database handler."""
+
+    async def initialize(self, config: dict[str, object]) -> None: ...
+
+    async def execute(self, envelope: dict[str, object]) -> object: ...
+
+    async def shutdown(self) -> None: ...
+
+
+def _create_db_handler() -> _DbHandlerType:
+    """Lazily resolve the concrete HandlerDb class via importlib.
+
+    Returns:
+        An instance of ``HandlerDb`` (typed as ``_DbHandlerType`` for mypy).
+
+    Raises:
+        ImportError: If omnibase_infra is not installed or the handler
+            module cannot be found.
+        AttributeError: If the module does not expose ``HandlerDb``.
+    """
+    module = importlib.import_module("omnibase_infra.handlers.handler_db")
+    cls_name = "HandlerDb"
+    handler_cls = getattr(module, cls_name)
+    instance: object = handler_cls()
+    # Validate at construction time so callers get a clear error early.
+    if not isinstance(instance, _DbHandlerProtocol):
+        raise TypeError(
+            f"{handler_cls.__qualname__} does not satisfy _DbHandlerProtocol"
+        )
+    return instance
+
 
 # Cache key patterns
 CACHE_KEY_TOPIC_SUBSCRIBERS = "topic:{topic}:subscribers"
@@ -479,7 +533,7 @@ class HandlerSubscription:
         """
         self._container = container
         self._config: ModelHandlerSubscriptionConfig | None = None
-        self._db_handler: HandlerDb | None = None
+        self._db_handler: _DbHandlerType | None = None
         self._event_bus: ProtocolEventBusPublish | None = None
         self._event_bus_lifecycle: ProtocolEventBusLifecycle | None = None
         self._event_bus_health: ProtocolEventBusHealthCheck | None = None
@@ -569,7 +623,7 @@ class HandlerSubscription:
                 logger.info("Valkey adapter initialized")
 
                 # Initialize DB handler
-                self._db_handler = HandlerDb()
+                self._db_handler = _create_db_handler()
                 await self._db_handler.initialize(
                     {
                         "dsn": self._config.db_dsn.get_secret_value(),
@@ -669,7 +723,10 @@ class HandlerSubscription:
     def _ensure_initialized(
         self,
     ) -> tuple[
-        AdapterValkey, HandlerDb, AdapterKafkaPublisher, ModelHandlerSubscriptionConfig
+        AdapterValkey,
+        _DbHandlerType,
+        AdapterKafkaPublisher,
+        ModelHandlerSubscriptionConfig,
     ]:
         """Ensure handler is initialized and return components.
 
