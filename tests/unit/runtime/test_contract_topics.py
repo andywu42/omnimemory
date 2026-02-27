@@ -48,6 +48,9 @@ EXPECTED_RUNTIME_TICK = "onex.cmd.omnimemory.runtime-tick.v1"
 EXPECTED_ARCHIVE_MEMORY = "onex.cmd.omnimemory.archive-memory.v1"
 EXPECTED_EXPIRE_MEMORY = "onex.cmd.omnimemory.expire-memory.v1"
 
+# filesystem_crawler_effect
+EXPECTED_CRAWL_TICK = "onex.cmd.omnimemory.crawl-tick.v1"
+
 EXPECTED_SUBSCRIBE_TOPICS = {
     EXPECTED_INTENT_CLASSIFIED,
     EXPECTED_INTENT_QUERY_REQUESTED,
@@ -55,6 +58,7 @@ EXPECTED_SUBSCRIBE_TOPICS = {
     EXPECTED_RUNTIME_TICK,
     EXPECTED_ARCHIVE_MEMORY,
     EXPECTED_EXPIRE_MEMORY,
+    EXPECTED_CRAWL_TICK,
 }
 
 # =============================================================================
@@ -68,6 +72,7 @@ EXPECTED_DISPATCH_MAP = {
     "memory_retrieval": "onex.evt.omnimemory.memory-retrieval-response.v1",
     "memory_storage": "onex.evt.omnimemory.memory-stored.v1",
     "memory_lifecycle": "onex.evt.omnimemory.memory-expired.v1",
+    "filesystem_crawler": "onex.evt.omnimemory.document-discovered.v1",
 }
 
 # =============================================================================
@@ -94,6 +99,11 @@ EXPECTED_ALL_PUBLISH_TOPICS = {
     "onex.evt.omnimemory.memory-archived.v1",
     "onex.evt.omnimemory.memory-archive-initiated.v1",
     "onex.evt.omnimemory.lifecycle-transition-failed.v1",
+    # filesystem_crawler_effect
+    "onex.evt.omnimemory.document-discovered.v1",
+    "onex.evt.omnimemory.document-changed.v1",
+    "onex.evt.omnimemory.document-removed.v1",
+    "onex.evt.omnimemory.document-indexed.v1",
 }
 
 
@@ -106,10 +116,10 @@ EXPECTED_ALL_PUBLISH_TOPICS = {
 class TestCollectSubscribeTopics:
     """Validate contract-driven subscribe topic collection."""
 
-    def test_returns_exactly_six_topics(self) -> None:
-        """All omnimemory nodes declare 6 subscribe topics total."""
+    def test_returns_exactly_seven_topics(self) -> None:
+        """All omnimemory nodes declare 7 subscribe topics total."""
         topics = collect_subscribe_topics_from_contracts()
-        assert len(topics) == 6
+        assert len(topics) == 7
 
     def test_contains_intent_classified_topic(self) -> None:
         """Intent classified topic from intent_event_consumer_effect."""
@@ -140,6 +150,11 @@ class TestCollectSubscribeTopics:
         """Expire memory command topic from memory_lifecycle_orchestrator."""
         topics = collect_subscribe_topics_from_contracts()
         assert EXPECTED_EXPIRE_MEMORY in topics
+
+    def test_contains_crawl_tick_topic(self) -> None:
+        """Crawl tick command topic from filesystem_crawler_effect."""
+        topics = collect_subscribe_topics_from_contracts()
+        assert EXPECTED_CRAWL_TICK in topics
 
     def test_all_expected_topics_present(self) -> None:
         """All 6 expected subscribe topics must be in the discovered set."""
@@ -446,9 +461,16 @@ class TestNodePackageRegistry:
             in _OMNIMEMORY_EVENT_BUS_NODE_PACKAGES
         )
 
-    def test_exactly_six_packages(self) -> None:
-        """Exactly 6 omnimemory nodes have event_bus enabled."""
-        assert len(_OMNIMEMORY_EVENT_BUS_NODE_PACKAGES) == 6
+    def test_contains_filesystem_crawler(self) -> None:
+        """filesystem_crawler_effect must be in the package list."""
+        assert (
+            "omnimemory.nodes.filesystem_crawler_effect"
+            in _OMNIMEMORY_EVENT_BUS_NODE_PACKAGES
+        )
+
+    def test_exactly_seven_packages(self) -> None:
+        """Exactly 7 omnimemory nodes have event_bus enabled."""
+        assert len(_OMNIMEMORY_EVENT_BUS_NODE_PACKAGES) == 7
 
 
 # =============================================================================

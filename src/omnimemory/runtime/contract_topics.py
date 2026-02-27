@@ -46,6 +46,7 @@ _OMNIMEMORY_EVENT_BUS_NODE_PACKAGES: list[str] = [
     "omnimemory.nodes.memory_retrieval_effect",
     "omnimemory.nodes.memory_storage_effect",
     "omnimemory.nodes.memory_lifecycle_orchestrator",
+    "omnimemory.nodes.filesystem_crawler_effect",  # OMN-2901: crawl-tick.v1 subscription
 ]
 
 
