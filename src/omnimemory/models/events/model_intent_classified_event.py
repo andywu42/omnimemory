@@ -25,7 +25,10 @@ class ModelIntentClassifiedEvent(BaseModel):
         "IntentClassified", description="Event type discriminator for message routing"
     )
     session_id: str = Field(..., min_length=1, description="Session identifier")
-    correlation_id: UUID = Field(..., description="Correlation ID for tracing")
+    correlation_id: UUID | None = Field(
+        default=None,
+        description="Correlation ID for tracing. Optional to match upstream ModelPatternLifecycleEvent (OMN-2841).",
+    )
     intent_category: str = Field(
         ..., min_length=1, description="Classified intent category"
     )

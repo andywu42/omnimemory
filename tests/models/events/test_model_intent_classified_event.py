@@ -98,6 +98,44 @@ class TestModelIntentClassifiedEventJsonDeserialization:
 
         assert event.keywords == ()
 
+    def test_accepts_null_correlation_id(self) -> None:
+        """Ensure null correlation_id is accepted (OMN-2841).
+
+        omniintelligence publishes ModelPatternLifecycleEvent with
+        correlation_id: UUID | None. This consumer must not fail when
+        the upstream omits correlation_id or sends null.
+        """
+        data = {
+            "event_type": "IntentClassified",
+            "session_id": "sess-null-corr",
+            "correlation_id": None,
+            "intent_category": "debugging",
+            "confidence": 0.9,
+            "timestamp": "2026-01-27T18:00:00+00:00",
+        }
+        event = ModelIntentClassifiedEvent.model_validate(data)
+
+        assert event.correlation_id is None
+        assert event.session_id == "sess-null-corr"
+
+    def test_accepts_absent_correlation_id(self) -> None:
+        """Ensure missing correlation_id defaults to None (OMN-2841).
+
+        If the upstream event omits the field entirely, deserialization
+        must succeed with correlation_id defaulting to None.
+        """
+        data = {
+            "event_type": "IntentClassified",
+            "session_id": "sess-no-corr",
+            "intent_category": "debugging",
+            "confidence": 0.88,
+            "timestamp": "2026-01-27T18:30:00+00:00",
+        }
+        event = ModelIntentClassifiedEvent.model_validate(data)
+
+        assert event.correlation_id is None
+        assert event.session_id == "sess-no-corr"
+
 
 @pytest.mark.unit
 class TestModelIntentClassifiedEventValidation:
