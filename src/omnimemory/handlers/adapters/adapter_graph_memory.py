@@ -4,10 +4,10 @@
 # Copyright (c) 2025 OmniNode Team
 """Graph Handler Adapter for relationship-based memory queries.
 
-This module provides an adapter that wraps `HandlerGraph` from omnibase_infra
-to support memory-specific graph operations. It enables "memories related to X"
-queries via graph traversal, translating between memory domain concepts and
-graph database operations.
+This module provides an adapter that wraps a ``ProtocolGraphDatabaseHandler``
+from omnibase_spi to support memory-specific graph operations. It enables
+"memories related to X" queries via graph traversal, translating between
+memory domain concepts and graph database operations.
 
 The adapter transforms memory operations into graph operations:
     - find_related(memory_id) -> execute_query() with BFS traversal
@@ -49,20 +49,24 @@ from __future__ import annotations
 
 import asyncio
 import heapq
+import importlib
 import logging
 import random
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from typing import TypeVar
+from typing import TypeVar, cast
 from urllib.parse import urlparse
 
 from omnibase_core.container import ModelONEXContainer
+from omnibase_core.types.type_json import JsonType
 from omnibase_infra.errors import (
     InfraConnectionError,
     InfraTimeoutError,
     InfraUnavailableError,
 )
-from omnibase_infra.handlers.handler_graph import HandlerGraph
+from omnibase_spi.protocols.storage.protocol_graph_database_handler import (
+    ProtocolGraphDatabaseHandler,
+)
 
 from omnimemory.models.adapters import (
     ModelConnectionsResult,
@@ -87,6 +91,37 @@ _TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
     InfraTimeoutError,
     InfraUnavailableError,
 )
+
+
+def _create_graph_handler(
+    container: ModelONEXContainer,
+) -> ProtocolGraphDatabaseHandler:
+    """Lazily resolve and instantiate the concrete HandlerGraph at runtime.
+
+    Uses ``importlib`` to import the concrete ``HandlerGraph`` class from
+    ``omnibase_infra`` so that this module depends only on the SPI protocol
+    at import time, not on the concrete infrastructure implementation.
+
+    Args:
+        container: The ONEX container for dependency injection.
+
+    Returns:
+        A concrete handler instance satisfying ProtocolGraphDatabaseHandler.
+
+    Raises:
+        RuntimeError: If the concrete class cannot be imported or instantiated.
+    """
+    try:
+        module = importlib.import_module("omnibase_infra.handlers.handler_graph")
+        handler_cls = module.HandlerGraph
+    except (ImportError, AttributeError) as e:
+        raise RuntimeError(
+            "Failed to resolve concrete HandlerGraph from omnibase_infra. "
+            "Ensure omnibase_infra is installed."
+        ) from e
+    handler: ProtocolGraphDatabaseHandler = handler_cls(container)
+    return handler
+
 
 __all__ = [
     "AdapterGraphMemory",
@@ -338,7 +373,7 @@ class CypherTemplates:
 
 
 class AdapterGraphMemory:
-    """Adapter that wraps HandlerGraph for memory-specific graph operations.
+    """Adapter that wraps a ProtocolGraphDatabaseHandler for memory-specific graph operations.
 
     This adapter provides a memory-domain interface on top of the generic
     graph handler, translating memory operations into graph queries:
@@ -354,7 +389,7 @@ class AdapterGraphMemory:
 
     Attributes:
         config: The adapter configuration.
-        handler: The underlying HandlerGraph instance.
+        handler: The underlying ProtocolGraphDatabaseHandler instance.
 
     Example::
 
@@ -387,7 +422,7 @@ class AdapterGraphMemory:
         """
         self._config = config
         self._container = container
-        self._handler: HandlerGraph | None = None
+        self._handler: ProtocolGraphDatabaseHandler | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
 
@@ -397,7 +432,7 @@ class AdapterGraphMemory:
         return self._config
 
     @property
-    def handler(self) -> HandlerGraph | None:
+    def handler(self) -> ProtocolGraphDatabaseHandler | None:
         """Get the underlying graph handler (None if not initialized)."""
         return self._handler
 
@@ -411,7 +446,7 @@ class AdapterGraphMemory:
         connection_uri: str,
         auth: tuple[str, str] | None = None,
         *,
-        options: Mapping[str, object] | None = None,
+        options: Mapping[str, JsonType] | None = None,
     ) -> None:
         """Initialize the adapter and underlying graph handler.
 
@@ -421,7 +456,7 @@ class AdapterGraphMemory:
         Args:
             connection_uri: Graph database URI (e.g., "bolt://localhost:7687").
             auth: Optional (username, password) tuple for authentication.
-            options: Additional connection options passed to HandlerGraph.
+            options: Additional connection options passed to the graph handler.
 
         Raises:
             RuntimeError: If initialization fails.
@@ -458,10 +493,10 @@ class AdapterGraphMemory:
 
                             self._container = ModelONEXContainer()
 
-                        # Create and initialize handler
-                        self._handler = HandlerGraph(self._container)
+                        # Create and initialize handler via lazy resolution
+                        self._handler = _create_graph_handler(self._container)
 
-                        init_options: dict[str, object] = {
+                        init_options: dict[str, JsonType] = {
                             "timeout_seconds": self._config.timeout_seconds,
                         }
                         if options:
@@ -534,11 +569,11 @@ class AdapterGraphMemory:
                 "reachable, or increase timeout_seconds in ModelGraphMemoryConfig."
             ) from e
 
-    def _ensure_initialized(self) -> HandlerGraph:
+    def _ensure_initialized(self) -> ProtocolGraphDatabaseHandler:
         """Ensure adapter is initialized and return handler.
 
         Returns:
-            The initialized HandlerGraph.
+            The initialized ProtocolGraphDatabaseHandler.
 
         Raises:
             RuntimeError: If adapter is not initialized.
@@ -716,9 +751,9 @@ class AdapterGraphMemory:
                 node_label=node_label,
                 bidirectional=is_bidirectional,
             )
-            traversal_params: dict[str, object] = {
+            traversal_params: dict[str, JsonType] = {
                 "memory_id": memory_id,
-                "relationship_types": relationship_types,
+                "relationship_types": cast("list[JsonType]", relationship_types),
                 "limit": query_limit,
             }
         else:
@@ -772,7 +807,9 @@ class AdapterGraphMemory:
 
                 # Get depth from query result (path length)
                 raw_depth = record.get("depth")
-                depth_to_node = int(raw_depth) if raw_depth is not None else 1
+                depth_to_node = (
+                    int(raw_depth) if isinstance(raw_depth, (int, float, str)) else 1
+                )
                 max_depth_reached = max(max_depth_reached, depth_to_node)
 
                 # Calculate relevance score based on traversal depth (edge count).
@@ -912,9 +949,9 @@ class AdapterGraphMemory:
         if effective_bidirectional and relationship_types:
             # Bidirectional with type filter
             conn_query = CypherTemplates.get_connections_by_type(node_label)
-            conn_params: dict[str, object] = {
+            conn_params: dict[str, JsonType] = {
                 "memory_id": memory_id,
-                "relationship_types": relationship_types,
+                "relationship_types": cast("list[JsonType]", relationship_types),
                 "limit": effective_limit,
             }
         elif effective_bidirectional:
@@ -929,7 +966,7 @@ class AdapterGraphMemory:
             conn_query = CypherTemplates.get_connections_by_type_outgoing(node_label)
             conn_params = {
                 "memory_id": memory_id,
-                "relationship_types": relationship_types,
+                "relationship_types": cast("list[JsonType]", relationship_types),
                 "limit": effective_limit,
             }
         else:
