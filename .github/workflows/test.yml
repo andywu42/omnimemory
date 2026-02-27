@@ -8,6 +8,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  merge_group:
   workflow_dispatch:
 
 # Cancel previous runs when new commits are pushed to save CI resources
