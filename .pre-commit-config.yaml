@@ -101,6 +101,10 @@ repos:
       - id: check-toml
       - id: debug-statements
 
+  # ONEX String Version Anti-Pattern Detection
+  # TODO(OMN-3832-followup): Re-enable once validate-string-versions is packaged as a
+  # proper Python CLI entrypoint in omnibase_core (currently only works as a local script).
+
   # Python code quality with ruff (replaces black, isort, flake8 - 10-100x faster)
   # Configuration: pyproject.toml [tool.ruff] section (shared with CI)
   # Using official ruff-pre-commit repo for CI compatibility (no Poetry dependency)
