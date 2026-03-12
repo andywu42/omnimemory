@@ -11,7 +11,7 @@
 # CONFIGURATION FILES (shared with CI):
 # ====================================
 # - pyproject.toml: ruff settings [tool.ruff], mypy settings [tool.mypy]
-#   - Ruff version: 0.15.2 (synchronized with pre-commit repo)
+#   - Ruff version: 0.15.6 (synchronized with pre-commit repo)
 #   - Mypy version: uses poetry env (local hook, matches CI exactly)
 #   - Pyright version: 1.1.391 (synchronized with pre-commit repo)
 # - pyrightconfig.json: pyright settings (typeCheckingMode: basic, python 3.12)
@@ -84,7 +84,7 @@ repos:
   # YAML formatting (standard across ecosystem)
   # Configuration in .yamlfmt file (ecosystem-aligned settings)
   - repo: https://github.com/google/yamlfmt
-    rev: v0.17.2
+    rev: v0.21.0
     hooks:
       - id: yamlfmt
         exclude: ^\.github/
@@ -126,7 +126,7 @@ repos:
   # 5. Fix any new violations or update rule selections in pyproject.toml
   #
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.2
+    rev: v0.15.6
     hooks:
       # FULL CODEBASE VALIDATION: These hooks run on src/ and tests/ (not just staged files)
       # to match CI behavior and prevent "works locally, fails in CI" issues.
