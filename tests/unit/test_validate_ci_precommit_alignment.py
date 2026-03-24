@@ -57,8 +57,8 @@ def precommit_content() -> str:
 
 @pytest.fixture
 def ci_content() -> str:
-    """Load the actual .github/workflows/test.yml content from the repo."""
-    path = _REPO_ROOT / ".github" / "workflows" / "test.yml"
+    """Load the actual .github/workflows/ci.yml content from the repo."""
+    path = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
     content = path.read_text(encoding="utf-8")
     return content
 
@@ -73,8 +73,8 @@ def precommit_data() -> dict:
 
 @pytest.fixture
 def ci_data() -> dict:
-    """Parse the actual .github/workflows/test.yml as a YAML dict."""
-    path = _REPO_ROOT / ".github" / "workflows" / "test.yml"
+    """Parse the actual .github/workflows/ci.yml as a YAML dict."""
+    path = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
     content = path.read_text(encoding="utf-8")
     return yaml.safe_load(content)
 
@@ -355,7 +355,7 @@ class TestPrecommitHooksCoveredByAlignments:
 
 @pytest.mark.unit
 class TestAlignmentsMatchCiWorkflow:
-    """Every CI job name in EXPECTED_ALIGNMENTS must exist in test.yml."""
+    """Every CI job name in EXPECTED_ALIGNMENTS must exist in ci.yml."""
 
     def test_all_expected_ci_jobs_exist(self, ci_content: str) -> None:
         actual_ci_jobs = extract_ci_job_ids(ci_content)
@@ -363,7 +363,7 @@ class TestAlignmentsMatchCiWorkflow:
         missing = expected_ci_jobs - actual_ci_jobs
         assert not missing, (
             f"EXPECTED_ALIGNMENTS references CI jobs not found in "
-            f".github/workflows/test.yml: {missing}"
+            f".github/workflows/ci.yml: {missing}"
         )
 
     def test_all_ci_descriptions_found_in_workflow(self, ci_content: str) -> None:
@@ -373,7 +373,7 @@ class TestAlignmentsMatchCiWorkflow:
                 missing.append((hook_id, ci_desc))
         assert not missing, (
             f"EXPECTED_ALIGNMENTS references CI descriptions not found in "
-            f".github/workflows/test.yml: {missing}"
+            f".github/workflows/ci.yml: {missing}"
         )
 
 
@@ -483,7 +483,7 @@ class TestEachAlignmentEntry:
         actual_ci_jobs = extract_ci_job_ids(ci_content)
         assert ci_job in actual_ci_jobs, (
             f"CI job '{ci_job}' listed in EXPECTED_ALIGNMENTS but not found in "
-            f".github/workflows/test.yml. Available jobs: {sorted(actual_ci_jobs)}"
+            f".github/workflows/ci.yml. Available jobs: {sorted(actual_ci_jobs)}"
         )
 
     @pytest.mark.parametrize(
@@ -497,7 +497,7 @@ class TestEachAlignmentEntry:
         hook_id, _ci_job, ci_desc = alignment
         assert check_ci_contains(ci_content, ci_desc), (
             f"CI description '{ci_desc}' (for hook '{hook_id}') not found anywhere "
-            f"in .github/workflows/test.yml"
+            f"in .github/workflows/ci.yml"
         )
 
 
