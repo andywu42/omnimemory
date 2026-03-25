@@ -30,6 +30,7 @@ import contextlib
 import inspect
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 from uuid import UUID, uuid4
@@ -44,6 +45,10 @@ from omnibase_core.runtime.runtime_message_dispatch import MessageDispatchEngine
 if TYPE_CHECKING:
     from omnibase_core.protocols.handler.protocol_handler_context import (
         ProtocolHandlerContext,
+    )
+
+    from omnimemory.nodes.node_memory_retrieval_effect.models import (
+        ModelHandlerMemoryRetrievalConfig,
     )
 
 logger = logging.getLogger(__name__)
@@ -395,6 +400,47 @@ def create_lifecycle_dispatch_handler(
 # =============================================================================
 
 
+def build_retrieval_config_from_env() -> (  # stub-ok: references stub_handlers field name — fully implemented
+    ModelHandlerMemoryRetrievalConfig
+):
+    """Build retrieval config from environment variables.
+
+    Reads ``OMNIMEMORY_USE_STUB_HANDLERS`` (default ``"true"``).  When the
+    value is anything other than ``"false"`` (case-insensitive, whitespace
+    stripped), in-memory test doubles are used.  Otherwise a
+    ``ModelHandlerQdrantConfig`` is constructed from ``QDRANT_HOST``,
+    ``QDRANT_PORT``, and ``LLM_EMBEDDING_URL``.
+
+    Returns:
+        Fully-populated retrieval config ready for ``HandlerMemoryRetrieval``.
+    """
+    from omnimemory.nodes.node_memory_retrieval_effect.models import (
+        ModelHandlerMemoryRetrievalConfig,
+    )
+    from omnimemory.nodes.node_memory_retrieval_effect.models.model_handler_qdrant_config import (
+        ModelHandlerQdrantConfig,
+    )
+
+    use_stubs = (
+        os.getenv("OMNIMEMORY_USE_STUB_HANDLERS", "true").strip().lower() != "false"
+    )
+    qdrant_config = (
+        None
+        if use_stubs
+        else ModelHandlerQdrantConfig(
+            qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
+            qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
+            embedding_server_url=os.getenv(
+                "LLM_EMBEDDING_URL", "http://localhost:8100"
+            ),
+        )
+    )
+    return ModelHandlerMemoryRetrievalConfig(
+        use_stub_handlers=use_stubs,
+        qdrant_config=qdrant_config,
+    )
+
+
 def create_memory_retrieval_dispatch_handler(  # stub-ok: references stub_handlers field name — fully implemented
     *,
     correlation_id: UUID | None = None,
@@ -420,7 +466,6 @@ def create_memory_retrieval_dispatch_handler(  # stub-ok: references stub_handle
         HandlerMemoryRetrieval,
     )
     from omnimemory.nodes.node_memory_retrieval_effect.models import (
-        ModelHandlerMemoryRetrievalConfig,
         ModelMemoryRetrievalRequest,
     )
 
@@ -429,7 +474,7 @@ def create_memory_retrieval_dispatch_handler(  # stub-ok: references stub_handle
     async def _get_retrieval_handler() -> HandlerMemoryRetrieval:
         nonlocal _retrieval_handler
         if _retrieval_handler is None:
-            config = ModelHandlerMemoryRetrievalConfig(use_stub_handlers=True)
+            config = build_retrieval_config_from_env()
             _retrieval_handler = HandlerMemoryRetrieval(config)
             await _retrieval_handler.initialize()
         return _retrieval_handler
