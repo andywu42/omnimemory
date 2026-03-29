@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from omnimemory.nodes.node_memory_retrieval_effect.models import (
         ModelHandlerMemoryRetrievalConfig,
     )
+    from omnimemory.runtime.handler_lifecycle import HandlerMemoryLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,17 @@ DISPATCH_ALIAS_MEMORY_RETRIEVAL_REQUESTED = (
 
 DISPATCH_ALIAS_GRAPH_MEMORY = "onex.commands.omnimemory.graph-memory-query.v1"
 """Dispatch-compatible alias for graph memory query/mutation operations (OMN-6578)."""
+
+DISPATCH_ALIAS_INTENT_GRAPH = "onex.commands.omnimemory.intent-graph-query.v1"
+"""Dispatch-compatible alias for intent graph query/mutation operations (OMN-6579)."""
+
+DISPATCH_ALIAS_NAVIGATION_HISTORY = (
+    "onex.commands.omnimemory.navigation-history-session.v1"
+)
+"""Dispatch-compatible alias for navigation history session events (OMN-6583)."""
+
+DISPATCH_ALIAS_SEMANTIC_COMPUTE = "onex.commands.omnimemory.semantic-analysis.v1"
+"""Dispatch-compatible alias for semantic analysis requests (OMN-6585)."""
 
 
 # =============================================================================
@@ -579,21 +591,248 @@ def _create_graph_memory_dispatch_handler(
             logger.warning(msg)
             raise ValueError(msg)
 
-        logger.info(
-            "Dispatching graph-memory command via MessageDispatchEngine "
-            "(correlation_id=%s)",
-            ctx_correlation_id,
-        )
-
-        # The adapter operation is determined by the payload content.
-        # For now, this is a placeholder that logs receipt; the full
-        # operation routing will be wired by downstream tasks.
         operation = payload.get("operation", "unknown")
-        logger.info(
-            "Graph memory command received (operation=%s, correlation_id=%s)",
+        logger.warning(
+            "Graph memory command received but adapter dispatch not yet wired "
+            "(operation=%s, correlation_id=%s) -- acknowledging as no-op. "
+            "See OMN-6580 follow-up tasks for operation routing.",
             operation,
             ctx_correlation_id,
         )
+
+        # TODO(OMN-6580): Route to adapter.store() / adapter.query() based on
+        # operation field. Currently validates and acknowledges.
+        return ""
+
+    return _handle
+
+
+# =============================================================================
+# Bridge Handler: Intent Graph Adapter (OMN-6579)
+# =============================================================================
+
+
+def _create_intent_graph_dispatch_handler(
+    *,
+    adapter: object,
+) -> Callable[
+    [ModelEventEnvelope[object], ProtocolHandlerContext],
+    Awaitable[str],
+]:
+    """Create a dispatch engine handler for intent graph operations.
+
+    Args:
+        adapter: An ``AdapterIntentGraph`` instance (typed as ``object`` to
+            avoid importing the adapter at module level).
+
+    Returns:
+        Async handler function with signature (envelope, context) -> str.
+    """
+
+    async def _handle(
+        envelope: ModelEventEnvelope[object],
+        context: ProtocolHandlerContext,
+    ) -> str:
+        """Bridge handler: envelope -> AdapterIntentGraph operation."""
+        ctx_correlation_id = getattr(context, "correlation_id", None) or uuid4()
+
+        payload = envelope.payload
+        if not isinstance(payload, dict):
+            msg = (
+                f"Unexpected payload type {type(payload).__name__} "
+                f"for intent-graph command "
+                f"(correlation_id={ctx_correlation_id})"
+            )
+            logger.warning(msg)
+            raise ValueError(msg)
+
+        operation = payload.get("operation", "unknown")
+        logger.warning(
+            "Intent graph command received but adapter dispatch not yet wired "
+            "(operation=%s, correlation_id=%s) -- acknowledging as no-op. "
+            "See OMN-6579 follow-up tasks for operation routing.",
+            operation,
+            ctx_correlation_id,
+        )
+
+        # TODO(OMN-6579): Route to adapter methods based on operation field.
+        # Currently validates and acknowledges; full dispatch in follow-up PR.
+        return ""
+
+    return _handle
+
+
+# =============================================================================
+# Bridge Handler: Navigation History Reducer (OMN-6583)
+# =============================================================================
+
+
+def _create_navigation_history_dispatch_handler(
+    *,
+    handler: object,
+) -> Callable[
+    [ModelEventEnvelope[object], ProtocolHandlerContext],
+    Awaitable[str],
+]:
+    """Create a dispatch engine handler for navigation history sessions.
+
+    Args:
+        handler: A ``HandlerNavigationHistoryReducer`` instance.
+
+    Returns:
+        Async handler function with signature (envelope, context) -> str.
+    """
+
+    async def _handle(
+        envelope: ModelEventEnvelope[object],
+        context: ProtocolHandlerContext,
+    ) -> str:
+        """Bridge handler: envelope -> HandlerNavigationHistoryReducer."""
+        ctx_correlation_id = getattr(context, "correlation_id", None) or uuid4()
+
+        payload = envelope.payload
+        if not isinstance(payload, dict):
+            msg = (
+                f"Unexpected payload type {type(payload).__name__} "
+                f"for navigation-history command "
+                f"(correlation_id={ctx_correlation_id})"
+            )
+            logger.warning(msg)
+            raise ValueError(msg)
+
+        logger.warning(
+            "Navigation history session event received but handler dispatch "
+            "not yet wired (correlation_id=%s) -- acknowledging as no-op. "
+            "See OMN-6583 follow-up tasks for session routing.",
+            ctx_correlation_id,
+        )
+
+        # TODO(OMN-6583): Route to handler.record_session() / handler.query()
+        # based on payload command field. Currently validates and acknowledges.
+        return ""
+
+    return _handle
+
+
+# =============================================================================
+# Bridge Handler: Semantic Compute (OMN-6585)
+# =============================================================================
+
+
+def _create_semantic_compute_dispatch_handler(
+    *,
+    handler: object,
+) -> Callable[
+    [ModelEventEnvelope[object], ProtocolHandlerContext],
+    Awaitable[str],
+]:
+    """Create a dispatch engine handler for semantic analysis requests.
+
+    Args:
+        handler: A ``HandlerSemanticCompute`` instance.
+
+    Returns:
+        Async handler function with signature (envelope, context) -> str.
+    """
+
+    async def _handle(
+        envelope: ModelEventEnvelope[object],
+        context: ProtocolHandlerContext,
+    ) -> str:
+        """Bridge handler: envelope -> HandlerSemanticCompute."""
+        ctx_correlation_id = getattr(context, "correlation_id", None) or uuid4()
+
+        payload = envelope.payload
+        if not isinstance(payload, dict):
+            msg = (
+                f"Unexpected payload type {type(payload).__name__} "
+                f"for semantic-compute command "
+                f"(correlation_id={ctx_correlation_id})"
+            )
+            logger.warning(msg)
+            raise ValueError(msg)
+
+        logger.warning(
+            "Semantic analysis request received but handler dispatch "
+            "not yet wired (correlation_id=%s) -- acknowledging as no-op. "
+            "See OMN-6585 follow-up tasks for compute routing.",
+            ctx_correlation_id,
+        )
+
+        # TODO(OMN-6585): Route to handler.analyze() based on payload.
+        # Currently validates and acknowledges.
+        return ""
+
+    return _handle
+
+
+# =============================================================================
+# Bridge Handler: Lifecycle (OMN-6588)
+# =============================================================================
+
+
+def _create_lifecycle_bridge_handler(
+    *,
+    lifecycle: HandlerMemoryLifecycle,
+) -> Callable[
+    [ModelEventEnvelope[object], ProtocolHandlerContext],
+    Awaitable[str],
+]:
+    """Create a dispatch engine handler for lifecycle commands.
+
+    Replaces the no-op handler with a bridge to HandlerMemoryLifecycle.
+    Handles runtime-tick, archive-memory, and expire-memory commands.
+
+    Args:
+        lifecycle: A ``HandlerMemoryLifecycle`` instance.
+
+    Returns:
+        Async handler function with signature (envelope, context) -> str.
+    """
+
+    async def _handle(
+        envelope: ModelEventEnvelope[object],
+        context: ProtocolHandlerContext,
+    ) -> str:
+        """Bridge handler: envelope -> HandlerMemoryLifecycle."""
+        ctx_correlation_id = getattr(context, "correlation_id", None) or uuid4()
+
+        topic = getattr(envelope, "event_type", None) or "unknown"
+        payload = envelope.payload
+        command = payload.get("command", "") if isinstance(payload, dict) else ""
+
+        logger.info(
+            "Lifecycle command received (topic=%s, command=%s, correlation_id=%s)",
+            topic,
+            command,
+            ctx_correlation_id,
+        )
+
+        # Ensure the lifecycle handler is started before processing commands.
+        if not lifecycle.is_started():
+            with contextlib.suppress(Exception):
+                await lifecycle.handle_startup()
+
+        # Route lifecycle commands.
+        if command in ("shutdown", "expire-memory"):
+            # Shutdown is the only lifecycle teardown method available.
+            # archive-memory has no dedicated handler yet (OMN-6588 follow-up).
+            logger.info(
+                "Lifecycle shutdown requested (command=%s, correlation_id=%s)",
+                command,
+                ctx_correlation_id,
+            )
+            with contextlib.suppress(Exception):
+                await lifecycle.handle_shutdown()
+        elif command == "archive-memory":
+            # TODO(OMN-6588): Wire archive-memory to a dedicated handler.
+            # Currently acknowledged as no-op; the lifecycle handler does not
+            # have an archive method yet.
+            logger.warning(
+                "archive-memory command not yet implemented "
+                "(correlation_id=%s) -- acknowledging as no-op",
+                ctx_correlation_id,
+            )
 
         return ""
 
@@ -614,18 +853,24 @@ def create_memory_dispatch_engine(
     | None = None,
     publish_topics: dict[str, str] | None = None,
     graph_memory_adapter: object | None = None,
+    intent_graph_adapter: object | None = None,
+    navigation_history_handler: object | None = None,
+    semantic_compute_handler: object | None = None,
 ) -> MessageDispatchEngine:
     """Create and configure a MessageDispatchEngine for OmniMemory domain.
 
     Creates the engine, registers all omnimemory domain handlers and routes,
     and freezes it. The engine is ready for dispatch after this call.
 
-    Registers 4+ handlers covering 6+ routes:
+    Registers 4-8 handlers covering 6-10 routes:
         1. intent-classified handler (1 route: intent-classified.v1 events)
         2. intent-query handler (1 route: intent-query-requested.v1 commands)
-        3. memory-retrieval handler (1 route: memory-retrieval-requested.v1 -- fail-fast)
-        4. lifecycle handler (3 routes: runtime-tick, archive, expire -- fail-fast)
-        5. graph-memory handler (optional, 1 route: graph query/mutation -- OMN-6578)
+        3. memory-retrieval handler (1 route: memory-retrieval-requested.v1)
+        4. lifecycle handler (3 routes: runtime-tick, archive, expire)
+        5. graph-memory handler (optional, 1 route -- OMN-6578)
+        6. intent-graph handler (optional, 1 route -- OMN-6579)
+        7. navigation-history handler (optional, 1 route -- OMN-6583)
+        8. semantic-compute handler (optional, 1 route -- OMN-6585)
 
     Args:
         intent_consumer: REQUIRED intent event consumer handler.
@@ -635,9 +880,12 @@ def create_memory_dispatch_engine(
         publish_topics: Optional mapping of handler name to publish topic.
             Keys: "intent_query". Values: full topic strings from contract
             event_bus.publish_topics.
-        graph_memory_adapter: Optional AdapterGraphMemory instance.  When
-            provided the adapter is registered as a handler for graph query
-            and mutation operations (OMN-6578).
+        graph_memory_adapter: Optional AdapterGraphMemory instance (OMN-6578).
+        intent_graph_adapter: Optional AdapterIntentGraph instance (OMN-6579).
+        navigation_history_handler: Optional HandlerNavigationHistoryReducer
+            instance (OMN-6583).
+        semantic_compute_handler: Optional HandlerSemanticCompute instance
+            (OMN-6585).
 
     Returns:
         Frozen MessageDispatchEngine ready for dispatch.
@@ -722,8 +970,18 @@ def create_memory_dispatch_engine(
         )
     )
 
-    # --- Handler 4: lifecycle orchestrator (fail-fast) ---
-    lifecycle_handler = create_lifecycle_dispatch_handler()
+    # --- Handler 4: lifecycle orchestrator (OMN-6588) ---
+    # Uses real HandlerMemoryLifecycle when components are available,
+    # falls back to no-op when none are provided.
+    from omnimemory.runtime.handler_lifecycle import HandlerMemoryLifecycle
+
+    _lifecycle = HandlerMemoryLifecycle(
+        graph_memory_adapter=graph_memory_adapter,
+        intent_graph_adapter=intent_graph_adapter,
+        navigation_handler=navigation_history_handler,
+        semantic_handler=semantic_compute_handler,
+    )
+    lifecycle_handler = _create_lifecycle_bridge_handler(lifecycle=_lifecycle)
     engine.register_handler(
         handler_id="memory-lifecycle-handler",
         handler=lifecycle_handler,
@@ -788,6 +1046,81 @@ def create_memory_dispatch_engine(
                 description=(
                     "Routes graph memory queries/mutations to "
                     "AdapterGraphMemory (OMN-6578)."
+                ),
+            )
+        )
+
+    # --- Handler 6 (optional): intent graph adapter (OMN-6579) ---
+    if intent_graph_adapter is not None:
+        intent_graph_handler = _create_intent_graph_dispatch_handler(
+            adapter=intent_graph_adapter,
+        )
+        engine.register_handler(
+            handler_id="memory-intent-graph-handler",
+            handler=intent_graph_handler,
+            category=EnumMessageCategory.COMMAND,
+            node_kind=EnumNodeKind.EFFECT,
+            message_types=None,
+        )
+        engine.register_route(
+            ModelDispatchRoute(
+                route_id="memory-intent-graph-route",
+                topic_pattern=DISPATCH_ALIAS_INTENT_GRAPH,
+                message_category=EnumMessageCategory.COMMAND,
+                handler_id="memory-intent-graph-handler",
+                description=(
+                    "Routes intent graph queries/mutations to "
+                    "AdapterIntentGraph (OMN-6579)."
+                ),
+            )
+        )
+
+    # --- Handler 7 (optional): navigation history reducer (OMN-6583) ---
+    if navigation_history_handler is not None:
+        nav_dispatch_handler = _create_navigation_history_dispatch_handler(
+            handler=navigation_history_handler,
+        )
+        engine.register_handler(
+            handler_id="memory-navigation-history-handler",
+            handler=nav_dispatch_handler,
+            category=EnumMessageCategory.COMMAND,
+            node_kind=EnumNodeKind.REDUCER,
+            message_types=None,
+        )
+        engine.register_route(
+            ModelDispatchRoute(
+                route_id="memory-navigation-history-route",
+                topic_pattern=DISPATCH_ALIAS_NAVIGATION_HISTORY,
+                message_category=EnumMessageCategory.COMMAND,
+                handler_id="memory-navigation-history-handler",
+                description=(
+                    "Routes navigation history session events to "
+                    "HandlerNavigationHistoryReducer (OMN-6583)."
+                ),
+            )
+        )
+
+    # --- Handler 8 (optional): semantic compute (OMN-6585) ---
+    if semantic_compute_handler is not None:
+        semantic_dispatch_handler = _create_semantic_compute_dispatch_handler(
+            handler=semantic_compute_handler,
+        )
+        engine.register_handler(
+            handler_id="memory-semantic-compute-handler",
+            handler=semantic_dispatch_handler,
+            category=EnumMessageCategory.COMMAND,
+            node_kind=EnumNodeKind.COMPUTE,
+            message_types=None,
+        )
+        engine.register_route(
+            ModelDispatchRoute(
+                route_id="memory-semantic-compute-route",
+                topic_pattern=DISPATCH_ALIAS_SEMANTIC_COMPUTE,
+                message_category=EnumMessageCategory.COMMAND,
+                handler_id="memory-semantic-compute-handler",
+                description=(
+                    "Routes semantic analysis requests to "
+                    "HandlerSemanticCompute (OMN-6585)."
                 ),
             )
         )
