@@ -350,7 +350,9 @@ class TestModelScopeMappingConfigSerialization:
         with pytest.raises(ValidationError):
             cfg.path_mappings = ()  # type: ignore[misc]
 
-    def test_default_config_round_trip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_config_round_trip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("OMNI_HOME", str(tmp_path))
         default_cfg = get_default_scope_mapping_config()
         data = default_cfg.model_dump()
