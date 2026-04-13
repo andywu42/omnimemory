@@ -16,6 +16,9 @@ Ticket: OMN-2426
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -259,33 +262,40 @@ class TestResolvePriorityHint:
 class TestDefaultScopeMappingConfig:
     """Sanity-checks for the local-dev default config."""
 
+    @pytest.fixture(autouse=True)
+    def _set_omni_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OMNI_HOME", str(tmp_path))
+
     def test_global_claude_md_resolves_to_global_standards(self) -> None:
-        result = get_default_scope_mapping_config().resolve_scope_for_path(
-            "/Users/jonah/.claude/CLAUDE.md"
-        )
+        claude_dir = str(Path.home() / ".claude" / "CLAUDE.md")
+        result = get_default_scope_mapping_config().resolve_scope_for_path(claude_dir)
         assert result == "omninode/shared/global-standards"
 
     def test_repo_claude_md_resolves_to_repo_scope(self) -> None:
+        omni_home = Path(os.environ["OMNI_HOME"])
         result = get_default_scope_mapping_config().resolve_scope_for_path(
-            "/Volumes/PRO-G40/Code/omniintelligence/CLAUDE.md"
+            str(omni_home / "omniintelligence" / "CLAUDE.md")
         )
         assert result == "omninode/omniintelligence"
 
     def test_omnimemory2_resolves_to_omnimemory(self) -> None:
+        omni_home = Path(os.environ["OMNI_HOME"])
         result = get_default_scope_mapping_config().resolve_scope_for_path(
-            "/Volumes/PRO-G40/Code/omnimemory2/src/omnimemory/models/foo.py"
+            str(omni_home / "omnimemory2" / "src" / "omnimemory" / "models" / "foo.py")
         )
         assert result == "omninode/omnimemory"
 
     def test_design_doc_resolves_to_shared_design(self) -> None:
+        omni_home = Path(os.environ["OMNI_HOME"])
         result = get_default_scope_mapping_config().resolve_scope_for_path(
-            "/Volumes/PRO-G40/Code/omni_save/design/DESIGN_FOO.md"
+            str(omni_home / "omni_save" / "design" / "DESIGN_FOO.md")
         )
         assert result == "omninode/shared/design"
 
     def test_fallback_code_path_resolves_to_omninode_shared(self) -> None:
+        omni_home = Path(os.environ["OMNI_HOME"])
         result = get_default_scope_mapping_config().resolve_scope_for_path(
-            "/Volumes/PRO-G40/Code/some_unknown_repo/README.md"
+            str(omni_home / "some_unknown_repo" / "README.md")
         )
         assert result == "omninode/shared"
 
@@ -296,9 +306,10 @@ class TestDefaultScopeMappingConfig:
         assert result == "omninode/omnimemory"
 
     def test_global_claude_md_priority_hint(self) -> None:
+        claude_md = str(Path.home() / ".claude" / "CLAUDE.md")
         hint = get_default_scope_mapping_config().resolve_priority_hint(
             EnumDetectedDocType.CLAUDE_MD,
-            absolute_path="/Users/jonah/.claude/CLAUDE.md",
+            absolute_path=claude_md,
         )
         assert hint == 95
 
@@ -339,7 +350,10 @@ class TestModelScopeMappingConfigSerialization:
         with pytest.raises(ValidationError):
             cfg.path_mappings = ()  # type: ignore[misc]
 
-    def test_default_config_round_trip(self) -> None:
+    def test_default_config_round_trip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OMNI_HOME", str(tmp_path))
         default_cfg = get_default_scope_mapping_config()
         data = default_cfg.model_dump()
         restored = ModelScopeMappingConfig.model_validate(data)

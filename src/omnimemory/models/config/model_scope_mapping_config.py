@@ -12,8 +12,10 @@ Design doc: DESIGN_OMNIMEMORY_DOCUMENT_INGESTION_PIPELINE.md §7
 Ticket: OMN-2426
 """
 
+import os
 import types
 from collections.abc import Mapping
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -184,10 +186,9 @@ _DEFAULT_PRIORITY_HINTS: Mapping[EnumDetectedDocType, int] = types.MappingProxyT
 # Default scope mapping config matching design doc §7 examples
 # ---------------------------------------------------------------------------
 #
-# WARNING: LOCAL-DEV CONVENIENCE ONLY.
-# The config returned by get_default_scope_mapping_config() contains
-# machine-specific paths (/Volumes/PRO-G40/Code/..., /Users/jonah/.claude)
-# that are only valid on the primary developer's machine.
+# Paths resolve relative to the OMNI_HOME environment variable, which must
+# point to the canonical omni_home checkout (e.g. /Users/you/Code/omni_home).
+# ~/.claude is resolved via Path.home() so it works on any machine.
 # In CI and production, callers MUST supply a ModelScopeMappingConfig
 # built from environment-appropriate paths (e.g., read from config file or
 # env vars). Do NOT call get_default_scope_mapping_config() in any deployed
@@ -197,10 +198,9 @@ _DEFAULT_PRIORITY_HINTS: Mapping[EnumDetectedDocType, int] = types.MappingProxyT
 def get_default_scope_mapping_config() -> ModelScopeMappingConfig:
     """Return a local-dev convenience scope mapping config.
 
-    Constructs and returns a ``ModelScopeMappingConfig`` pre-populated with
-    machine-specific paths (``/Volumes/PRO-G40/Code/...``,
-    ``/Users/jonah/.claude``) that are only valid on the primary developer's
-    machine.
+    All paths are resolved at call time from the ``OMNI_HOME`` environment
+    variable (the canonical omni_home checkout root) and ``Path.home()``
+    (for ``~/.claude``). Raises ``KeyError`` if ``OMNI_HOME`` is not set.
 
     This function is intentionally lazy: the config is only constructed when
     explicitly called, so importing this module in CI or production code does
@@ -216,38 +216,41 @@ def get_default_scope_mapping_config() -> ModelScopeMappingConfig:
         ``ModelScopeMappingConfig`` from environment-appropriate configuration
         (e.g., environment variables or a config file).
     """
+    omni_home = Path(os.environ["OMNI_HOME"])
+    claude_dir = Path.home() / ".claude"
+
     return ModelScopeMappingConfig(
         path_mappings=(
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omniintelligence",
+                path_prefix=str(omni_home / "omniintelligence"),
                 scope_ref="omninode/omniintelligence",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omnimemory2",
+                path_prefix=str(omni_home / "omnimemory2"),
                 scope_ref="omninode/omnimemory",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omnimemory",
+                path_prefix=str(omni_home / "omnimemory"),
                 scope_ref="omninode/omnimemory",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omnibase_core",
+                path_prefix=str(omni_home / "omnibase_core"),
                 scope_ref="omninode/omnibase_core",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omni_save/design",
+                path_prefix=str(omni_home / "omni_save" / "design"),
                 scope_ref="omninode/shared/design",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code/omni_save/plans",
+                path_prefix=str(omni_home / "omni_save" / "plans"),
                 scope_ref="omninode/shared/plans",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Users/jonah/.claude",
+                path_prefix=str(claude_dir),
                 scope_ref="omninode/shared/global-standards",
             ),
             ModelPathScopeMapping(
-                path_prefix="/Volumes/PRO-G40/Code",
+                path_prefix=str(omni_home),
                 scope_ref="omninode/shared",
             ),
         ),
@@ -269,6 +272,6 @@ def get_default_scope_mapping_config() -> ModelScopeMappingConfig:
             ),
         ),
         priority_hints={
-            "/Users/jonah/.claude/CLAUDE.md": 95,
+            str(claude_dir / "CLAUDE.md"): 95,
         },
     )
