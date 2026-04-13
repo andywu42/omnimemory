@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 [project]
 name = "omninode-memory"
 version = "0.15.0"
-description = "OmniNode document ingestion and semantic retrieval"
+description = "OmniNode memory primitives — models, protocols, and storage adapters for Qdrant, Memgraph, and PostgreSQL backends."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "MIT" }
@@ -89,9 +89,6 @@ Changelog = "https://github.com/OmniNode-ai/omnimemory/blob/main/CHANGELOG.md"
 
 [project.entry-points."onex.domain_plugins"]
 memory = "omnimemory.runtime.plugin:PluginMemory"
-
-[project.entry-points."onex.node_package"]
-omnimemory = "omnimemory.nodes"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/omnimemory"]

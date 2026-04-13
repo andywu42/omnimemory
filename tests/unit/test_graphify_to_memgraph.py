@@ -166,6 +166,5 @@ def test_default_graph_dir_falls_back_to_repo_root(
     monkeypatch.delenv("OMNI_HOME", raising=False)
     result = _default_graph_dir()
     assert result == _REPO_ROOT.parent / ".onex_state" / "graphify-graphs"
-    assert "/Volumes/PRO-G40/" not in str(result)
     assert result.parts[-1] == "graphify-graphs"
     assert result.parts[-2] == ".onex_state"

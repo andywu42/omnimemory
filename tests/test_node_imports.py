@@ -51,21 +51,38 @@ class TestNodeImports:
             # Expected during scaffold phase
             pytest.skip(f"Node package pending implementation: {e}")
 
-    def test_nodes_package_exports_core_nodes(self) -> None:
-        """Verify __all__ in nodes package lists all Core 8 nodes.
+    def test_nodes_package_exports_base_classes(self) -> None:
+        """Verify __all__ in nodes package exports base classes only.
 
-        The nodes package __init__.py should export all Core 8 node
-        names in its __all__ list for proper package discoverability.
+        After node migration to omnimarket (OMN-8302), the nodes package
+        __init__.py retains only base class re-exports used by storage
+        adapters.  Individual node handler names must NOT appear in __all__.
         """
+        expected_base_classes = {
+            "BaseNode",
+            "BaseEffectNode",
+            "BaseComputeNode",
+            "BaseReducerNode",
+            "BaseOrchestratorNode",
+            "ContainerType",
+        }
         try:
             from omnimemory.nodes import __all__ as nodes_all
 
+            nodes_all_set = set(nodes_all)
+            for cls_name in expected_base_classes:
+                assert cls_name in nodes_all_set, (
+                    f"Base class {cls_name!r} missing from nodes __all__"
+                )
+            # Node handler names must not be exported from the package root
             for node_name in CORE_8_NODES:
-                # Only check nodes whose directories exist
                 node_dir: Path = NODES_DIR / node_name
                 if not node_dir.exists():
                     continue
-                assert node_name in nodes_all, f"Missing from __all__: {node_name}"
+                assert node_name not in nodes_all_set, (
+                    f"Node handler {node_name!r} must not be in __all__ "
+                    f"after migration (OMN-8302)"
+                )
         except ImportError:
             pytest.skip("nodes package not properly configured")
 
